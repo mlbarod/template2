@@ -66,14 +66,14 @@ export function AppList({
             {/* 예: 뱃지(선택) */}
             <div className="flex items-center justify-between px-5 py-1">
               <div className="min-w-0">
-                <div className="truncate text-lg font-semibold leading-none">
+                <div className="truncate text-sm font-semibold leading-none">
                   {app.name}
                 </div>
               </div>
 
               <Badge
                 variant="secondary"
-                className="shrink-0 text-[11px] leading-none"
+                className="shrink-0 text-[9px] leading-none"
               >
                 {app.category || "기타"}
               </Badge>

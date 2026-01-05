@@ -70,6 +70,9 @@ DEBUG = env_bool("DJANGO_DEBUG", False)
 # 예: "example.com, api.example.com, localhost, 127.0.0.1"
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,api")
 
+# 요청 바디 최대 크기(기본 10MB)
+DATA_UPLOAD_MAX_MEMORY_SIZE = env_int("DATA_UPLOAD_MAX_MEMORY_SIZE", 10 * 1024 * 1024) or 10 * 1024 * 1024
+
 # 외부에서 접근 가능한 API 기본 prefix/URL (예: "/api" 혹은 "https://api.example.com")
 PUBLIC_API_BASE_URL = env("PUBLIC_API_BASE_URL") or env("DJANGO_PUBLIC_API_BASE_URL") or ""
 if isinstance(PUBLIC_API_BASE_URL, str):
