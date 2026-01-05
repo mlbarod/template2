@@ -6,7 +6,7 @@ export async function instantInformDroneSop({ id, comment }) {
   }
 
   const endpoint = buildBackendUrl(
-    `/api/v1/line-dashboard/sop/${encodeURIComponent(String(id))}/instantInform`
+    `/api/v1/line-dashboard/sop/${encodeURIComponent(String(id))}/instant-inform`
   )
 
   const response = await fetch(endpoint, {
