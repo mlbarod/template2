@@ -48,6 +48,7 @@ def serialize_email_summary(email: Any) -> Dict[str, Any]:
         "userSdwtProd": email.user_sdwt_prod,
         "snippet": snippet,
         "ragDocId": email.rag_doc_id,
+        "ragIndexStatus": email.rag_index_status,
     }
 
 

@@ -40,6 +40,25 @@ function getAuthorName(comment) {
   return author?.name ?? comment.authorName ?? "익명"
 }
 
+function getAuthorKnoxId(comment) {
+  const author = getAuthor(comment)
+  const raw =
+    author?.knoxid ||
+    author?.knoxId ||
+    author?.knox_id ||
+    comment.authorKnoxid ||
+    comment.author_knoxid ||
+    comment.authorKnoxId ||
+    ""
+  return typeof raw === "string" ? raw.trim() : ""
+}
+
+function getAuthorLabel(comment) {
+  const name = getAuthorName(comment)
+  const knoxId = getAuthorKnoxId(comment)
+  return knoxId ? `${name} (${knoxId})` : name
+}
+
 function getAuthorInitial(comment) {
   const name = getAuthorName(comment)
   return (name?.trim()?.charAt(0) || "U").toUpperCase()
@@ -200,7 +219,7 @@ function CommentItem({
   const [isEditing, setIsEditing] = useState(false)
   const [isCollapsed, setIsCollapsed] = useState(false)
 
-  const authorName = getAuthorName(comment)
+  const authorLabel = getAuthorLabel(comment)
   const timeText = comment.createdAtLabel || comment.createdAt || ""
 
   const canEdit = Boolean(comment?.canEdit)
@@ -231,7 +250,7 @@ function CommentItem({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="truncate text-sm font-semibold">{authorName}</span>
+                <span className="truncate text-sm font-semibold">{authorLabel}</span>
                 {timeText ? (
                   <span className="text-xs text-muted-foreground">{timeText}</span>
                 ) : null}

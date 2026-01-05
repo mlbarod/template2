@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 
 function getClipboardImageFiles(clipboardData) {
@@ -22,6 +23,17 @@ function fileToDataUrl(file) {
     reader.readAsDataURL(file)
   })
 }
+
+const CATEGORY_OPTIONS = [
+  "DX App",
+  "Engineer App",
+  "Etch Report",
+  "PM Report",
+  "품질 Report",
+  "환경안전 Report",
+  "생산지원 Report",
+  "설치기술 Report",
+]
 
 export function AppFormDialog({
   open,
@@ -158,12 +170,18 @@ export function AppFormDialog({
 
           <div className="grid gap-2">
             <Label htmlFor="app-category">카테고리</Label>
-            <Input
-              id="app-category"
-              value={category}
-              onChange={(event) => setCategory(event.target.value)}
-              placeholder="예: Collaboration"
-            />
+            <Select value={category} onValueChange={setCategory}>
+              <SelectTrigger id="app-category">
+                <SelectValue placeholder="카테고리 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                {CATEGORY_OPTIONS.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="grid gap-2">

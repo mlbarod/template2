@@ -214,6 +214,8 @@ export function EmailList({
               const rawAffiliation =
                 typeof email.userSdwtProd === "string" ? email.userSdwtProd.trim() : ""
               const affiliationLabel = rawAffiliation || "미분류"
+              const isRagIndexed = email.ragIndexStatus === "INDEXED"
+              const showRagBadge = isRagIndexed && Boolean(email.ragDocId)
               return (
                 <li
                   key={email.id}
@@ -249,7 +251,7 @@ export function EmailList({
                         {affiliationLabel}
                       </Badge>
                     ) : null}
-                    {email.ragDocId ? (
+                    {showRagBadge ? (
                       <Badge variant="outline" className="text-[10px] uppercase">
                         RAG
                       </Badge>
