@@ -113,13 +113,15 @@ def list_mailbox_members(*, mailbox_user_sdwt_prod: str) -> list[dict[str, objec
         knox_id_value = knox_id.strip() if isinstance(knox_id, str) else ""
         display_username = getattr(user, "username", None)
         display_username_value = display_username.strip() if isinstance(display_username, str) else ""
+        role_value = getattr(access, "role", None) if access else "member"
         return {
             "userId": user.id,
             "username": display_username_value,
             "name": display_username_value,
             "knoxId": knox_id_value,
+            "avatarid": getattr(user, "avatarid", None),
             "userSdwtProd": normalized,
-            "canManage": bool(getattr(access, "can_manage", False)) if access else False,
+            "role": role_value,
             "grantedBy": getattr(access, "granted_by_id", None) if access else None,
             "grantedAt": access.created_at.isoformat() if access else None,
             "emailCount": 0,
@@ -159,7 +161,13 @@ def list_mailbox_members(*, mailbox_user_sdwt_prod: str) -> list[dict[str, objec
     # -----------------------------------------------------------------------------
     # 5) 정렬 및 반환
     # -----------------------------------------------------------------------------
-    members.sort(key=lambda member: (not member.get("canManage", False), str(member.get("username", ""))))
+    role_order = {"manager": 0, "member": 1, "viewer": 2}
+    members.sort(
+        key=lambda member: (
+            role_order.get(member.get("role", "viewer"), 2),
+            str(member.get("username", "")),
+        )
+    )
     return members
 
 

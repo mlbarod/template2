@@ -268,7 +268,7 @@ def _extract_user_info_from_claims(claims: Dict[str, Any]) -> Dict[str, Optional
 
     매핑 예시:
     - loginid → knox_id (로그인 ID 매핑)
-    - userid → userid (사용자 ID 매핑)
+    - userid → avatarid (아바타 ID 매핑)
     - sabun → sabun (사번 유지)
     - username → username (first_name/last_name 계산에 사용)
     - mail → email (이메일 매핑)
@@ -278,7 +278,7 @@ def _extract_user_info_from_claims(claims: Dict[str, Any]) -> Dict[str, Optional
     # -----------------------------------------------------------------------------
     claim_to_field = {
         "loginid": "knox_id",
-        "userid": "userid",
+        "userid": "avatarid",
         "sabun": "sabun",
         "username": "username",
         "username_en": "username_en",
@@ -453,6 +453,7 @@ def auth_callback(request: HttpRequest) -> HttpResponse:
 
     부작용:
     - 사용자 생성/갱신 및 세션 로그인
+    - 현재 소속 접근 권한 행 보장
 
     오류:
     - 400: 잘못된 메서드, 설정 비활성화, 파라미터 누락
@@ -569,6 +570,20 @@ def auth_callback(request: HttpRequest) -> HttpResponse:
         user.save(update_fields=update_fields or None)
 
     # -----------------------------------------------------------------------------
+    # 9-1) 최초 생성 사용자 외부 소속 자동 승인(가능한 경우에만)
+    # -----------------------------------------------------------------------------
+    if created:
+        account_services.auto_approve_affiliation_from_snapshot(
+            user=user,
+            timezone_name=str(getattr(settings, "TIME_ZONE", "UTC") or "UTC"),
+        )
+
+    # -----------------------------------------------------------------------------
+    # 9-2) 현재 소속 접근 권한 행 보장
+    # -----------------------------------------------------------------------------
+    account_services.ensure_self_access(user, role="member")
+
+    # -----------------------------------------------------------------------------
     # 10) 세션 로그인 및 리다이렉트
     # -----------------------------------------------------------------------------
     # 세션 로그인 후 프런트로 리다이렉트
@@ -586,7 +601,7 @@ def auth_me(request: HttpRequest) -> JsonResponse:
     - JsonResponse: 사용자 정보 또는 에러
 
     부작용:
-    - 없음
+    - 현재 소속 접근 권한 행 보장
 
     오류:
     - 401: 미인증 사용자
@@ -595,7 +610,7 @@ def auth_me(request: HttpRequest) -> JsonResponse:
     - 예시 요청: GET /api/v1/auth/me
 
     예시 응답:
-    - 예시 응답: 200 {"id": 1, "usr_id": "...", "username": "..."}
+    - 예시 응답: 200 {"id": 1, "usr_id": "...", "avatarid": "U-12345", "username": "...", "has_pending_affiliation": false}
 
     snake/camel 호환:
     - 해당 없음(요청 바디 없음)
@@ -610,18 +625,18 @@ def auth_me(request: HttpRequest) -> JsonResponse:
     # 2) 사용자 정보 준비
     # -----------------------------------------------------------------------------
     user = request.user
+    account_services.ensure_self_access(user, role="member")
     username = user.username if isinstance(getattr(user, "username", None), str) else ""
-    pending_user_sdwt_prod = None
-    raw_user_sdwt_prod = getattr(user, "user_sdwt_prod", None)
-    if not (isinstance(raw_user_sdwt_prod, str) and raw_user_sdwt_prod.strip()):
-        pending_change = account_services.get_pending_user_sdwt_prod_change(user=user)
-        pending_user_sdwt_prod = pending_change.to_user_sdwt_prod if pending_change else None
+    pending_change = account_services.get_pending_user_sdwt_prod_change(user=user)
+    pending_user_sdwt_prod = pending_change.to_user_sdwt_prod if pending_change else None
+    has_pending_affiliation = pending_change is not None
     # -----------------------------------------------------------------------------
     # 3) 응답 페이로드 구성
     # -----------------------------------------------------------------------------
     payload = {
         "id": user.pk,
         "usr_id": getattr(user, "knox_id", None),  # = 사용자 모델의 knox_id
+        "avatarid": getattr(user, "avatarid", None),  # = 사용자 모델의 avatarid
         "username": username,  # = 사용자 표시용 이름(사용자 모델의 username)
         "email": user.email,
         "is_superuser": bool(getattr(user, "is_superuser", False)),
@@ -631,6 +646,7 @@ def auth_me(request: HttpRequest) -> JsonResponse:
         "line": getattr(user, "line", None),
         "user_sdwt_prod": getattr(user, "user_sdwt_prod", None),
         "pending_user_sdwt_prod": pending_user_sdwt_prod,
+        "has_pending_affiliation": has_pending_affiliation,
     }
     # -----------------------------------------------------------------------------
     # 4) 응답 반환

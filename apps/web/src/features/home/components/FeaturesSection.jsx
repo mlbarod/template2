@@ -13,7 +13,7 @@ import { MotionPreset } from '@/components/ui/motion-preset'
 import { Cursor, CursorFollow, CursorProvider } from '@/components/ui/cursor'
 
 import { LogoVector } from "@/components/common"
-import { buildProfileImageUrl, resolveProfileUserId } from '@/lib/profileImage'
+import { buildProfileImageUrl, resolveProfileAvatarId } from '@/lib/profileImage'
 import { cn } from '@/lib/utils'
 
 const FeaturesSection = ({
@@ -253,8 +253,8 @@ const FeaturesSection = ({
                     className='flex h-63 w-full items-center justify-center bg-green-600/10 sm:rounded-tl-md dark:bg-green-400/40'>
                     <div className='flex min-h-20 flex-1 items-center justify-center -space-x-4'>
                       {avatarData.map(item => {
-                        const profileUserId = resolveProfileUserId(item)
-                        const avatarSrc = buildProfileImageUrl(profileUserId)
+                        const profileAvatarId = resolveProfileAvatarId(item)
+                        const avatarSrc = buildProfileImageUrl(profileAvatarId)
 
                         return (
                           <div key={item.name}>

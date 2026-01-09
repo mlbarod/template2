@@ -85,7 +85,6 @@ export default function MembersPage() {
   const totalPages = requestsData?.totalPages || 1
   const canPrevious = page > 1
   const canNext = page < totalPages
-  const canManage = Boolean(requestsData?.canManage)
   const showPagination = activeTab === "all" || activeTab === "requests"
 
   const handleDecision = async (changeId, decision, rejectionReason) => {
@@ -142,6 +141,10 @@ export default function MembersPage() {
     ].filter(Boolean)
     const targetLabel =
       targetParts.length > 0 ? targetParts.join(" / ") : change?.toUserSdwtProd || "-"
+    const normalizedRole = (change?.role || "").toLowerCase()
+    const role = ["viewer", "member", "manager"].includes(normalizedRole)
+      ? normalizedRole
+      : "viewer"
     return {
       id: `request-${change.id}`,
       type: "request",
@@ -151,9 +154,14 @@ export default function MembersPage() {
       requestedAt: change.requestedAt,
       changeId: change.id,
       status: change.status || "PENDING",
+      role,
     }
   })
   const combinedRows = [...requestRows, ...memberRows]
+  const canApproveAny = requestRows.some(
+    (row) => row.role === "member" || row.role === "manager",
+  )
+  const showApprovalNotice = requestTotal > 0 && !canApproveAny
 
   const renderRows = (rows) => (
     <Table>
@@ -171,12 +179,15 @@ export default function MembersPage() {
         {rows.map((row) => {
           const isRequest = row.type === "request"
           const isPendingStatus = isRequest && row.status === "PENDING"
+          const canApprove = isRequest && (row.role === "member" || row.role === "manager")
           const statusLabel = isRequest
             ? row.status === "APPROVED"
               ? "승인"
               : row.status === "REJECTED"
                 ? "거절"
-                : "소속 변경 요청"
+                : row.status === "SUPERSEDED"
+                  ? "취소(대체됨)"
+                  : "소속 변경 요청"
             : "멤버"
           return (
             <TableRow key={row.id}>
@@ -197,7 +208,7 @@ export default function MembersPage() {
                     <Button
                       size="sm"
                       onClick={() => handleDecision(row.changeId, "approve")}
-                      disabled={!isPendingStatus || !canManage || decisionMutation.isPending}
+                      disabled={!isPendingStatus || !canApprove || decisionMutation.isPending}
                     >
                       승인
                     </Button>
@@ -205,7 +216,7 @@ export default function MembersPage() {
                       size="sm"
                       variant="outline"
                       onClick={() => handleRejectOpen(row)}
-                      disabled={!isPendingStatus || !canManage || decisionMutation.isPending}
+                      disabled={!isPendingStatus || !canApprove || decisionMutation.isPending}
                     >
                       거절
                     </Button>
@@ -281,9 +292,11 @@ export default function MembersPage() {
                   </SelectContent>
                 </Select>
               </div>
-              {!canManage ? (
+              {showApprovalNotice ? (
                 <div className="px-4 pt-3">
-                  <p className="text-xs text-muted-foreground">승인/거절은 관리자만 가능합니다.</p>
+                  <p className="text-xs text-muted-foreground">
+                    승인/거절은 멤버 또는 관리자만 가능합니다.
+                  </p>
                 </div>
               ) : null}
             </div>

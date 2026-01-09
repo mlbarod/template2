@@ -117,7 +117,7 @@ class User(AbstractUser):
     username = models.CharField(max_length=150, null=True, blank=True)
     sabun = models.CharField(max_length=50, unique=True)
     knox_id = models.CharField(max_length=150, null=True, blank=True, unique=True)
-    userid = models.CharField(max_length=50, null=True, blank=True)
+    avatarid = models.CharField(max_length=50, null=True, blank=True)
     username_en = models.CharField(max_length=150, null=True, blank=True)
     givenname = models.CharField(max_length=150, null=True, blank=True)
     surname = models.CharField(max_length=150, null=True, blank=True)
@@ -202,13 +202,18 @@ class Affiliation(models.Model):
 class UserSdwtProdAccess(models.Model):
     """사용자의 user_sdwt_prod 접근/관리 권한을 저장하는 모델입니다."""
 
+    class Roles(models.TextChoices):
+        VIEWER = "viewer", "Viewer"
+        MEMBER = "member", "Member"
+        MANAGER = "manager", "Manager"
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="sdwt_prod_access",
     )
     user_sdwt_prod = models.CharField(max_length=64)
-    can_manage = models.BooleanField(default=False)
+    role = models.CharField(max_length=16, choices=Roles.choices, default=Roles.VIEWER)
     granted_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
@@ -236,7 +241,7 @@ class UserSdwtProdAccess(models.Model):
 
     def __str__(self) -> str:  # 사람이 읽는 표현(커버리지 제외): pragma: no cover
         """접근 권한 표시용 문자열을 반환합니다."""
-        return f"{self.user_id} -> {self.user_sdwt_prod} ({'manager' if self.can_manage else 'member'})"
+        return f"{self.user_id} -> {self.user_sdwt_prod} ({self.role})"
 
 
 class UserSdwtProdChange(models.Model):
@@ -246,6 +251,7 @@ class UserSdwtProdChange(models.Model):
         PENDING = "PENDING", "Pending"
         APPROVED = "APPROVED", "Approved"
         REJECTED = "REJECTED", "Rejected"
+        SUPERSEDED = "SUPERSEDED", "Superseded"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,

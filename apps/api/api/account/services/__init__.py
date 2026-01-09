@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from .access import ensure_self_access, get_manageable_groups_with_members, grant_or_revoke_access
 from .affiliations import (
+    auto_approve_affiliation_from_snapshot,
     ensure_affiliation_option,
     get_affiliation_overview,
     get_affiliation_reconfirm_status,
@@ -31,6 +32,7 @@ from .users import ensure_user_profile, get_user_by_knox_id, resolve_target_user
 
 __all__ = [
     "approve_affiliation_change",
+    "auto_approve_affiliation_from_snapshot",
     "ensure_self_access",
     "ensure_affiliation_option",
     "ensure_user_profile",

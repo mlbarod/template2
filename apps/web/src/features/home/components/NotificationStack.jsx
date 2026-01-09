@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { motion } from 'motion/react'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { buildProfileImageUrl, resolveProfileUserId } from '@/lib/profileImage'
+import { buildProfileImageUrl, resolveProfileAvatarId } from '@/lib/profileImage'
 
 const NotificationStack = ({
   notifications: initialNotifications
@@ -27,8 +27,8 @@ const NotificationStack = ({
   return (
     <div className='relative h-24.5'>
       {notifications.map((notification, index) => {
-        const profileUserId = resolveProfileUserId(notification)
-        const avatarSrc = buildProfileImageUrl(profileUserId)
+        const profileAvatarId = resolveProfileAvatarId(notification)
+        const avatarSrc = buildProfileImageUrl(profileAvatarId)
 
         return (
           <motion.div

@@ -44,7 +44,7 @@ def get_account_overview(*, user: Any, timezone_name: str) -> dict[str, object]:
     # 1) 접근 가능 그룹 및 관리 가능 그룹 계산
     # -----------------------------------------------------------------------------
     access_list = _current_access_list(user)
-    manageable = [entry["userSdwtProd"] for entry in access_list if entry["canManage"]]
+    manageable = [entry["userSdwtProd"] for entry in access_list if entry["role"] == "manager"]
 
     # -----------------------------------------------------------------------------
     # 2) 프로필/소속 기본 정보 구성
@@ -95,12 +95,12 @@ def get_account_overview(*, user: Any, timezone_name: str) -> dict[str, object]:
         access = access_map.get(user_sdwt_prod)
         if access is None and is_privileged:
             access_source = "privileged"
-            can_manage = True
+            role = "manager"
             granted_by = None
             granted_at = None
         else:
             access_source = access.get("source") if access else "unknown"
-            can_manage = bool(access.get("canManage")) if access else False
+            role = access.get("role") if access else mailbox.get("role") or "viewer"
             granted_by = access.get("grantedBy") if access else None
             granted_at = access.get("grantedAt") if access else None
 
@@ -108,7 +108,7 @@ def get_account_overview(*, user: Any, timezone_name: str) -> dict[str, object]:
             {
                 **mailbox,
                 "accessSource": access_source,
-                "canManage": can_manage,
+                "role": role,
                 "grantedBy": granted_by,
                 "grantedAt": granted_at,
             }

@@ -18,6 +18,7 @@ import { DEFAULT_AUTH_CONFIG } from "../utils/authConfig"
 import { fetchJson } from "../utils/fetchJson"
 import { appendNextParam, buildNextUrl } from "../utils/url"
 import { UserSdwtProdOnboardingDialog } from "./UserSdwtProdOnboardingDialog"
+import { UserSdwtProdReconfirmDialog } from "./UserSdwtProdReconfirmDialog"
 
 /**
  * 인증 사용자 타입 정의
@@ -30,6 +31,7 @@ import { UserSdwtProdOnboardingDialog } from "./UserSdwtProdOnboardingDialog"
  * @property {string[]} [roles]
  * @property {string | null} [user_sdwt_prod]
  * @property {string | null} [pending_user_sdwt_prod]
+ * @property {boolean} [has_pending_affiliation]
  */
 
 /**
@@ -246,6 +248,7 @@ export function AuthProvider({ children }) {
     <AuthContext.Provider value={value}>
       {children}
       <UserSdwtProdOnboardingDialog user={user} onCompleted={loadUser} />
+      <UserSdwtProdReconfirmDialog user={user} onCompleted={loadUser} />
     </AuthContext.Provider>
   )
 }

@@ -19,6 +19,7 @@ from django.utils import timezone
 
 from ..models import ExternalAffiliationSnapshot
 from .. import selectors
+from .access import ensure_self_access
 
 
 def sync_external_affiliations(
@@ -110,10 +111,24 @@ def sync_external_affiliations(
         # -----------------------------------------------------------------------------
         if changed:
             user = selectors.get_user_by_knox_id(knox_id=knox_id)
-            if user is not None:
-                user.requires_affiliation_reconfirm = True
-                user.save(update_fields=["requires_affiliation_reconfirm"])
-                flagged += 1
+            if user is None:
+                continue
+
+            ensure_self_access(user, role="member")
+
+            if selectors.get_pending_user_sdwt_prod_change(user=user) is not None:
+                continue
+
+            current_user_sdwt = (getattr(user, "user_sdwt_prod", None) or "").strip()
+            if not current_user_sdwt:
+                continue
+
+            if current_user_sdwt == (predicted or "").strip():
+                continue
+
+            user.requires_affiliation_reconfirm = True
+            user.save(update_fields=["requires_affiliation_reconfirm"])
+            flagged += 1
 
     # -----------------------------------------------------------------------------
     # 6) 결과 반환

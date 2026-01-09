@@ -74,7 +74,7 @@ def get_mailbox_access_summary_for_user(*, user: Any) -> list[dict[str, object]]
                 "userSdwtProd": mailbox,
                 "memberCount": member_count,
                 "myEmailCount": int(current_member.get("emailCount", 0)) if current_member else 0,
-                "myCanManage": bool(current_member.get("canManage", False)) if current_member else False,
+                "role": current_member.get("role") if current_member else "viewer",
                 "myGrantedAt": current_member.get("grantedAt") if current_member else None,
                 "myGrantedBy": current_member.get("grantedBy") if current_member else None,
             }

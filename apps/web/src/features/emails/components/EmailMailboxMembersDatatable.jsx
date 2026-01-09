@@ -6,6 +6,7 @@ import {
   ChevronRightIcon,
   ChevronUpIcon,
   CrownIcon,
+  EyeIcon,
   UserRoundIcon,
 } from "lucide-react"
 
@@ -38,7 +39,23 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/common"
 
 import { cn } from "@/lib/utils"
-import { buildProfileImageUrl, resolveProfileUserId } from "@/lib/profileImage"
+import { buildProfileImageUrl, resolveProfileAvatarId } from "@/lib/profileImage"
+
+const ROLE_LABELS = {
+  viewer: "뷰어",
+  member: "멤버",
+  manager: "관리자",
+}
+
+const ROLE_VARIANTS = {
+  viewer: "secondary",
+  member: "outline",
+  manager: "default",
+}
+
+function resolveRole(value) {
+  return ROLE_LABELS[value] ? value : "viewer"
+}
 
 const COLUMNS = [
   {
@@ -51,8 +68,8 @@ const COLUMNS = [
           ? username
           : row.original.user || row.original.name || "Unknown"
       const knoxId = row.original.knoxId || row.original.knox_id || row.original.secondary || ""
-      const profileUserId = resolveProfileUserId(row.original)
-      const avatarSrc = buildProfileImageUrl(profileUserId)
+      const profileAvatarId = resolveProfileAvatarId(row.original)
+      const avatarSrc = buildProfileImageUrl(profileAvatarId)
 
       return (
         <div className="flex items-center gap-2">
@@ -73,21 +90,23 @@ const COLUMNS = [
   },
   {
     header: "권한",
-    accessorKey: "permission",
+    accessorKey: "role",
     cell: ({ row }) => {
-      const permission = row.getValue("permission")
-      const isAdmin = permission === "admin"
+      const role = resolveRole(row.getValue("role"))
+      const isManager = role === "manager"
+      const isMember = role === "member"
+      const Icon = isManager ? CrownIcon : isMember ? UserRoundIcon : EyeIcon
 
       return (
         <div className="flex items-center gap-2">
-          {isAdmin ? (
-            <CrownIcon className="size-4 text-primary" aria-hidden="true" />
-          ) : (
-            <UserRoundIcon className="size-4 text-muted-foreground" aria-hidden="true" />
-          )}
-          <Badge variant={isAdmin ? "default" : "outline"}>
-            {isAdmin ? "관리자" : "멤버"}
-          </Badge>
+          <Icon
+            className={cn(
+              "size-4",
+              isManager ? "text-primary" : "text-muted-foreground",
+            )}
+            aria-hidden="true"
+          />
+          <Badge variant={ROLE_VARIANTS[role]}>{ROLE_LABELS[role]}</Badge>
         </div>
       )
     },
@@ -153,14 +172,14 @@ function getPagination({
   return { pages, showLeftEllipsis, showRightEllipsis }
 }
 
-function PermissionFilter({ column }) {
+function RoleFilter({ column }) {
   const id = useId()
   const filterValue = column?.getFilterValue()
   const value = typeof filterValue === "string" ? filterValue : "all"
 
   return (
     <div className="w-full space-y-2">
-      <Label htmlFor={`${id}-permission`}>권한</Label>
+      <Label htmlFor={`${id}-role`}>권한</Label>
       <Select
         value={value}
         onValueChange={(nextValue) => {
@@ -168,13 +187,14 @@ function PermissionFilter({ column }) {
           column.setFilterValue(nextValue === "all" ? undefined : nextValue)
         }}
       >
-        <SelectTrigger id={`${id}-permission`} className="w-full">
+        <SelectTrigger id={`${id}-role`} className="w-full">
           <SelectValue placeholder="권한 선택" />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">전체</SelectItem>
-          <SelectItem value="admin">관리자</SelectItem>
+          <SelectItem value="manager">관리자</SelectItem>
           <SelectItem value="member">멤버</SelectItem>
+          <SelectItem value="viewer">뷰어</SelectItem>
         </SelectContent>
       </Select>
     </div>
@@ -219,7 +239,7 @@ export function EmailMailboxMembersDatatable({ data }) {
     paginationItemsToDisplay: 2,
   })
 
-  const permissionColumn = table.getColumn("permission")
+  const roleColumn = table.getColumn("role")
 
   return (
     <div className="grid h-full min-h-0 grid-rows-[130px_1fr_auto]">
@@ -227,7 +247,7 @@ export function EmailMailboxMembersDatatable({ data }) {
         <div className="flex flex-col gap-3 p-4">
           <span className="text-lg font-semibold text-foreground">필터</span>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
-            <PermissionFilter column={permissionColumn} />
+            <RoleFilter column={roleColumn} />
           </div>
         </div>
       </div>

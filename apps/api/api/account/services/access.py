@@ -19,12 +19,81 @@ from .. import selectors
 from .utils import _user_can_manage_user_sdwt_prod
 
 
-def ensure_self_access(user: Any, *, as_manager: bool = False) -> UserSdwtProdAccess | None:
+ROLE_ORDER = {
+    UserSdwtProdAccess.Roles.VIEWER: 0,
+    UserSdwtProdAccess.Roles.MEMBER: 1,
+    UserSdwtProdAccess.Roles.MANAGER: 2,
+}
+
+
+def _normalize_access_role(role: str) -> str:
+    """접근 권한 역할을 정규화합니다.
+
+    입력:
+    - role: viewer/member/manager 중 하나
+
+    반환:
+    - str: 정규화된 역할
+
+    부작용:
+    - 없음
+
+    오류:
+    - 없음
+    """
+
+    normalized = (role or "").strip().lower()
+    if normalized in ROLE_ORDER:
+        return normalized
+    return UserSdwtProdAccess.Roles.VIEWER
+
+
+def _normalize_role_for_current_affiliation(
+    *,
+    user: Any,
+    user_sdwt_prod: str,
+    role: str,
+) -> str:
+    """현재 소속에 대한 viewer 요청을 member로 승급합니다.
+
+    입력:
+    - user: Django 사용자 객체
+    - user_sdwt_prod: 대상 소속
+    - role: 요청 역할(viewer/member/manager)
+
+    반환:
+    - str: 정규화된 역할
+
+    부작용:
+    - 없음
+
+    오류:
+    - 없음
+    """
+
+    normalized_role = _normalize_access_role(role)
+    current_user_sdwt = (getattr(user, "user_sdwt_prod", None) or "").strip()
+    target_user_sdwt = (user_sdwt_prod or "").strip()
+    if current_user_sdwt and target_user_sdwt and current_user_sdwt == target_user_sdwt:
+        if normalized_role == UserSdwtProdAccess.Roles.VIEWER:
+            return UserSdwtProdAccess.Roles.MEMBER
+    return normalized_role
+
+
+def _should_upgrade_role(current_role: str, target_role: str) -> bool:
+    """현재 역할에서 목표 역할로 상향이 필요한지 확인합니다."""
+
+    current_rank = ROLE_ORDER.get(current_role, 0)
+    target_rank = ROLE_ORDER.get(target_role, 0)
+    return target_rank > current_rank
+
+
+def ensure_self_access(user: Any, *, role: str = UserSdwtProdAccess.Roles.MEMBER) -> UserSdwtProdAccess | None:
     """사용자 본인의 user_sdwt_prod 접근 권한 행을 보장합니다.
 
     입력:
     - user: Django 사용자 객체
-    - as_manager: True면 can_manage 권한 부여
+    - role: 부여할 역할(viewer/member/manager)
 
     반환:
     - UserSdwtProdAccess | None: 접근 권한 행 또는 None
@@ -46,15 +115,44 @@ def ensure_self_access(user: Any, *, as_manager: bool = False) -> UserSdwtProdAc
     # -----------------------------------------------------------------------------
     # 2) 접근 권한 행 생성/업데이트
     # -----------------------------------------------------------------------------
+    normalized_role = _normalize_role_for_current_affiliation(
+        user=user,
+        user_sdwt_prod=user_sdwt_prod,
+        role=role,
+    )
+
     access, created = UserSdwtProdAccess.objects.get_or_create(
         user=user,
         user_sdwt_prod=user_sdwt_prod,
-        defaults={"can_manage": as_manager, "granted_by": None},
+        defaults={"role": normalized_role, "granted_by": None},
     )
-    if not created and as_manager and not access.can_manage:
-        access.can_manage = True
-        access.save(update_fields=["can_manage"])
+    if not created and _should_upgrade_role(access.role, normalized_role):
+        access.role = normalized_role
+        access.save(update_fields=["role"])
     return access
+
+
+def downgrade_member_access(*, user: Any, user_sdwt_prod: str) -> None:
+    """특정 소속의 member 역할을 viewer로 강등합니다.
+
+    입력:
+    - user: Django 사용자 객체
+    - user_sdwt_prod: 대상 소속
+
+    반환:
+    - 없음
+
+    부작용:
+    - UserSdwtProdAccess role 업데이트
+
+    오류:
+    - 없음
+    """
+
+    access = selectors.get_access_row_for_user_and_prod(user=user, user_sdwt_prod=user_sdwt_prod)
+    if access and access.role == UserSdwtProdAccess.Roles.MEMBER:
+        access.role = UserSdwtProdAccess.Roles.VIEWER
+        access.save(update_fields=["role"])
 
 
 def grant_or_revoke_access(
@@ -63,7 +161,7 @@ def grant_or_revoke_access(
     target_group: str,
     target_user: Any,
     action: str,
-    can_manage: bool,
+    role: str | None,
 ) -> tuple[dict[str, object], int]:
     """사용자의 user_sdwt_prod 그룹 접근 권한을 부여/회수합니다.
 
@@ -72,7 +170,7 @@ def grant_or_revoke_access(
     - target_group: 대상 그룹
     - target_user: 대상 사용자
     - action: grant/revoke (부여/회수)
-    - can_manage: 관리 권한 부여 여부
+    - role: 부여할 역할(viewer/member/manager)
 
     반환:
     - tuple[dict[str, object], int]: (payload, status_code) (응답 본문, 상태 코드)
@@ -88,7 +186,7 @@ def grant_or_revoke_access(
     # -----------------------------------------------------------------------------
     # 1) 부여자 기본 접근 권한 보장
     # -----------------------------------------------------------------------------
-    ensure_self_access(grantor, as_manager=False)
+    ensure_self_access(grantor, role=UserSdwtProdAccess.Roles.MEMBER)
 
     # -----------------------------------------------------------------------------
     # 2) 권한 검증
@@ -101,6 +199,9 @@ def grant_or_revoke_access(
     # -----------------------------------------------------------------------------
     normalized_action = (action or "grant").lower()
     if normalized_action == "revoke":
+        current_target_sdwt = (getattr(target_user, "user_sdwt_prod", None) or "").strip()
+        if current_target_sdwt and current_target_sdwt == target_group:
+            return {"error": "Cannot revoke access for the user's current affiliation"}, 400
         access = selectors.get_access_row_for_user_and_prod(
             user=target_user,
             user_sdwt_prod=target_group,
@@ -108,7 +209,7 @@ def grant_or_revoke_access(
         if not access:
             return {"status": "ok", "deleted": 0}, 200
 
-        if access.can_manage:
+        if access.role == UserSdwtProdAccess.Roles.MANAGER:
             if not selectors.other_manager_exists(
                 user_sdwt_prod=target_group,
                 exclude_user=target_user,
@@ -121,15 +222,20 @@ def grant_or_revoke_access(
     # -----------------------------------------------------------------------------
     # 4) 부여 처리
     # -----------------------------------------------------------------------------
+    normalized_role = _normalize_role_for_current_affiliation(
+        user=target_user,
+        user_sdwt_prod=target_group,
+        role=role or UserSdwtProdAccess.Roles.VIEWER,
+    )
     access, created = UserSdwtProdAccess.objects.get_or_create(
         user=target_user,
         user_sdwt_prod=target_group,
-        defaults={"can_manage": can_manage, "granted_by": grantor},
+        defaults={"role": normalized_role, "granted_by": grantor},
     )
-    if not created and (access.can_manage != can_manage or access.granted_by_id != grantor.id):
-        access.can_manage = can_manage
+    if not created and (access.role != normalized_role or access.granted_by_id != grantor.id):
+        access.role = normalized_role
         access.granted_by = grantor
-        access.save(update_fields=["can_manage", "granted_by"])
+        access.save(update_fields=["role", "granted_by"])
 
     # -----------------------------------------------------------------------------
     # 5) 결과 반환
@@ -157,9 +263,6 @@ def get_manageable_groups_with_members(*, user: Any) -> dict[str, object]:
     # 1) 관리 가능한 그룹 집합 계산
     # -----------------------------------------------------------------------------
     manageable_set = selectors.list_manageable_user_sdwt_prod_values(user=user)
-    user_sdwt_prod = getattr(user, "user_sdwt_prod", None)
-    if isinstance(user_sdwt_prod, str) and user_sdwt_prod.strip():
-        manageable_set.add(user_sdwt_prod)
 
     groups: List[Dict[str, object]] = []
     if not manageable_set:
@@ -200,14 +303,19 @@ def _serialize_access(access: UserSdwtProdAccess, source: str) -> Dict[str, obje
 
     return {
         "userSdwtProd": access.user_sdwt_prod,
-        "canManage": access.can_manage,
+        "role": access.role,
         "source": source,
         "grantedBy": access.granted_by_id,
         "grantedAt": access.created_at.isoformat(),
     }
 
 
-def _serialize_access_fallback(*, user_sdwt_prod: str, source: str) -> Dict[str, object]:
+def _serialize_access_fallback(
+    *,
+    user_sdwt_prod: str,
+    source: str,
+    role: str,
+) -> Dict[str, object]:
     """DB row가 없는 경우를 위한 접근 권한 기본값을 생성합니다.
 
     입력:
@@ -226,7 +334,7 @@ def _serialize_access_fallback(*, user_sdwt_prod: str, source: str) -> Dict[str,
 
     return {
         "userSdwtProd": user_sdwt_prod,
-        "canManage": False,
+        "role": role,
         "source": source,
         "grantedBy": None,
         "grantedAt": None,
@@ -256,7 +364,7 @@ def _serialize_member(access: UserSdwtProdAccess) -> Dict[str, object]:
         "name": (user.first_name or "") + (user.last_name or ""),
         "knoxId": getattr(user, "knox_id", None),
         "userSdwtProd": access.user_sdwt_prod,
-        "canManage": access.can_manage,
+        "role": access.role,
         "grantedBy": access.granted_by_id,
         "grantedAt": access.created_at.isoformat(),
     }
@@ -298,7 +406,18 @@ def _current_access_list(user: Any) -> List[Dict[str, object]]:
     for prod, entry in sorted(access_map.items()):
         source = "self" if prod == current_user_sdwt else "grant"
         if entry is None:
-            result.append(_serialize_access_fallback(user_sdwt_prod=prod, source=source))
+            fallback_role = (
+                UserSdwtProdAccess.Roles.MEMBER
+                if prod == current_user_sdwt
+                else UserSdwtProdAccess.Roles.VIEWER
+            )
+            result.append(
+                _serialize_access_fallback(
+                    user_sdwt_prod=prod,
+                    source=source,
+                    role=fallback_role,
+                )
+            )
         else:
             result.append(_serialize_access(entry, source))
     return result

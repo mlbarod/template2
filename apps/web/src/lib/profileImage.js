@@ -23,13 +23,13 @@ function readEnvValue(...keys) {
   return undefined
 }
 
-function normalizeUserId(value) {
+function normalizeAvatarId(value) {
   if (typeof value === "string") return value.trim()
   if (typeof value === "number" && Number.isFinite(value)) return String(value)
   return ""
 }
 
-function normalizeUserIdString(value) {
+function normalizeAvatarIdString(value) {
   return typeof value === "string" ? value.trim() : ""
 }
 
@@ -41,18 +41,21 @@ export function getMinioBaseUrl() {
   return removeTrailingSlash(envValue.trim())
 }
 
-export function resolveProfileUserId(source) {
+export function resolveProfileAvatarId(source) {
   if (!source || typeof source !== "object") return ""
 
   return (
-    normalizeUserIdString(source.userid) ||
-    normalizeUserIdString(source.userId) ||
-    normalizeUserIdString(source.user_id)
+    normalizeAvatarIdString(source.avatarid) ||
+    normalizeAvatarIdString(source.avatarId) ||
+    normalizeAvatarIdString(source.avatar_id) ||
+    normalizeAvatarIdString(source.userid) ||
+    normalizeAvatarIdString(source.userId) ||
+    normalizeAvatarIdString(source.user_id)
   )
 }
 
-export function buildProfileImageUrl(userId) {
-  const normalized = normalizeUserId(userId)
+export function buildProfileImageUrl(avatarId) {
+  const normalized = normalizeAvatarId(avatarId)
   if (!normalized) return ""
 
   const base = getMinioBaseUrl()

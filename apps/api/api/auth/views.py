@@ -166,7 +166,7 @@ def auth_me(request: HttpRequest):
     - 예시 요청: GET /api/v1/auth/me
 
     예시 응답:
-    - 예시 응답: 200 {"id": 1, "usr_id": "...", "username": "..."}
+    - 예시 응답: 200 {"id": 1, "usr_id": "...", "avatarid": "U-12345", "username": "...", "has_pending_affiliation": false}
 
     snake/camel 호환:
     - 해당 없음(요청 바디 없음)

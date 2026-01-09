@@ -9,6 +9,22 @@ import {
   TableRow,
 } from "@/components/common"
 
+const ROLE_LABELS = {
+  viewer: "뷰어",
+  member: "멤버",
+  manager: "관리자",
+}
+
+const ROLE_VARIANTS = {
+  viewer: "secondary",
+  member: "outline",
+  manager: "default",
+}
+
+function resolveRole(value) {
+  return ROLE_LABELS[value] ? value : "viewer"
+}
+
 const SOURCE_LABELS = {
   self: "내 소속",
   grant: "부여됨",
@@ -58,26 +74,25 @@ export function MailboxAccessCard({ mailboxes }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {mailboxes.map((mailbox) => (
-                <TableRow key={mailbox.userSdwtProd}>
-                  <TableCell className="font-medium">{mailbox.userSdwtProd}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {SOURCE_LABELS[mailbox.accessSource] || mailbox.accessSource || "-"}
-                  </TableCell>
-                  <TableCell>
-                    {mailbox.canManage ? (
-                      <Badge variant="default">관리자</Badge>
-                    ) : (
-                      <Badge variant="outline">멤버</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-sm">{mailbox.memberCount ?? "-"}</TableCell>
-                  <TableCell className="text-sm">{mailbox.myEmailCount ?? "-"}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {formatDate(mailbox.grantedAt || mailbox.myGrantedAt)}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {mailboxes.map((mailbox) => {
+                const role = resolveRole(mailbox.role)
+                return (
+                  <TableRow key={mailbox.userSdwtProd}>
+                    <TableCell className="font-medium">{mailbox.userSdwtProd}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {SOURCE_LABELS[mailbox.accessSource] || mailbox.accessSource || "-"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={ROLE_VARIANTS[role]}>{ROLE_LABELS[role]}</Badge>
+                    </TableCell>
+                    <TableCell className="text-sm">{mailbox.memberCount ?? "-"}</TableCell>
+                    <TableCell className="text-sm">{mailbox.myEmailCount ?? "-"}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {formatDate(mailbox.grantedAt || mailbox.myGrantedAt)}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
         </div>

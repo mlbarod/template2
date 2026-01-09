@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import {
   Table,
@@ -14,6 +15,32 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/common"
+
+const ROLE_LABELS = {
+  viewer: "뷰어",
+  member: "멤버",
+  manager: "관리자",
+}
+
+const ROLE_VARIANTS = {
+  viewer: "secondary",
+  member: "outline",
+  manager: "default",
+}
+
+const ROLE_OPTIONS = [
+  { value: "viewer", label: "뷰어 (보기 전용)" },
+  { value: "member", label: "멤버 (승인 가능)" },
+  { value: "manager", label: "관리자 (승인 + 권한 관리)" },
+]
+
+function getRoleLabel(role) {
+  return ROLE_LABELS[role] || ROLE_LABELS.viewer
+}
+
+function getRoleVariant(role) {
+  return ROLE_VARIANTS[role] || ROLE_VARIANTS.viewer
+}
 
 function MembersTable({ groups, onRevoke }) {
   if (!groups?.length) {
@@ -50,11 +77,9 @@ function MembersTable({ groups, onRevoke }) {
                         </div>
                       </TableCell>
                       <TableCell>
-                        {member.canManage ? (
-                          <Badge variant="default">관리자</Badge>
-                        ) : (
-                          <Badge variant="outline">멤버</Badge>
-                        )}
+                        <Badge variant={getRoleVariant(member.role)}>
+                          {getRoleLabel(member.role)}
+                        </Badge>
                       </TableCell>
                       <TableCell className="text-right">
                         <Button
@@ -90,10 +115,10 @@ export function ManageGrantsCard({
   isSubmitting,
   error,
 }) {
-  const groupOptions = useMemo(() => manageableGroups?.groups || [], [manageableGroups?.groups])
+  const groupOptions = manageableGroups?.groups || []
   const [selectedGroup, setSelectedGroup] = useState("")
   const [knoxId, setKnoxId] = useState("")
-  const [canManage, setCanManage] = useState(false)
+  const [role, setRole] = useState("member")
   const hasGroups = groupOptions.length > 0
 
   useEffect(() => {
@@ -109,11 +134,11 @@ export function ManageGrantsCard({
       {
         userSdwtProd: selectedGroup,
         knox_id: knoxId,
-        canManage,
+        role,
       },
       () => {
         setKnoxId("")
-        setCanManage(false)
+        setRole("member")
       },
     )
   }
@@ -157,18 +182,27 @@ export function ManageGrantsCard({
             />
             <p className="text-sm text-muted-foreground">knox_id 기준으로 권한을 부여합니다.</p>
           </div>
-          <div className="flex items-center gap-2">
-            <input
-              id="grantManage"
-              type="checkbox"
-              checked={canManage}
-              onChange={(e) => setCanManage(e.target.checked)}
-              className="h-4 w-4 accent-primary"
+          <div className="grid gap-2">
+            <Label htmlFor="grantRole">권한 역할</Label>
+            <Select
+              value={role}
+              onValueChange={setRole}
               disabled={!hasGroups}
-            />
-            <Label htmlFor="grantManage" className="text-sm">
-              관리자 권한 포함
-            </Label>
+            >
+              <SelectTrigger id="grantRole" className="h-9">
+                <SelectValue placeholder="권한 역할 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                {ROLE_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              viewer는 보기만, member는 승인 가능, manager는 승인과 권한 관리를 포함합니다.
+            </p>
           </div>
 
           {!hasGroups ? (

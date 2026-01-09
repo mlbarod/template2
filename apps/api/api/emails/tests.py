@@ -133,6 +133,10 @@ class EmailAffiliationTests(TestCase):
             line="Line",
             user_sdwt_prod="group-new",
         )
+        approver = User.objects.create_user(sabun="S77778", password="test-password")
+        approver.user_sdwt_prod = "group-new"
+        approver.save(update_fields=["user_sdwt_prod"])
+        account_services.ensure_self_access(approver, role="manager")
         payload, status_code = account_services.request_affiliation_change(
             user=user,
             option=option,
@@ -145,10 +149,6 @@ class EmailAffiliationTests(TestCase):
         # -------------------------------------------------------------------------
         # 2) 승인 권한 보장 및 승인 처리
         # -------------------------------------------------------------------------
-        approver = User.objects.create_user(sabun="S77778", password="test-password")
-        approver.user_sdwt_prod = "group-new"
-        approver.save(update_fields=["user_sdwt_prod"])
-        account_services.ensure_self_access(approver, as_manager=True)
         approve_payload, approve_status = account_services.approve_affiliation_change(
             approver=approver,
             change_id=payload["changeId"],
@@ -630,13 +630,13 @@ class EmailMailboxAccessViewTests(TestCase):
         manager = User.objects.create_user(sabun="S11113", password="test-password")
         manager.user_sdwt_prod = "group-empty"
         manager.save(update_fields=["user_sdwt_prod"])
-        account_services.ensure_self_access(manager, as_manager=True)
+        account_services.ensure_self_access(manager, role="manager")
         _, status_code = account_services.grant_or_revoke_access(
             grantor=manager,
             target_group="group-empty",
             target_user=user,
             action="grant",
-            can_manage=False,
+            role="member",
         )
         self.assertEqual(status_code, 200)
 
@@ -670,13 +670,13 @@ class EmailMailboxAccessViewTests(TestCase):
         manager = User.objects.create_user(sabun="S22223", password="test-password")
         manager.user_sdwt_prod = "group-b"
         manager.save(update_fields=["user_sdwt_prod"])
-        account_services.ensure_self_access(manager, as_manager=True)
+        account_services.ensure_self_access(manager, role="manager")
         _, status_code = account_services.grant_or_revoke_access(
             grantor=manager,
             target_group="group-b",
             target_user=user,
             action="grant",
-            can_manage=False,
+            role="member",
         )
         self.assertEqual(status_code, 200)
 
@@ -746,13 +746,13 @@ class EmailMailboxAccessViewTests(TestCase):
         manager = User.objects.create_user(sabun="S33336", password="test-password")
         manager.user_sdwt_prod = "group-a"
         manager.save(update_fields=["user_sdwt_prod"])
-        account_services.ensure_self_access(manager, as_manager=True)
+        account_services.ensure_self_access(manager, role="manager")
         _, status_code = account_services.grant_or_revoke_access(
             grantor=manager,
             target_group="group-a",
             target_user=granted,
             action="grant",
-            can_manage=True,
+            role="manager",
         )
         self.assertEqual(status_code, 200)
 
@@ -817,7 +817,7 @@ class EmailMailboxAccessViewTests(TestCase):
         self.assertEqual(affiliated_member["knoxId"], affiliated.knox_id)
 
         granted_member = next(item for item in members if item["userId"] == granted.id)
-        self.assertTrue(granted_member["canManage"])
+        self.assertEqual(granted_member["role"], "manager")
         self.assertEqual(granted_member["emailCount"], 0)
         self.assertEqual(granted_member["username"], granted.username)
         self.assertEqual(granted_member["knoxId"], granted.knox_id)
@@ -878,13 +878,13 @@ class EmailMailboxAccessViewTests(TestCase):
         manager = User.objects.create_user(sabun="S55557", password="test-password")
         manager.user_sdwt_prod = "group-b"
         manager.save(update_fields=["user_sdwt_prod"])
-        account_services.ensure_self_access(manager, as_manager=True)
+        account_services.ensure_self_access(manager, role="manager")
         _, status_code = account_services.grant_or_revoke_access(
             grantor=manager,
             target_group="group-b",
             target_user=user,
             action="grant",
-            can_manage=False,
+            role="member",
         )
         self.assertEqual(status_code, 200)
 
@@ -1776,13 +1776,13 @@ class EmailEndpointTests(TestCase):
         manager = User.objects.create_user(sabun="S77779", password="test-password")
         manager.user_sdwt_prod = "group-b"
         manager.save(update_fields=["user_sdwt_prod"])
-        account_services.ensure_self_access(manager, as_manager=True)
+        account_services.ensure_self_access(manager, role="manager")
         _, status_code = account_services.grant_or_revoke_access(
             grantor=manager,
             target_group="group-b",
             target_user=self.user,
             action="grant",
-            can_manage=False,
+            role="member",
         )
         self.assertEqual(status_code, 200)
 

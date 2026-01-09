@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom"
 import { BadgeCheck, Bell, ChevronsUpDown, LogOut, MessageSquare } from "lucide-react"
 
 import { useAuth } from "@/lib/auth"
-import { buildProfileImageUrl, resolveProfileUserId } from "@/lib/profileImage"
+import { buildProfileImageUrl, resolveProfileAvatarId } from "@/lib/profileImage"
 import { Avatar, AvatarFallback, AvatarImage } from "components/ui/avatar"
 import {
   DropdownMenu,
@@ -40,10 +40,10 @@ function normalizeUser(u) {
   if (!u || typeof u !== "object") return null
   const name = u.username ?? u.displayName ?? ""
   const email = u.email ?? ""
-  const userid = resolveProfileUserId(u)
+  const avatarid = resolveProfileAvatarId(u)
   // name/email 둘 다 없으면 렌더 의미가 낮으므로 null 처리
   if (!name && !email) return null
-  return { name, email, userid }
+  return { name, email, avatarid }
 }
 
 /* -----------------------------------------------------------------------------
@@ -56,7 +56,7 @@ function normalizeUser(u) {
  * - 클릭 핸들러는 props 콜백으로 주입 가능 (미제공 시 동작 없음)
  *
  * @param {Object} props
- * @param {Object} props.user               - 사용자 객체 { username, email, userid } (느슨히 수용, normalizeUser에서 정규화)
+ * @param {Object} props.user               - 사용자 객체 { username, email, avatarid } (느슨히 수용, normalizeUser에서 정규화)
  * @param {Function} [props.onAccount]      - "계정" 클릭 콜백
  * @param {Function} [props.onVoc]          - "VOC" 클릭 콜백
  * @param {Function} [props.onNotifications]- "알림" 클릭 콜백
@@ -108,9 +108,9 @@ export function NavUser({
   }
   if (!normalized) return null
 
-  const { name, email, userid } = normalized
+  const { name, email, avatarid } = normalized
   const initial = getInitial(name || email || "U") // 이름 없으면 이메일에서라도 생성
-  const avatarSrc = buildProfileImageUrl(userid)
+  const avatarSrc = buildProfileImageUrl(avatarid)
 
   return (
     <SidebarMenu>

@@ -14,7 +14,7 @@ import {
 
 import { Logo, ThemeColorSelector, ThemeToggle } from "@/components/common"
 import { useAuth } from "@/lib/auth"
-import { buildProfileImageUrl, resolveProfileUserId } from "@/lib/profileImage"
+import { buildProfileImageUrl, resolveProfileAvatarId } from "@/lib/profileImage"
 import { cn } from "@/lib/utils"
 
 import NotificationDropdown from "./NotificationDropdown"
@@ -23,8 +23,8 @@ import ProfileDropdown from "./ProfileDropdown"
 
 const HomeNavbar = ({ navigationItems }) => {
   const { user } = useAuth()
-  const profileUserId = resolveProfileUserId(user)
-  const avatarSrc = buildProfileImageUrl(profileUserId)
+  const profileAvatarId = resolveProfileAvatarId(user)
+  const avatarSrc = buildProfileImageUrl(profileAvatarId)
   const displayName = user?.username || user?.email || "U"
   const initials = displayName.slice(0, 2).toUpperCase()
 

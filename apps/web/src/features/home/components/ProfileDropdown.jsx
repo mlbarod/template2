@@ -9,7 +9,7 @@ import {
 
 import { useAuth } from '@/lib/auth'
 import { buildBackendUrl } from '@/lib/api'
-import { buildProfileImageUrl, resolveProfileUserId } from '@/lib/profileImage'
+import { buildProfileImageUrl, resolveProfileAvatarId } from '@/lib/profileImage'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -31,8 +31,8 @@ const ProfileDropdown = ({
 
   const displayName = user?.username || 'John Doe'
   const email = user?.email || 'john.doe@example.com'
-  const profileUserId = resolveProfileUserId(user)
-  const avatarSrc = buildProfileImageUrl(profileUserId)
+  const profileAvatarId = resolveProfileAvatarId(user)
+  const avatarSrc = buildProfileImageUrl(profileAvatarId)
   const initials = (displayName || email || 'JD').slice(0, 2).toUpperCase()
 
   const handleLogout = () => {

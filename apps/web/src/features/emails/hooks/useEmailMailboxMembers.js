@@ -22,9 +22,24 @@ function toSafeNumber(value) {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+function resolveRole(member) {
+  const role = normalizeText(member?.role)
+  if (role === "viewer" || role === "member" || role === "manager") {
+    return role
+  }
+  return "viewer"
+}
+
 function buildMemberRow(member) {
   const userId = member?.userId ?? member?.user_id ?? ""
-  const userid = normalizeText(member?.userid ?? member?.userId ?? member?.user_id)
+  const avatarid = normalizeText(
+    member?.avatarid ??
+      member?.avatarId ??
+      member?.avatar_id ??
+      member?.userid ??
+      member?.userId ??
+      member?.user_id,
+  )
   const name = normalizeText(member?.name)
   const username = normalizeText(member?.username)
   const knoxId = normalizeText(member?.knoxId ?? member?.knox_id)
@@ -39,7 +54,7 @@ function buildMemberRow(member) {
   return {
     id,
     userId,
-    userid,
+    avatarid,
     userSdwtProd,
     name,
     username,
@@ -47,7 +62,7 @@ function buildMemberRow(member) {
     user: primary,
     secondary,
     fallback: getAvatarFallback(username || primary),
-    permission: member?.canManage || member?.can_manage ? "admin" : "member",
+    role: resolveRole(member),
     emailCount: toSafeNumber(member?.emailCount),
   }
 }

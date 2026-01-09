@@ -280,7 +280,7 @@ def user_has_manage_permission(*, user: Any, user_sdwt_prod: str) -> bool:
     return UserSdwtProdAccess.objects.filter(
         user=user,
         user_sdwt_prod=user_sdwt_prod,
-        can_manage=True,
+        role=UserSdwtProdAccess.Roles.MANAGER,
     ).exists()
 
 
@@ -544,7 +544,7 @@ def other_manager_exists(
     user_sdwt_prod: str,
     exclude_user: Any,
 ) -> bool:
-    """그룹에 현재 사용자 외 다른 관리자(can_manage)가 존재하는지 확인합니다.
+    """그룹에 현재 사용자 외 다른 관리자(role=manager)가 존재하는지 확인합니다.
 
     입력:
     - user_sdwt_prod: 소속 식별자
@@ -561,14 +561,17 @@ def other_manager_exists(
     """
 
     return (
-        UserSdwtProdAccess.objects.filter(user_sdwt_prod=user_sdwt_prod, can_manage=True)
+        UserSdwtProdAccess.objects.filter(
+            user_sdwt_prod=user_sdwt_prod,
+            role=UserSdwtProdAccess.Roles.MANAGER,
+        )
         .exclude(user=exclude_user)
         .exists()
     )
 
 
 def list_manageable_user_sdwt_prod_values(*, user: Any) -> set[str]:
-    """사용자가 관리(can_manage)할 수 있는 user_sdwt_prod 값 집합을 조회합니다.
+    """사용자가 관리(role=manager)할 수 있는 user_sdwt_prod 값 집합을 조회합니다.
 
     입력:
     - user: Django 사용자 객체
@@ -584,7 +587,10 @@ def list_manageable_user_sdwt_prod_values(*, user: Any) -> set[str]:
     """
 
     values = set(
-        UserSdwtProdAccess.objects.filter(user=user, can_manage=True).values_list(
+        UserSdwtProdAccess.objects.filter(
+            user=user,
+            role=UserSdwtProdAccess.Roles.MANAGER,
+        ).values_list(
             "user_sdwt_prod",
             flat=True,
         )
@@ -592,9 +598,63 @@ def list_manageable_user_sdwt_prod_values(*, user: Any) -> set[str]:
     return {val for val in values if isinstance(val, str) and val.strip()}
 
 
+def list_approvable_user_sdwt_prod_values(*, user: Any) -> set[str]:
+    """사용자가 승인(role=member/manager)할 수 있는 user_sdwt_prod 값 집합을 조회합니다.
+
+    입력:
+    - user: Django 사용자 객체
+
+    반환:
+    - set[str]: 승인 가능한 user_sdwt_prod 집합
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - 없음
+    """
+
+    values = set(
+        UserSdwtProdAccess.objects.filter(
+            user=user,
+            role__in=[UserSdwtProdAccess.Roles.MEMBER, UserSdwtProdAccess.Roles.MANAGER],
+        ).values_list(
+            "user_sdwt_prod",
+            flat=True,
+        )
+    )
+    return {val for val in values if isinstance(val, str) and val.strip()}
+
+
+def has_approver_for_user_sdwt_prod(*, user_sdwt_prod: str) -> bool:
+    """특정 소속에 승인(role=member/manager) 가능한 사용자가 존재하는지 확인합니다.
+
+    입력:
+    - user_sdwt_prod: 소속 식별자
+
+    반환:
+    - bool: 승인 가능 사용자 존재 여부
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - 없음
+    """
+
+    normalized = (user_sdwt_prod or "").strip()
+    if not normalized:
+        return False
+
+    return UserSdwtProdAccess.objects.filter(
+        user_sdwt_prod=normalized,
+        role__in=[UserSdwtProdAccess.Roles.MEMBER, UserSdwtProdAccess.Roles.MANAGER],
+    ).exists()
+
+
 def list_affiliation_change_requests(
     *,
-    manageable_user_sdwt_prods: set[str] | None,
+    allowed_user_sdwt_prods: set[str] | None,
     status: str | None,
     search: str | None,
     user_sdwt_prod: str | None,
@@ -602,8 +662,8 @@ def list_affiliation_change_requests(
     """승인 대상 소속 변경 요청 목록을 필터링하여 조회합니다.
 
     입력:
-    - manageable_user_sdwt_prods: 관리 가능한 user_sdwt_prod 집합(None이면 전체)
-    - status: 상태 필터(PENDING/APPROVED/REJECTED)
+    - allowed_user_sdwt_prods: 조회 가능한 user_sdwt_prod 집합(None이면 전체)
+    - status: 상태 필터(PENDING/APPROVED/REJECTED/SUPERSEDED)
     - search: 사용자 정보 검색어
     - user_sdwt_prod: to_user_sdwt_prod 필터
 
@@ -623,12 +683,12 @@ def list_affiliation_change_requests(
     qs = UserSdwtProdChange.objects.select_related("user", "created_by", "approved_by")
 
     # -----------------------------------------------------------------------------
-    # 2) 관리 가능 범위 필터
+    # 2) 조회 가능 범위 필터
     # -----------------------------------------------------------------------------
-    if manageable_user_sdwt_prods is not None:
-        if not manageable_user_sdwt_prods:
+    if allowed_user_sdwt_prods is not None:
+        if not allowed_user_sdwt_prods:
             return UserSdwtProdChange.objects.none()
-        qs = qs.filter(to_user_sdwt_prod__in=manageable_user_sdwt_prods)
+        qs = qs.filter(to_user_sdwt_prod__in=allowed_user_sdwt_prods)
 
     # -----------------------------------------------------------------------------
     # 3) 상태 필터
@@ -647,7 +707,14 @@ def list_affiliation_change_requests(
                 | Q(applied=True)
             )
         elif normalized_status == UserSdwtProdChange.Status.REJECTED:
-            qs = qs.filter(status=UserSdwtProdChange.Status.REJECTED)
+            qs = qs.filter(
+                status__in=[
+                    UserSdwtProdChange.Status.REJECTED,
+                    UserSdwtProdChange.Status.SUPERSEDED,
+                ]
+            )
+        elif normalized_status == UserSdwtProdChange.Status.SUPERSEDED:
+            qs = qs.filter(status=UserSdwtProdChange.Status.SUPERSEDED)
 
     # -----------------------------------------------------------------------------
     # 4) 소속 필터

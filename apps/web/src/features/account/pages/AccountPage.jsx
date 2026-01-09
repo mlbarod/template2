@@ -16,6 +16,7 @@ const REQUEST_STATUS_LABELS = {
   PENDING: { label: "대기", variant: "secondary" },
   APPROVED: { label: "승인", variant: "default" },
   REJECTED: { label: "거절", variant: "destructive" },
+  SUPERSEDED: { label: "취소(대체됨)", variant: "outline" },
 }
 
 function formatDate(value) {

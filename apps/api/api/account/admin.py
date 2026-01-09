@@ -453,8 +453,8 @@ class AffiliationAdmin(admin.ModelAdmin):
 class UserSdwtProdAccessAdmin(admin.ModelAdmin):
     """UserSdwtProdAccess 관리 화면 설정입니다."""
 
-    list_display = ("user_knox_id", "user_sdwt_prod", "can_manage", "granted_by_knox_id", "created_at")
-    list_filter = ("can_manage", "user_sdwt_prod")
+    list_display = ("user_knox_id", "user_sdwt_prod", "role", "granted_by_knox_id", "created_at")
+    list_filter = ("role", "user_sdwt_prod")
     search_fields = (
         "user__knox_id",
         "user__email",

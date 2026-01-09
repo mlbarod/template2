@@ -2,6 +2,22 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 
+const ROLE_LABELS = {
+  viewer: "뷰어",
+  member: "멤버",
+  manager: "관리자",
+}
+
+const ROLE_VARIANTS = {
+  viewer: "secondary",
+  member: "outline",
+  manager: "default",
+}
+
+function resolveRole(value) {
+  return ROLE_LABELS[value] ? value : "viewer"
+}
+
 function formatDate(value) {
   if (!value) return ""
   const date = new Date(value)
@@ -16,29 +32,32 @@ function AccessList({ items }) {
 
   return (
     <div className="grid gap-2">
-      {items.map((item) => (
-        <div
-          key={`${item.userSdwtProd}-${item.source}`}
-          className="flex flex-col gap-1 rounded-md border px-3 py-2"
-        >
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className="font-medium">{item.userSdwtProd}</span>
-              {item.source === "self" ? (
-                <Badge variant="secondary">내 소속</Badge>
-              ) : (
-                <Badge variant="outline">부여됨</Badge>
-              )}
+      {items.map((item) => {
+        const role = resolveRole(item.role)
+        return (
+          <div
+            key={`${item.userSdwtProd}-${item.source}`}
+            className="flex flex-col gap-1 rounded-md border px-3 py-2"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="font-medium">{item.userSdwtProd}</span>
+                {item.source === "self" ? (
+                  <Badge variant="secondary">내 소속</Badge>
+                ) : (
+                  <Badge variant="outline">부여됨</Badge>
+                )}
+              </div>
+              <Badge variant={ROLE_VARIANTS[role]}>{ROLE_LABELS[role]}</Badge>
             </div>
-            {item.canManage ? <Badge variant="default">관리자</Badge> : null}
+            {item.grantedAt ? (
+              <span className="text-xs text-muted-foreground">
+                부여 시각: {formatDate(item.grantedAt)}
+              </span>
+            ) : null}
           </div>
-          {item.grantedAt ? (
-            <span className="text-xs text-muted-foreground">
-              부여 시각: {formatDate(item.grantedAt)}
-            </span>
-          ) : null}
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

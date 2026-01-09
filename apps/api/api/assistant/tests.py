@@ -37,13 +37,13 @@ class AssistantRagIndexViewsTests(TestCase):
         manager = User.objects.create_user(sabun="S90010", password="test-password")
         manager.user_sdwt_prod = "group-b"
         manager.save(update_fields=["user_sdwt_prod"])
-        account_services.ensure_self_access(manager, as_manager=True)
+        account_services.ensure_self_access(manager, role="manager")
         _, status_code = account_services.grant_or_revoke_access(
             grantor=manager,
             target_group="group-b",
             target_user=self.user,
             action="grant",
-            can_manage=False,
+            role="member",
         )
         self.assertEqual(status_code, 200)
 
@@ -134,13 +134,13 @@ class AssistantRagIndexViewsTests(TestCase):
         manager = User.objects.create_user(sabun="S90011", password="test-password")
         manager.user_sdwt_prod = "group-d"
         manager.save(update_fields=["user_sdwt_prod"])
-        account_services.ensure_self_access(manager, as_manager=True)
+        account_services.ensure_self_access(manager, role="manager")
         _, status_code = account_services.grant_or_revoke_access(
             grantor=manager,
             target_group="group-d",
             target_user=other_user,
             action="grant",
-            can_manage=False,
+            role="member",
         )
         self.assertEqual(status_code, 200)
 

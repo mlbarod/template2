@@ -10,6 +10,22 @@ import {
   TableRow,
 } from "@/components/common"
 
+const ROLE_LABELS = {
+  viewer: "뷰어",
+  member: "멤버",
+  manager: "관리자",
+}
+
+const ROLE_VARIANTS = {
+  viewer: "secondary",
+  member: "outline",
+  manager: "default",
+}
+
+function resolveRole(value) {
+  return ROLE_LABELS[value] ? value : "viewer"
+}
+
 function formatDate(value) {
   if (!value) return "-"
   const date = new Date(value)
@@ -61,6 +77,7 @@ export function ManageableGroupsCard({ groups }) {
                       const knoxId = member.knoxId || member.knox_id
                       const name = (member.name || "").trim()
                       const detail = name && knoxId ? `${name} (${knoxId})` : name || knoxId || ""
+                      const role = resolveRole(member.role)
                       return (
                         <TableRow key={`${group.userSdwtProd}-${member.userId}`}>
                           <TableCell>
@@ -74,11 +91,7 @@ export function ManageableGroupsCard({ groups }) {
                             </div>
                           </TableCell>
                           <TableCell>
-                            {member.canManage ? (
-                              <Badge variant="default">관리자</Badge>
-                            ) : (
-                              <Badge variant="outline">멤버</Badge>
-                            )}
+                            <Badge variant={ROLE_VARIANTS[role]}>{ROLE_LABELS[role]}</Badge>
                           </TableCell>
                           <TableCell className="text-xs text-muted-foreground">
                             {formatDate(member.grantedAt)}

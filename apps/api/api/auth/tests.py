@@ -32,15 +32,16 @@ class AuthMeTests(TestCase):
         self.assertEqual(response.json(), {"detail": "unauthorized"})
 
     def test_auth_me_returns_username_and_knox_id(self) -> None:
-        """인증된 사용자의 username/knox_id가 응답에 포함되어야 합니다."""
+        """인증된 사용자의 username/knox_id/avatarid가 응답에 포함되어야 합니다."""
         User = get_user_model()
         user = User.objects.create_user(sabun="S12345", password="test-password")
         user.knox_id = "KNOX-12345"
+        user.avatarid = "U-12345"
         user.username = "홍길동"
         user.first_name = "John"
         user.last_name = "Doe"
         user.email = "hong@example.com"
-        user.save(update_fields=["knox_id", "username", "first_name", "last_name", "email"])
+        user.save(update_fields=["knox_id", "avatarid", "username", "first_name", "last_name", "email"])
 
         self.client.force_login(user)
 
@@ -49,9 +50,11 @@ class AuthMeTests(TestCase):
         payload = response.json()
 
         self.assertEqual(payload["usr_id"], "KNOX-12345")
+        self.assertEqual(payload["avatarid"], "U-12345")
         self.assertEqual(payload["username"], "홍길동")
         self.assertNotIn("name", payload)
         self.assertEqual(payload["email"], "hong@example.com")
+        self.assertFalse(payload["has_pending_affiliation"])
 
     def test_auth_me_includes_pending_user_sdwt_prod(self) -> None:
         """pending_user_sdwt_prod 값이 있을 때 응답에 포함되어야 합니다."""
@@ -67,6 +70,10 @@ class AuthMeTests(TestCase):
             line="Line",
             user_sdwt_prod="group-pending",
         )
+        approver = User.objects.create_user(sabun="S22346", password="test-password")
+        approver.user_sdwt_prod = "group-pending"
+        approver.save(update_fields=["user_sdwt_prod"])
+        account_services.ensure_self_access(approver, role="manager")
         payload, status_code = account_services.request_affiliation_change(
             user=user,
             option=option,
@@ -90,6 +97,51 @@ class AuthMeTests(TestCase):
         # 3) 응답 검증
         # -----------------------------------------------------------------------------
         self.assertEqual(payload["pending_user_sdwt_prod"], "group-pending")
+        self.assertTrue(payload["has_pending_affiliation"])
+
+    def test_auth_me_includes_pending_with_current_affiliation(self) -> None:
+        """현재 소속이 있어도 pending_user_sdwt_prod 값이 포함되어야 합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) 사용자/대기 변경 요청 준비
+        # -----------------------------------------------------------------------------
+        User = get_user_model()
+        user = User.objects.create_user(sabun="S12347", password="test-password")
+        user.user_sdwt_prod = "group-current"
+        user.save(update_fields=["user_sdwt_prod"])
+
+        option = account_services.ensure_affiliation_option(
+            department="Dept",
+            line="Line",
+            user_sdwt_prod="group-next",
+        )
+        approver = User.objects.create_user(sabun="S22347", password="test-password")
+        approver.user_sdwt_prod = "group-next"
+        approver.save(update_fields=["user_sdwt_prod"])
+        account_services.ensure_self_access(approver, role="manager")
+        payload, status_code = account_services.request_affiliation_change(
+            user=user,
+            option=option,
+            to_user_sdwt_prod="group-next",
+            effective_from=timezone.now(),
+            timezone_name="Asia/Seoul",
+        )
+        self.assertEqual(status_code, 202)
+        self.assertIn("changeId", payload)
+
+        # -----------------------------------------------------------------------------
+        # 2) 로그인 및 API 호출
+        # -----------------------------------------------------------------------------
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("auth-me"))
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+
+        # -----------------------------------------------------------------------------
+        # 3) 응답 검증
+        # -----------------------------------------------------------------------------
+        self.assertEqual(payload["pending_user_sdwt_prod"], "group-next")
+        self.assertTrue(payload["has_pending_affiliation"])
 
 
 class AuthEndpointTests(TestCase):
@@ -126,8 +178,8 @@ class AuthEndpointTests(TestCase):
 class AuthOidcClaimMappingTests(TestCase):
     """OIDC 클레임 매핑 로직을 검증합니다."""
 
-    def test_extract_user_info_maps_userid(self) -> None:
-        """userid 클레임이 사용자 필드로 매핑되어야 합니다."""
+    def test_extract_user_info_maps_avatarid(self) -> None:
+        """userid 클레임이 avatarid 필드로 매핑되어야 합니다."""
         claims = {
             "loginid": "KNOX-123",
             "sabun": "S12345",
@@ -138,7 +190,7 @@ class AuthOidcClaimMappingTests(TestCase):
 
         info = _extract_user_info_from_claims(claims)
 
-        self.assertEqual(info.get("userid"), "U-12345")
+        self.assertEqual(info.get("avatarid"), "U-12345")
 
 
 class AuthOidcClaimExtractionTests(TestCase):

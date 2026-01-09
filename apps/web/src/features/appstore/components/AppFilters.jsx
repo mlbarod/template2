@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 const ALL_CATEGORY = "all"
 const CATEGORY_ORDER_SET = new Set(CATEGORY_OPTIONS)
 
-const getCategoryLabel = (option) => (option === ALL_CATEGORY ? "전체" : option)
+const getCategoryLabel = (option) => (option === ALL_CATEGORY ? "Total" : option)
 const getOrderedCategories = (categories) => {
   const categorySet = new Set(categories)
 
@@ -112,7 +112,7 @@ export function AppFilters({
               type="button"
               className="h-8 px-2 text-xs text-muted-foreground"
             >
-              reset
+              Reset
             </Button>
           </div>
 

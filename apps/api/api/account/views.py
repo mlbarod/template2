@@ -209,7 +209,7 @@ class AccountAffiliationView(APIView):
 
         예시 요청:
         - 예시 요청: POST /api/v1/account/affiliation
-          요청 바디 예시: {"department":"ETCH","line":"LINE_01","user_sdwt_prod":"SDWT_A","effective_from":"2025-12-28T10:00:00+09:00"}
+          요청 바디 예시: {"user_sdwt_prod":"SDWT_A","effective_from":"2025-12-28T10:00:00+09:00"}
 
         snake/camel 호환:
         - user_sdwt_prod / userSdwtProd (키 매핑)
@@ -230,13 +230,7 @@ class AccountAffiliationView(APIView):
             return JsonResponse({"error": "Invalid JSON"}, status=400)
 
         # -----------------------------------------------------------------------------
-        # 3) 입력 정규화
-        # -----------------------------------------------------------------------------
-        department = normalize_text(payload.get("department"))
-        line = normalize_text(payload.get("line"))
-
-        # -----------------------------------------------------------------------------
-        # 4) user_sdwt_prod 추출(호환 키 포함)
+        # 3) user_sdwt_prod 추출(호환 키 포함)
         # -----------------------------------------------------------------------------
         new_value = normalize_text(payload.get("user_sdwt_prod"))
         if not new_value:
@@ -245,14 +239,14 @@ class AccountAffiliationView(APIView):
             return JsonResponse({"error": "user_sdwt_prod is required"}, status=400)
 
         # -----------------------------------------------------------------------------
-        # 5) 소속 옵션 유효성 검증
+        # 4) 소속 옵션 유효성 검증
         # -----------------------------------------------------------------------------
-        option = selectors.get_affiliation_option(department, line, new_value)
+        option = selectors.get_affiliation_option_by_user_sdwt_prod(user_sdwt_prod=new_value)
         if option is None:
-            return JsonResponse({"error": "Invalid department/line/user_sdwt_prod combination"}, status=400)
+            return JsonResponse({"error": "Invalid user_sdwt_prod"}, status=400)
 
         # -----------------------------------------------------------------------------
-        # 6) effective_from 파싱
+        # 5) effective_from 파싱
         # -----------------------------------------------------------------------------
         effective_from_raw = payload.get("effective_from") or payload.get("effectiveFrom")
         effective_from = _parse_effective_from(effective_from_raw)
@@ -260,7 +254,7 @@ class AccountAffiliationView(APIView):
             return JsonResponse({"error": "Invalid effective_from"}, status=400)
 
         # -----------------------------------------------------------------------------
-        # 7) 서비스 호출 및 응답 반환
+        # 6) 서비스 호출 및 응답 반환
         # -----------------------------------------------------------------------------
         response_payload, status_code = services.request_affiliation_change(
             user=user,
@@ -533,18 +527,25 @@ class AccountAffiliationReconfirmView(APIView):
         - JsonResponse: 처리 결과
 
         부작용:
-        - 소속 변경 요청 생성 가능
+        - 자동 승인 선택 시 소속 변경이 즉시 적용됨
+        - 예측값 불일치 또는 예측 없음 선택 시 승인 대기 요청이 생성됨
+        - 기존 유지/자동 승인/승인 대기 생성 성공 시 재확인 플래그가 해제됨
 
         오류:
         - 400: 입력 오류
         - 401: 미인증
+        - 409: 재확인 대상 아님
 
         예시 요청:
         - 예시 요청: POST /api/v1/account/affiliation/reconfirm
-          요청 바디 예시: {"accepted": true, "department": "D", "line": "L1", "user_sdwt_prod": "G1"}
+          요청 바디 예시(변경 적용): {"accepted": true, "user_sdwt_prod": "G1"}
+        - 예시 요청: POST /api/v1/account/affiliation/reconfirm
+          요청 바디 예시(승인 대기): {"accepted": true, "user_sdwt_prod": "G2"}
+        - 예시 요청: POST /api/v1/account/affiliation/reconfirm
+          요청 바디 예시(기존 유지): {"accepted": false}
 
         snake/camel 호환:
-        - user_sdwt_prod / userSdwtProd (키 매핑)
+        - 해당 없음(요청 바디는 snake_case만 허용)
         """
         # -----------------------------------------------------------------------------
         # 1) 인증 확인
@@ -674,12 +675,12 @@ class AccountGrantView(APIView):
 
         예시 요청:
         - 예시 요청: POST /api/v1/account/access/grants
-          요청 바디 예시: {"user_sdwt_prod":"SDWT_A","userId":123,"action":"grant","canManage":true}
+          요청 바디 예시: {"user_sdwt_prod":"SDWT_A","userId":123,"action":"grant","role":"manager"}
 
         snake/camel 호환:
         - user_sdwt_prod / userSdwtProd (키 매핑)
         - userId / user_id (키 매핑)
-        - canManage / can_manage (키 매핑)
+        - role / accessRole (키 매핑)
         """
         # -----------------------------------------------------------------------------
         # 1) 인증 확인
@@ -710,11 +711,15 @@ class AccountGrantView(APIView):
             return JsonResponse({"error": "Target user not found"}, status=404)
 
         # -----------------------------------------------------------------------------
-        # 4) 액션/권한 플래그 정규화
+        # 4) 액션/역할 정규화
         # -----------------------------------------------------------------------------
         action = (payload.get("action") or "grant").lower()
-
-        can_manage = bool(payload.get("canManage") or payload.get("can_manage"))
+        role = (payload.get("role") or payload.get("accessRole") or "").strip().lower()
+        if action != "revoke":
+            if not role:
+                return JsonResponse({"error": "role is required"}, status=400)
+            if role not in {"viewer", "member", "manager"}:
+                return JsonResponse({"error": "Invalid role"}, status=400)
 
         # -----------------------------------------------------------------------------
         # 5) 서비스 호출 및 응답 반환
@@ -724,7 +729,7 @@ class AccountGrantView(APIView):
             target_group=target_group,
             target_user=target_user,
             action=action,
-            can_manage=can_manage,
+            role=role or None,
         )
         return JsonResponse(response_payload, status=status_code)
 
