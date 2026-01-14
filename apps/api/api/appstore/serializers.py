@@ -327,6 +327,7 @@ def serialize_app(
     *,
     include_comments: bool = False,
     include_screenshots: bool = False,
+    cover_src: str | None = None,
     liked_comment_ids: set[int] | None = None,
 ) -> Dict[str, Any]:
     """앱을 API 응답 형태로 직렬화합니다(선호 시 댓글 포함).
@@ -337,6 +338,7 @@ def serialize_app(
         liked_app_ids: 현재 사용자가 좋아요한 앱 id 목록.
         include_comments: 댓글 포함 여부.
         include_screenshots: 스크린샷 목록 포함 여부.
+        cover_src: 대표 스크린샷 URL/소스(없으면 앱 기본값 사용).
         liked_comment_ids: 현재 사용자가 좋아요한 댓글 id 집합.
 
     반환:
@@ -375,6 +377,7 @@ def serialize_app(
     owner_payload = serialize_user(getattr(app, "owner", None))
     comment_count = getattr(app, "comment_count", 0) or 0
 
+    cover_value = cover_src if cover_src is not None else getattr(app, "screenshot_src", "")
     payload: Dict[str, Any] = {
         "id": app.pk,
         "name": app.name,
@@ -382,7 +385,7 @@ def serialize_app(
         "description": app.description,
         "url": app.url,
         "manualUrl": getattr(app, "manual_url", "") or "",
-        "screenshotUrl": getattr(app, "screenshot_src", ""),
+        "screenshotUrl": cover_value,
         "contactName": app.contact_name,
         "contactKnoxid": app.contact_knoxid,
         "viewCount": app.view_count,

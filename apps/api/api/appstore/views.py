@@ -9,6 +9,7 @@
 - GET    /api/v1/appstore/apps                     : 앱 목록 조회
 - POST   /api/v1/appstore/apps                     : 앱 등록
 - GET    /api/v1/appstore/apps/<id>                : 단일 앱 상세(+댓글)
+- GET    /api/v1/appstore/apps/<id>/cover          : 앱 대표 스크린샷(바이너리)
 - PATCH  /api/v1/appstore/apps/<id>                : 앱 정보 수정
 - DELETE /api/v1/appstore/apps/<id>                : 앱 삭제(작성자/관리자)
 - POST   /api/v1/appstore/apps/<id>/like           : 좋아요 토글
@@ -25,10 +26,13 @@
 """
 from __future__ import annotations
 
+import base64
+import binascii
 import logging
 from typing import Any, Sequence
 
-from django.http import HttpRequest, JsonResponse
+from django.http import HttpRequest, HttpResponse, HttpResponseRedirect, JsonResponse
+from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.views import APIView
@@ -132,7 +136,17 @@ class AppStoreAppsView(APIView):
         # -----------------------------------------------------------------------------
         # 2) 응답 직렬화
         # -----------------------------------------------------------------------------
-        apps = [serialize_app(app, user, liked_ids) for app in queryset]
+        apps = []
+        for app in queryset:
+            # 목록에서는 base64 데이터를 직접 내려보내지 않도록 커버 URL을 치환합니다.
+            cover_src = ""
+            if getattr(app, "screenshot_url", ""):
+                cover_src = app.screenshot_url
+            elif getattr(app, "screenshot_base64", ""):
+                cover_src = request.build_absolute_uri(
+                    reverse("appstore-app-cover", kwargs={"app_id": app.pk})
+                )
+            apps.append(serialize_app(app, user, liked_ids, cover_src=cover_src))
 
         # -----------------------------------------------------------------------------
         # 3) 응답 반환
@@ -251,6 +265,63 @@ class AppStoreAppsView(APIView):
         except Exception:  # 방어적 로깅(커버리지 제외): pragma: no cover
             logger.exception("Failed to create appstore app")
             return JsonResponse({"error": "Failed to create app"}, status=500)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class AppStoreAppCoverView(APIView):
+    """앱 대표 스크린샷 바이너리를 제공합니다."""
+
+    def get(self, request: HttpRequest, app_id: int, *args: object, **kwargs: object) -> HttpResponse:
+        """앱 대표 스크린샷을 반환합니다.
+
+        입력:
+          - 요청: Django HttpRequest
+          - app_id: 앱 PK
+          - args/kwargs: URL 라우팅 인자
+
+        요청 예시:
+          - 예시 요청: GET /api/v1/appstore/apps/123/cover
+
+        반환:
+          - 이미지 바이너리(Content-Type: image/*)
+
+        부작용:
+          없음. 읽기 전용 조회입니다.
+
+        오류:
+          - 404: 앱 또는 스크린샷 없음
+          - 400: 스크린샷 디코딩 실패
+
+        snake/camel 호환:
+          - 해당 없음(요청 바디 없음)
+        """
+        # -----------------------------------------------------------------------------
+        # 1) 앱 조회
+        # -----------------------------------------------------------------------------
+        app = get_app_by_id(app_id=app_id)
+        if not app:
+            return HttpResponse(status=404)
+
+        # -----------------------------------------------------------------------------
+        # 2) 외부 URL 리다이렉트
+        # -----------------------------------------------------------------------------
+        if getattr(app, "screenshot_url", ""):
+            return HttpResponseRedirect(app.screenshot_url)
+
+        # -----------------------------------------------------------------------------
+        # 3) base64 디코딩 및 응답
+        # -----------------------------------------------------------------------------
+        base64_value = getattr(app, "screenshot_base64", "") or ""
+        if not base64_value:
+            return HttpResponse(status=404)
+        try:
+            binary = base64.b64decode(base64_value, validate=True)
+        except (binascii.Error, ValueError):
+            logger.exception("Failed to decode appstore screenshot for app %s", app_id)
+            return HttpResponse(status=400)
+
+        content_type = getattr(app, "screenshot_mime_type", "") or "image/png"
+        return HttpResponse(binary, content_type=content_type)
 
 
 @method_decorator(csrf_exempt, name="dispatch")

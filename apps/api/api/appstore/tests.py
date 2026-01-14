@@ -210,6 +210,82 @@ class AppstoreScreenshotTests(TestCase):
         self.assertEqual(payload["app"]["coverScreenshotIndex"], 0)
         self.assertEqual(payload["app"]["manualUrl"], manual_url)
 
+    def test_list_payload_uses_cover_endpoint_for_base64(self) -> None:
+        """목록 응답은 base64 커버를 엔드포인트 URL로 제공합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) 사용자/앱 준비
+        # -----------------------------------------------------------------------------
+        User = get_user_model()
+        user = User.objects.create_user(
+            sabun="S22222",
+            password="test-password",
+            knox_id="knox-22222",
+        )
+        screenshot_url = "data:image/png;base64,QUJD"
+        app = create_app(
+            owner=user,
+            name="Test App",
+            category="Tools",
+            description="",
+            url="https://example.com",
+            screenshot_url=screenshot_url,
+            contact_name="홍길동",
+            contact_knoxid="hong",
+        )
+
+        # -----------------------------------------------------------------------------
+        # 2) 목록 조회
+        # -----------------------------------------------------------------------------
+        response = self.client.get(reverse("appstore-apps"))
+        self.assertEqual(response.status_code, 200)
+
+        # -----------------------------------------------------------------------------
+        # 3) 응답 페이로드 검증
+        # -----------------------------------------------------------------------------
+        payload = response.json()
+        results = payload.get("results", [])
+        self.assertEqual(len(results), 1)
+        cover_path = reverse("appstore-app-cover", kwargs={"app_id": app.pk})
+        cover_url = results[0].get("screenshotUrl", "")
+        self.assertTrue(isinstance(cover_url, str))
+        self.assertTrue(cover_url.endswith(cover_path))
+        self.assertNotIn("data:image", cover_url)
+
+    def test_cover_endpoint_returns_decoded_image(self) -> None:
+        """커버 엔드포인트가 base64 스크린샷을 바이너리로 반환합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) 사용자/앱 준비
+        # -----------------------------------------------------------------------------
+        User = get_user_model()
+        user = User.objects.create_user(
+            sabun="S33333",
+            password="test-password",
+            knox_id="knox-33333",
+        )
+        screenshot_url = "data:image/png;base64,QUJD"
+        app = create_app(
+            owner=user,
+            name="Test App",
+            category="Tools",
+            description="",
+            url="https://example.com",
+            screenshot_url=screenshot_url,
+            contact_name="홍길동",
+            contact_knoxid="hong",
+        )
+
+        # -----------------------------------------------------------------------------
+        # 2) 커버 조회
+        # -----------------------------------------------------------------------------
+        response = self.client.get(reverse("appstore-app-cover", kwargs={"app_id": app.pk}))
+
+        # -----------------------------------------------------------------------------
+        # 3) 응답 검증
+        # -----------------------------------------------------------------------------
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "image/png")
+        self.assertEqual(response.content, b"ABC")
+
 
 class AppstoreContactDefaultTests(TestCase):
     """appstore 연락처 기본값 계산을 검증합니다."""

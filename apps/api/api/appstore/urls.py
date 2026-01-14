@@ -1,6 +1,6 @@
 # =============================================================================
 # 모듈 설명: appstore 도메인 라우팅을 제공합니다.
-# - 주요 경로: apps, apps/<id>, comments, like/view
+# - 주요 경로: apps, apps/<id>, cover, comments, like/view
 # - 불변 조건: 상위 URLConf에서 /api/v1/appstore/ 프리픽스를 제공합니다.
 # =============================================================================
 from __future__ import annotations
@@ -8,6 +8,7 @@ from __future__ import annotations
 from django.urls import path
 
 from .views import (
+    AppStoreAppCoverView,
     AppStoreAppDetailView,
     AppStoreAppsView,
     AppStoreCommentDetailView,
@@ -20,6 +21,7 @@ from .views import (
 urlpatterns = [
     path("apps", AppStoreAppsView.as_view(), name="appstore-apps"),
     path("apps/<int:app_id>", AppStoreAppDetailView.as_view(), name="appstore-app-detail"),
+    path("apps/<int:app_id>/cover", AppStoreAppCoverView.as_view(), name="appstore-app-cover"),
     path(
         "apps/<int:app_id>/like",
         AppStoreLikeToggleView.as_view(),
