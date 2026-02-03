@@ -1,5 +1,5 @@
 # 🧭 agents.md — Ultra-Optimized Constitution for LLM Agents
-
+aaa
 ### (Strict, Unambiguous, Machine-Executable Rules)
 
 이 문서는 LLM 에이전트가 반드시 따라야 하는 **절대 규칙(Constitution)**을 정의한다.
