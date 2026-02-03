@@ -29,7 +29,7 @@ def run_account_external_affiliations_sync(**_context):
     if AIRFLOW_TRIGGER_TOKEN:
         headers["Authorization"] = f"Bearer {AIRFLOW_TRIGGER_TOKEN}"
 
-    # records 예시: [{"knox_id": "K1", "user_sdwt_prod": "G1", "source_updated_at": "2025-01-01T00:00:00Z"}]
+    # records 예시: [{"knox_id": "K1", "department": "DeptA", "user_sdwt_prod": "G1", "source_updated_at": "2025-01-01T00:00:00Z"}]
     payload = {"records": []}
 
     response = requests.post(

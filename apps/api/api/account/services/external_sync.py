@@ -15,6 +15,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Iterable
 
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
 
@@ -55,6 +56,12 @@ def sync_external_affiliations(
 
     record_list = [record for record in records if isinstance(record, dict)]
     affiliation_candidates: dict[str, str] = {}
+    predicted_by_knox: dict[str, str] = {}
+    to_create: list[ExternalAffiliationSnapshot] = []
+    to_update: list[ExternalAffiliationSnapshot] = []
+    changed_knox_ids: list[str] = []
+    processed_existing_ids: list[str] = []
+    bulk_batch_size = 5000
     # 동일 knox_id 중복 입력으로 인한 고유 제약 충돌을 피하려고 마지막 레코드로 정규화합니다.
     normalized_records: dict[str, dict[str, object]] = {}
     for record in record_list:
@@ -69,7 +76,7 @@ def sync_external_affiliations(
     existing = selectors.get_external_affiliation_snapshots_by_knox_ids(knox_ids=knox_ids)
 
     # -----------------------------------------------------------------------------
-    # 3) 레코드별 업서트 처리
+    # 3) 레코드별 변경/생성 목록 준비
     # -----------------------------------------------------------------------------
     for record in normalized_records.values():
         knox_id = (record.get("knox_id") or "").strip()
@@ -83,71 +90,93 @@ def sync_external_affiliations(
         if not isinstance(source_updated_at, datetime):
             source_updated_at = now
 
+        predicted_by_knox[knox_id] = predicted
+        affiliation_candidates[predicted] = department
+
         snapshot = existing.get(knox_id)
         if snapshot is None:
-            snapshot = ExternalAffiliationSnapshot.objects.create(
+            snapshot = ExternalAffiliationSnapshot(
                 knox_id=knox_id,
                 department=department,
                 predicted_user_sdwt_prod=predicted,
                 source_updated_at=source_updated_at,
                 last_seen_at=now,
             )
+            to_create.append(snapshot)
             created += 1
-            existing[knox_id] = snapshot
-            affiliation_candidates[predicted] = department
             continue
 
+        processed_existing_ids.append(knox_id)
+
         # -----------------------------------------------------------------------------
-        # 4) 변경 여부 판단 및 갱신
+        # 4) 변경 여부 판단
         # -----------------------------------------------------------------------------
         changed = snapshot.predicted_user_sdwt_prod != predicted
         changed_department = (snapshot.department or "").strip() != department
-        if changed or changed_department or snapshot.source_updated_at != source_updated_at:
+        changed_source = snapshot.source_updated_at != source_updated_at
+        if changed or changed_department or changed_source:
             snapshot.department = department
             snapshot.predicted_user_sdwt_prod = predicted
             snapshot.source_updated_at = source_updated_at
-            snapshot.last_seen_at = now
-            snapshot.save(
-                update_fields=[
-                    "department",
-                    "predicted_user_sdwt_prod",
-                    "source_updated_at",
-                    "last_seen_at",
-                ]
-            )
+            to_update.append(snapshot)
             updated += 1
+            if changed:
+                changed_knox_ids.append(knox_id)
         else:
-            snapshot.last_seen_at = now
-            snapshot.save(update_fields=["last_seen_at"])
             unchanged += 1
-        affiliation_candidates[predicted] = department
 
-        # -----------------------------------------------------------------------------
-        # 5) 사용자 재확인 플래그 갱신
-        # -----------------------------------------------------------------------------
-        if changed:
-            user = selectors.get_user_by_knox_id(knox_id=knox_id)
+    # -----------------------------------------------------------------------------
+    # 5) 스냅샷 생성/갱신(벌크)
+    # -----------------------------------------------------------------------------
+    with transaction.atomic():
+        if to_create:
+            ExternalAffiliationSnapshot.objects.bulk_create(to_create, batch_size=bulk_batch_size)
+        if to_update:
+            ExternalAffiliationSnapshot.objects.bulk_update(
+                to_update,
+                ["department", "predicted_user_sdwt_prod", "source_updated_at"],
+                batch_size=bulk_batch_size,
+            )
+        if processed_existing_ids:
+            ExternalAffiliationSnapshot.objects.filter(knox_id__in=processed_existing_ids).update(last_seen_at=now)
+
+    # -----------------------------------------------------------------------------
+    # 6) 사용자 재확인 플래그 갱신
+    # -----------------------------------------------------------------------------
+    if changed_knox_ids:
+        users_by_knox = selectors.get_users_by_knox_ids(knox_ids=changed_knox_ids)
+        user_ids = [user.id for user in users_by_knox.values() if user]
+        pending_user_ids = selectors.get_pending_user_sdwt_prod_changes_by_user_ids(user_ids=user_ids)
+        flagged_users = []
+
+        for knox_id in changed_knox_ids:
+            user = users_by_knox.get(knox_id)
             if user is None:
                 continue
 
             ensure_self_access(user, role="member")
 
-            if selectors.get_pending_user_sdwt_prod_change(user=user) is not None:
+            if user.id in pending_user_ids:
                 continue
 
             current_user_sdwt = (getattr(user, "user_sdwt_prod", None) or "").strip()
             if not current_user_sdwt:
                 continue
 
-            if current_user_sdwt == (predicted or "").strip():
+            predicted = (predicted_by_knox.get(knox_id) or "").strip()
+            if not predicted or current_user_sdwt == predicted:
                 continue
 
             user.requires_affiliation_reconfirm = True
-            user.save(update_fields=["requires_affiliation_reconfirm"])
-            flagged += 1
+            flagged_users.append(user)
+
+        if flagged_users:
+            UserModel = get_user_model()
+            UserModel.objects.bulk_update(flagged_users, ["requires_affiliation_reconfirm"], batch_size=bulk_batch_size)
+            flagged = len(flagged_users)
 
     # -----------------------------------------------------------------------------
-    # 6) 소속 옵션 누락분 추가
+    # 7) 소속 옵션 누락분 추가
     # -----------------------------------------------------------------------------
     if affiliation_candidates:
         user_sdwt_prods = list(affiliation_candidates.keys())
@@ -161,9 +190,13 @@ def sync_external_affiliations(
         ]
         if missing:
             with transaction.atomic():
-                Affiliation.objects.bulk_create(missing, ignore_conflicts=True)
+                Affiliation.objects.bulk_create(
+                    missing,
+                    ignore_conflicts=True,
+                    batch_size=bulk_batch_size,
+                )
 
     # -----------------------------------------------------------------------------
-    # 7) 결과 반환
+    # 8) 결과 반환
     # -----------------------------------------------------------------------------
     return {"created": created, "updated": updated, "unchanged": unchanged, "flagged": flagged}

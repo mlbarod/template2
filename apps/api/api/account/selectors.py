@@ -403,6 +403,45 @@ def get_user_by_knox_id(*, knox_id: str) -> Any | None:
     return UserModel.objects.filter(knox_id=knox_id.strip()).first()
 
 
+def get_users_by_knox_ids(*, knox_ids: list[str]) -> dict[str, Any]:
+    """knox_id 목록으로 사용자 매핑을 조회합니다.
+
+    입력:
+    - knox_ids: knox_id 목록
+
+    반환:
+    - dict[str, Any]: knox_id → 사용자 객체 매핑
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - 없음
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 입력 정규화
+    # -----------------------------------------------------------------------------
+    normalized_ids = [value.strip() for value in knox_ids if isinstance(value, str) and value.strip()]
+    if not normalized_ids:
+        return {}
+
+    UserModel = get_user_model()
+    if not hasattr(UserModel, "knox_id"):
+        return {}
+
+    # -----------------------------------------------------------------------------
+    # 2) 사용자 조회 및 매핑
+    # -----------------------------------------------------------------------------
+    users = UserModel.objects.filter(knox_id__in=normalized_ids)
+    mapped: dict[str, Any] = {}
+    for user in users:
+        knox_id = getattr(user, "knox_id", None)
+        if isinstance(knox_id, str) and knox_id.strip():
+            mapped[knox_id.strip()] = user
+    return mapped
+
+
 def get_user_sdwt_prod_change_by_id(*, change_id: int) -> UserSdwtProdChange | None:
     """id로 UserSdwtProdChange를 조회하고 없으면 None을 반환합니다.
 
@@ -491,8 +530,7 @@ def get_external_affiliation_snapshots_by_knox_ids(
     # -----------------------------------------------------------------------------
     # 2) 스냅샷 조회 및 매핑
     # -----------------------------------------------------------------------------
-    snapshots = ExternalAffiliationSnapshot.objects.filter(knox_id__in=normalized_ids)
-    return {snapshot.knox_id: snapshot for snapshot in snapshots}
+    return ExternalAffiliationSnapshot.objects.in_bulk(normalized_ids, field_name="knox_id")
 
 
 def get_current_user_sdwt_prod_change(*, user: Any) -> UserSdwtProdChange | None:
@@ -567,6 +605,43 @@ def get_pending_user_sdwt_prod_change(*, user: Any) -> UserSdwtProdChange | None
         .order_by("-created_at", "-id")
         .first()
     )
+
+
+def get_pending_user_sdwt_prod_changes_by_user_ids(*, user_ids: list[int]) -> set[int]:
+    """사용자 id 목록에 대한 PENDING 변경 요청 존재 여부를 조회합니다.
+
+    입력:
+    - user_ids: 사용자 id 목록
+
+    반환:
+    - set[int]: 대기 변경 요청이 존재하는 사용자 id 집합
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - 없음
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 입력 정규화
+    # -----------------------------------------------------------------------------
+    normalized = [value for value in user_ids if isinstance(value, int)]
+    if not normalized:
+        return set()
+
+    # -----------------------------------------------------------------------------
+    # 2) 대기 요청 사용자 id 조회
+    # -----------------------------------------------------------------------------
+    rows = (
+        UserSdwtProdChange.objects.filter(user_id__in=normalized)
+        .filter(
+            Q(status=UserSdwtProdChange.Status.PENDING)
+            | Q(status__isnull=True, approved=False, applied=False)
+        )
+        .values_list("user_id", flat=True)
+    )
+    return {value for value in rows if isinstance(value, int)}
 
 
 def get_access_row_for_user_and_prod(
