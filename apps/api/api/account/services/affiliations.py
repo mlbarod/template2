@@ -12,8 +12,9 @@
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
 
+from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
@@ -211,6 +212,101 @@ def ensure_affiliation_option(
                     raise
 
     return option
+
+
+def sync_user_lines_from_affiliations(*, users: Iterable[Any], dry_run: bool = False) -> dict[str, object]:
+    """line이 비어있는 사용자에게 소속 line 값을 동기화합니다.
+
+    입력:
+    - users: Django 사용자 객체 iterable
+    - dry_run: True면 업데이트 없이 로그만 생성
+
+    반환:
+    - dict[str, object]: 처리 결과 요약 및 상세 로그
+
+    부작용:
+    - User.line 업데이트(dry_run=False)
+
+    오류:
+    - 없음
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 대상 분류 및 후보 수집
+    # -----------------------------------------------------------------------------
+    total = 0
+    updated = 0
+    skipped_has_line = 0
+    skipped_no_user_sdwt_prod = 0
+    skipped_no_affiliation_line = 0
+    logs: list[str] = []
+
+    candidates: list[Any] = []
+    user_sdwt_prods: set[str] = set()
+
+    for user in users:
+        total += 1
+        user_label = getattr(user, "knox_id", None) or getattr(user, "pk", None) or "-"
+
+        current_line = getattr(user, "line", None)
+        if isinstance(current_line, str) and current_line.strip():
+            skipped_has_line += 1
+            logs.append(f"SKIP(기존 line 존재): {user_label} line={current_line}")
+            continue
+
+        current_sdwt = getattr(user, "user_sdwt_prod", None)
+        if not isinstance(current_sdwt, str) or not current_sdwt.strip():
+            skipped_no_user_sdwt_prod += 1
+            logs.append(f"SKIP(user_sdwt_prod 없음): {user_label}")
+            continue
+
+        normalized_sdwt = current_sdwt.strip()
+        candidates.append(user)
+        user_sdwt_prods.add(normalized_sdwt)
+
+    # -----------------------------------------------------------------------------
+    # 2) 소속 line 매핑 조회
+    # -----------------------------------------------------------------------------
+    line_map = selectors.get_affiliation_lines_by_user_sdwt_prods(
+        user_sdwt_prods=list(user_sdwt_prods)
+    )
+
+    # -----------------------------------------------------------------------------
+    # 3) 업데이트 대상 확정
+    # -----------------------------------------------------------------------------
+    to_update: list[Any] = []
+    for user in candidates:
+        user_label = getattr(user, "knox_id", None) or getattr(user, "pk", None) or "-"
+        current_sdwt = getattr(user, "user_sdwt_prod", None)
+        normalized_sdwt = (current_sdwt or "").strip()
+        line_value = line_map.get(normalized_sdwt)
+        if not isinstance(line_value, str) or not line_value.strip():
+            skipped_no_affiliation_line += 1
+            logs.append(f"SKIP(소속 line 없음): {user_label} user_sdwt_prod={normalized_sdwt}")
+            continue
+
+        user.line = line_value
+        to_update.append(user)
+        updated += 1
+        logs.append(f"UPDATED: {user_label} user_sdwt_prod={normalized_sdwt} line={line_value}")
+
+    # -----------------------------------------------------------------------------
+    # 4) 벌크 업데이트
+    # -----------------------------------------------------------------------------
+    if to_update and not dry_run:
+        UserModel = get_user_model()
+        with transaction.atomic():
+            UserModel.objects.bulk_update(to_update, ["line"], batch_size=1000)
+
+    return {
+        "total": total,
+        "updated": updated,
+        "skipped_has_line": skipped_has_line,
+        "skipped_no_user_sdwt_prod": skipped_no_user_sdwt_prod,
+        "skipped_no_affiliation_line": skipped_no_affiliation_line,
+        "logs": logs,
+        "dry_run": dry_run,
+    }
 
 
 def submit_affiliation_reconfirm_response(

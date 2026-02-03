@@ -175,6 +175,50 @@ def get_existing_affiliation_user_sdwt_prods(*, user_sdwt_prods: list[str]) -> s
     return {value for value in rows if isinstance(value, str) and value.strip()}
 
 
+def get_affiliation_lines_by_user_sdwt_prods(*, user_sdwt_prods: list[str]) -> dict[str, str]:
+    """user_sdwt_prod 목록에 대응하는 line 값을 조회합니다.
+
+    입력:
+    - user_sdwt_prods: 소속 식별자 목록
+
+    반환:
+    - dict[str, str]: user_sdwt_prod → line 매핑
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - 없음
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 입력 정규화
+    # -----------------------------------------------------------------------------
+    normalized = [value.strip() for value in user_sdwt_prods if isinstance(value, str) and value.strip()]
+    if not normalized:
+        return {}
+
+    # -----------------------------------------------------------------------------
+    # 2) line 매핑 조회
+    # -----------------------------------------------------------------------------
+    rows = (
+        Affiliation.objects.filter(user_sdwt_prod__in=normalized)
+        .exclude(line__isnull=True)
+        .exclude(line__exact="")
+        .values("user_sdwt_prod", "line")
+    )
+    result: dict[str, str] = {}
+    for row in rows:
+        user_sdwt_prod = row.get("user_sdwt_prod")
+        line = row.get("line")
+        if not isinstance(user_sdwt_prod, str) or not user_sdwt_prod.strip():
+            continue
+        if not isinstance(line, str) or not line.strip():
+            continue
+        result[user_sdwt_prod.strip()] = line
+    return result
+
+
 def get_most_common_departments_by_user_sdwt_prods(*, user_sdwt_prods: list[str]) -> dict[str, str]:
     """user_sdwt_prod별로 가장 많이 등장한 department를 조회합니다.
 

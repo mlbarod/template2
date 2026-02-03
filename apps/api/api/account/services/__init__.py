@@ -15,6 +15,7 @@ from .affiliations import (
     get_affiliation_overview,
     get_affiliation_reconfirm_status,
     get_line_sdwt_options_payload,
+    sync_user_lines_from_affiliations,
     submit_affiliation_reconfirm_response,
 )
 from .affiliation_requests import (
@@ -49,6 +50,7 @@ __all__ = [
     "reject_affiliation_change",
     "request_affiliation_change",
     "resolve_target_user",
+    "sync_user_lines_from_affiliations",
     "submit_affiliation_reconfirm_response",
     "sync_external_affiliations",
     "claim_unassigned_emails_for_user",

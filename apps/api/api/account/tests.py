@@ -43,6 +43,7 @@ from api.account.services import (
     get_affiliation_overview,
     request_affiliation_change,
     submit_affiliation_reconfirm_response,
+    sync_user_lines_from_affiliations,
     sync_external_affiliations,
 )
 import api.emails.services as email_services
@@ -1549,6 +1550,44 @@ class ExternalAffiliationSyncTests(TestCase):
         user.refresh_from_db()
         self.assertEqual(user.user_sdwt_prod, "group-auto")
         self.assertFalse(user.requires_affiliation_reconfirm)
+
+
+class AffiliationLineSyncTests(TestCase):
+    """소속 line 동기화 서비스 로직을 검증합니다."""
+
+    def test_sync_user_lines_from_affiliations_updates_only_empty_lines(self) -> None:
+        """line이 비어있는 사용자만 소속 line으로 업데이트되는지 확인합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) 소속/사용자 준비
+        # -----------------------------------------------------------------------------
+        Affiliation.objects.create(department="Dept", line="LineA", user_sdwt_prod="group-a")
+
+        User = get_user_model()
+        user_empty = User.objects.create_user(sabun="S71001", password="test-password")
+        user_empty.user_sdwt_prod = "group-a"
+        user_empty.line = ""
+        user_empty.save(update_fields=["user_sdwt_prod", "line"])
+
+        user_filled = User.objects.create_user(sabun="S71002", password="test-password")
+        user_filled.user_sdwt_prod = "group-a"
+        user_filled.line = "LineB"
+        user_filled.save(update_fields=["user_sdwt_prod", "line"])
+
+        # -----------------------------------------------------------------------------
+        # 2) 동기화 실행
+        # -----------------------------------------------------------------------------
+        result = sync_user_lines_from_affiliations(
+            users=User.objects.filter(id__in=[user_empty.id, user_filled.id])
+        )
+
+        # -----------------------------------------------------------------------------
+        # 3) 결과 검증
+        # -----------------------------------------------------------------------------
+        self.assertEqual(result.get("updated"), 1)
+        user_empty.refresh_from_db()
+        user_filled.refresh_from_db()
+        self.assertEqual(user_empty.line, "LineA")
+        self.assertEqual(user_filled.line, "LineB")
 
 
 class AccountProfileAccessServiceTests(TestCase):

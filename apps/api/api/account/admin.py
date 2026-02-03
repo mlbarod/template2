@@ -18,6 +18,7 @@ from django.contrib import messages
 from django.contrib.admin.widgets import AdminSplitDateTime
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.contrib.auth.forms import BaseUserCreationForm, SetUnusablePasswordMixin, UserChangeForm, UsernameField
+from django.http import HttpResponse
 from django.utils import timezone
 
 from api.account import services
@@ -200,7 +201,12 @@ class AccountUserAdmin(DjangoUserAdmin):
 
     form = AccountUserChangeForm
     add_form = AccountUserCreationForm
-    actions = ("claim_unassigned_emails",)
+    actions = (
+        "claim_unassigned_emails",
+        "sync_user_lines_from_affiliation",
+        "sync_all_user_lines_from_affiliation",
+        "sync_all_user_lines_from_affiliation_dry_run",
+    )
     ordering = ("knox_id",)
     list_display = (
         "knox_id",
@@ -351,6 +357,155 @@ class AccountUserAdmin(DjangoUserAdmin):
             level=messages.SUCCESS,
         )
         return None
+
+    @admin.action(description="선택 사용자 line 동기화 (user_sdwt_prod 기준, 기존 line은 유지)")
+    def sync_user_lines_from_affiliation(self, request, queryset):  # 타입 검사 생략: type: ignore[override]
+        """선택한 사용자에 대해 소속 line 값을 동기화합니다.
+
+        입력:
+        - 요청: Django HttpRequest
+        - queryset: 선택된 사용자 QuerySet
+
+        반환:
+        - HttpResponse: 상세 로그 파일 응답
+
+        부작용:
+        - User.line 업데이트
+
+        오류:
+        - 없음
+        """
+
+        # -----------------------------------------------------------------------------
+        # 1) 권한 확인(슈퍼유저 전용)
+        # -----------------------------------------------------------------------------
+        if not getattr(request, "user", None) or not request.user.is_superuser:
+            self.message_user(request, "슈퍼유저만 실행할 수 있습니다.", level=messages.ERROR)
+            return None
+
+        # -----------------------------------------------------------------------------
+        # 2) 서비스 호출
+        # -----------------------------------------------------------------------------
+        result = services.sync_user_lines_from_affiliations(users=queryset.iterator())
+
+        # -----------------------------------------------------------------------------
+        # 3) 로그 파일 응답 생성
+        # -----------------------------------------------------------------------------
+        summary_lines = [
+            f"총 대상: {result.get('total', 0)}",
+            f"업데이트: {result.get('updated', 0)}",
+            f"스킵(기존 line 존재): {result.get('skipped_has_line', 0)}",
+            f"스킵(user_sdwt_prod 없음): {result.get('skipped_no_user_sdwt_prod', 0)}",
+            f"스킵(소속 line 없음): {result.get('skipped_no_affiliation_line', 0)}",
+        ]
+        logs = result.get("logs") or []
+        content = "\n".join(summary_lines + ["", "상세 로그:"] + list(logs))
+
+        filename = f"user_line_sync_{timezone.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        response = HttpResponse(content, content_type="text/plain; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+    @admin.action(description="전체 사용자 line 동기화 (user_sdwt_prod 기준, 기존 line은 유지)")
+    def sync_all_user_lines_from_affiliation(self, request, queryset):  # 타입 검사 생략: type: ignore[override]
+        """전체 사용자에 대해 소속 line 값을 동기화합니다.
+
+        입력:
+        - 요청: Django HttpRequest
+        - queryset: 선택된 사용자 QuerySet(사용하지 않음)
+
+        반환:
+        - HttpResponse: 상세 로그 파일 응답
+
+        부작용:
+        - User.line 업데이트
+
+        오류:
+        - 없음
+        """
+
+        # -----------------------------------------------------------------------------
+        # 1) 권한 확인(슈퍼유저 전용)
+        # -----------------------------------------------------------------------------
+        if not getattr(request, "user", None) or not request.user.is_superuser:
+            self.message_user(request, "슈퍼유저만 실행할 수 있습니다.", level=messages.ERROR)
+            return None
+
+        # -----------------------------------------------------------------------------
+        # 2) 서비스 호출(전체 사용자)
+        # -----------------------------------------------------------------------------
+        result = services.sync_user_lines_from_affiliations(users=User.objects.all().iterator())
+
+        # -----------------------------------------------------------------------------
+        # 3) 로그 파일 응답 생성
+        # -----------------------------------------------------------------------------
+        summary_lines = [
+            "대상: 전체 사용자",
+            f"총 대상: {result.get('total', 0)}",
+            f"업데이트: {result.get('updated', 0)}",
+            f"스킵(기존 line 존재): {result.get('skipped_has_line', 0)}",
+            f"스킵(user_sdwt_prod 없음): {result.get('skipped_no_user_sdwt_prod', 0)}",
+            f"스킵(소속 line 없음): {result.get('skipped_no_affiliation_line', 0)}",
+        ]
+        logs = result.get("logs") or []
+        content = "\n".join(summary_lines + ["", "상세 로그:"] + list(logs))
+
+        filename = f"user_line_sync_all_{timezone.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        response = HttpResponse(content, content_type="text/plain; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+    @admin.action(description="전체 사용자 line 동기화 Dry-Run (업데이트 없음)")
+    def sync_all_user_lines_from_affiliation_dry_run(self, request, queryset):  # 타입 검사 생략: type: ignore[override]
+        """전체 사용자 line 동기화를 dry-run으로 수행합니다.
+
+        입력:
+        - 요청: Django HttpRequest
+        - queryset: 선택된 사용자 QuerySet(사용하지 않음)
+
+        반환:
+        - HttpResponse: 상세 로그 파일 응답
+
+        부작용:
+        - 없음(dry-run)
+
+        오류:
+        - 없음
+        """
+
+        # -----------------------------------------------------------------------------
+        # 1) 권한 확인(슈퍼유저 전용)
+        # -----------------------------------------------------------------------------
+        if not getattr(request, "user", None) or not request.user.is_superuser:
+            self.message_user(request, "슈퍼유저만 실행할 수 있습니다.", level=messages.ERROR)
+            return None
+
+        # -----------------------------------------------------------------------------
+        # 2) 서비스 호출(전체 사용자, dry-run)
+        # -----------------------------------------------------------------------------
+        result = services.sync_user_lines_from_affiliations(
+            users=User.objects.all().iterator(),
+            dry_run=True,
+        )
+
+        # -----------------------------------------------------------------------------
+        # 3) 로그 파일 응답 생성
+        # -----------------------------------------------------------------------------
+        summary_lines = [
+            "대상: 전체 사용자 (Dry-Run)",
+            f"총 대상: {result.get('total', 0)}",
+            f"업데이트 예정: {result.get('updated', 0)}",
+            f"스킵(기존 line 존재): {result.get('skipped_has_line', 0)}",
+            f"스킵(user_sdwt_prod 없음): {result.get('skipped_no_user_sdwt_prod', 0)}",
+            f"스킵(소속 line 없음): {result.get('skipped_no_affiliation_line', 0)}",
+        ]
+        logs = result.get("logs") or []
+        content = "\n".join(summary_lines + ["", "상세 로그:"] + list(logs))
+
+        filename = f"user_line_sync_all_dry_{timezone.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        response = HttpResponse(content, content_type="text/plain; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
     def save_model(self, request, obj, form, change):  # 타입 검사 생략: type: ignore[override]
         """관리자 저장 시 user_sdwt_prod 변경 시각을 동기화합니다.
