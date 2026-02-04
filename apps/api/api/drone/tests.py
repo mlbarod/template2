@@ -1013,3 +1013,64 @@ class DroneSopJiraHtmlDescriptionTests(TestCase):
         description = fields.get("description") or ""
         self.assertIn("https://example.com/ctttm", description)
         self.assertIn(">EQP-1<", description)
+
+
+class DroneSopJiraSummaryTests(TestCase):
+    """Jira 요약 템플릿 적용을 검증합니다."""
+
+    def test_build_jira_issue_fields_uses_template_summary(self) -> None:
+        """템플릿별 summary 포맷이 적용되는지 확인합니다."""
+        from api.drone.services import sop_jira
+
+        config = services.DroneJiraConfig(
+            base_url="http://example.local/jira",
+            token="dummy-token",
+            issue_type="Task",
+            use_bulk_api=False,
+            bulk_size=20,
+            connect_timeout=5,
+            read_timeout=20,
+        )
+        row = {
+            "line_id": "L1",
+            "sdwt_prod": "SDWT",
+            "main_step": "ST003",
+            "ppid": "PPID",
+            "eqp_id": "EQP",
+            "chamber_ids": "1",
+            "lot_id": "LOT.1",
+        }
+
+        def build_line_a_summary(data: dict[str, object]) -> str:
+            sdwt = str(data.get("sdwt_prod") or "?").strip() or "?"
+            return f"{data.get('line_id')}-{sdwt[:1]}"
+
+        def build_line_b_summary(data: dict[str, object]) -> str:
+            sdwt = str(data.get("sdwt_prod") or "?").strip() or "?"
+            step = str(data.get("main_step") or "??").strip() or "??"
+            normalized_step = step[2:].upper() if len(step) >= 3 else step.upper()
+            return f"{sdwt[:1]}-{normalized_step}"
+
+        with patch.dict(
+            sop_jira.SUMMARY_BUILDERS,
+            {
+                "line_a": build_line_a_summary,
+                "line_b": build_line_b_summary,
+            },
+            clear=True,
+        ):
+            fields_a = sop_jira._build_jira_issue_fields(
+                row=row,
+                project_key="DUMMY",
+                template_key="line_a",
+                config=config,
+            )
+            fields_b = sop_jira._build_jira_issue_fields(
+                row=row,
+                project_key="DUMMY",
+                template_key="line_b",
+                config=config,
+            )
+
+        self.assertEqual(fields_a.get("summary"), "L1-S")
+        self.assertEqual(fields_b.get("summary"), "S-003")

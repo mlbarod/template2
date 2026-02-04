@@ -32,7 +32,7 @@ from .utils import (
     _release_advisory_lock,
     _try_advisory_lock,
 )
-from .jira_templates import TEMPLATE_SOURCES
+from .jira_template_registry import SUMMARY_BUILDERS, TEMPLATE_SOURCES
 
 logger = logging.getLogger(__name__)
 
@@ -212,11 +212,12 @@ def _truncate(value: str, max_len: int) -> str:
     return value[: max_len - 3] + "..."
 
 
-def _build_jira_summary(row: dict[str, Any]) -> str:
-    """Jira 이슈 요약(summary)을 생성합니다.
+def _build_jira_summary(*, row: dict[str, Any], template_key: str) -> str:
+    """Jira 이슈 요약(summary)을 템플릿별로 생성합니다.
 
     인자:
         row: Drone SOP 행 dict(행 데이터).
+        template_key: 템플릿 키.
 
     반환:
         summary 문자열.
@@ -226,15 +227,22 @@ def _build_jira_summary(row: dict[str, Any]) -> str:
     """
 
     # -------------------------------------------------------------------------
-    # 1) 주요 필드 정규화
+    # 1) summary 빌더 선택
     # -------------------------------------------------------------------------
-    sdwt = str(row.get("sdwt_prod") or "?").strip() or "?"
-    step = str(row.get("main_step") or "??").strip() or "??"
-    normalized_step = step[2:].upper() if len(step) >= 3 else step.upper()
+    summary_builder = SUMMARY_BUILDERS.get(template_key)
+    if not callable(summary_builder):
+        raise ValueError(f"Unsupported Jira summary template key: {template_key!r}")
     # -------------------------------------------------------------------------
-    # 2) 길이 제한 적용
+    # 2) summary 생성
     # -------------------------------------------------------------------------
-    return _truncate(f"{sdwt[:1]} {normalized_step}", 255)
+    summary = summary_builder(row)
+    if not isinstance(summary, str):
+        summary = str(summary)
+    summary = summary.strip()
+    # -------------------------------------------------------------------------
+    # 3) 길이 제한 적용
+    # -------------------------------------------------------------------------
+    return _truncate(summary, 255)
 
 
 # =============================================================================
@@ -756,7 +764,7 @@ def _build_jira_issue_fields(
     return {
         "project": {"key": project_key},
         "issuetype": {"name": config.issue_type},
-        "summary": _build_jira_summary(row),
+        "summary": _build_jira_summary(row=row, template_key=template_key),
         "description": _build_jira_description_html(row=row, template_key=template_key),
         "labels": ["drone", "drone_sop"],
     }
