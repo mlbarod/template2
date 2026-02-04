@@ -766,7 +766,6 @@ def _build_jira_issue_fields(
         "issuetype": {"name": config.issue_type},
         "summary": _build_jira_summary(row=row, template_key=template_key),
         "description": _build_jira_description_html(row=row, template_key=template_key),
-        "labels": ["drone", "drone_sop"],
     }
 
 
