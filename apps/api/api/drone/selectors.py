@@ -1,6 +1,6 @@
 # =============================================================================
 # 모듈: 드론 셀렉터
-# 주요 함수: list_early_inform_entries, list_drone_sop_jira_candidates, get_line_history_payload
+# 주요 함수: list_early_inform_entries, list_drone_sop_jira_candidates, has_drone_sop_jira_candidates, get_line_history_payload
 # 주요 가정: 읽기 전용 쿼리만 수행합니다.
 # =============================================================================
 from __future__ import annotations
@@ -240,6 +240,31 @@ def list_drone_sop_jira_candidates(*, limit: int | None = None) -> list[dict[str
     ]
 
     return list(qs.values(*fields))
+
+
+def has_drone_sop_jira_candidates() -> bool:
+    """Jira 전송 대상 DroneSOP가 존재하는지 확인합니다.
+
+    조건:
+        - send_jira = 0 (미전송)
+        - (needtosend = 1 & status = 'COMPLETE') 또는 instant_inform = 1
+
+    반환:
+        존재 여부(boolean).
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 대상 쿼리 구성
+    # -----------------------------------------------------------------------------
+    qs = DroneSOP.objects.filter(send_jira=0).filter(Q(needtosend=1, status="COMPLETE") | Q(instant_inform=1))
+
+    # -----------------------------------------------------------------------------
+    # 2) 존재 여부 반환
+    # -----------------------------------------------------------------------------
+    return qs.exists()
 
 
 def load_drone_sop_ctttm_workorders_map(

@@ -20,7 +20,7 @@ def run_email_outbox_process(**_context):
     if not AIRFLOW_API_BASE_URL:
         raise ValueError("AIRFLOW_API_BASE_URL is not set")
 
-    headers = {"Accept": "application/json"}
+    headers = {"Accept": "application/json", "X-Forwarded-Proto": "https"}
     if AIRFLOW_TRIGGER_TOKEN:
         headers["Authorization"] = f"Bearer {AIRFLOW_TRIGGER_TOKEN}"
 

@@ -27,7 +27,7 @@ services:
     build:
       context: ./apps/web
       args:
-        VITE_BACKEND_URL: /api
+        VITE_BACKEND_URL: /
         VITE_AIRFLOW_BASE_URL: /airflow
         VITE_AIRFLOW_USERNAME: ${AIRFLOW_USERNAME:-airflow}
         VITE_AIRFLOW_PASSWORD: ${AIRFLOW_PASSWORD:-airflow}

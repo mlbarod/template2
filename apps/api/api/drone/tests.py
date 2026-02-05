@@ -187,6 +187,25 @@ class DroneSopJiraCandidateTests(TestCase):
         self.assertEqual(len(rows), 2)
         self.assertEqual({row["line_id"] for row in rows}, {"L1", "L3"})
 
+    def test_has_drone_sop_jira_candidates_returns_true_when_exists(self) -> None:
+        """Jira 후보가 있으면 True를 반환하는지 확인합니다."""
+        DroneSOP.objects.create(
+            line_id="L1",
+            eqp_id="EQP1",
+            chamber_ids="1",
+            lot_id="LOT.1",
+            main_step="MS",
+            status="COMPLETE",
+            needtosend=1,
+            send_jira=0,
+        )
+
+        self.assertTrue(selectors.has_drone_sop_jira_candidates())
+
+    def test_has_drone_sop_jira_candidates_returns_false_when_empty(self) -> None:
+        """Jira 후보가 없으면 False를 반환하는지 확인합니다."""
+        self.assertFalse(selectors.has_drone_sop_jira_candidates())
+
 
 class DroneSopJiraUpdateTests(TestCase):
     """Jira 상태 업데이트 로직을 검증합니다."""
@@ -381,6 +400,18 @@ class DroneEndpointTests(TestCase):
             HTTP_AUTHORIZATION="Bearer token",
         )
         self.assertEqual(response.status_code, 200)
+
+    @override_settings(AIRFLOW_TRIGGER_TOKEN="token")
+    @patch("api.drone.views.selectors.has_drone_sop_jira_candidates")
+    def test_drone_sop_jira_precheck(self, mock_selector) -> None:
+        """Jira precheck API가 정상 응답하는지 확인합니다."""
+        mock_selector.return_value = True
+        response = self.client.post(
+            reverse("drone-sop-jira-precheck"),
+            HTTP_AUTHORIZATION="Bearer token",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json().get("hasCandidates"))
 
 class DroneJiraKeyEndpointTests(TestCase):
     """Jira 키/템플릿 키 엔드포인트를 검증합니다."""
@@ -788,6 +819,22 @@ class DroneTriggerAuthTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["created"], 1)
         mock_run.assert_called_once_with(limit=None)
+
+    @override_settings(AIRFLOW_TRIGGER_TOKEN="expected-token")
+    @patch("api.drone.views.selectors.has_drone_sop_jira_candidates")
+    def test_jira_precheck_requires_token(self, mock_selector: Mock) -> None:
+        """Jira precheck가 토큰을 요구하는지 확인합니다."""
+        mock_selector.return_value = True
+        url = reverse("drone-sop-jira-precheck")
+
+        resp = self.client.post(url)
+        self.assertEqual(resp.status_code, 401)
+        self.assertEqual(mock_selector.call_count, 0)
+
+        resp = self.client.post(url, HTTP_AUTHORIZATION="Bearer expected-token")
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json().get("hasCandidates"))
+        mock_selector.assert_called_once()
 
     @override_settings(AIRFLOW_TRIGGER_TOKEN="expected-token")
     @patch("api.drone.views.services.run_drone_sop_jira_create_from_env")

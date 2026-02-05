@@ -15,6 +15,7 @@
 - 예시 요청: DELETE /api/v1/line-dashboard/early-inform?id=123
 - 예시 요청: GET    /api/v1/line-dashboard/jira-keys?userSdwtProd=SDWT_A
 - 예시 요청: POST   /api/v1/line-dashboard/jira-keys { userSdwtProd, jiraKey?, templateKey? }
+- 예시 요청: POST   /api/v1/line-dashboard/sop/jira/precheck
 
 # 응답(예시)
 GET 예시:
@@ -929,6 +930,57 @@ class DroneSopPop3IngestTriggerView(APIView):
 
 
 @method_decorator(csrf_exempt, name="dispatch")
+class DroneSopJiraPrecheckView(APIView):
+    """외부 Airflow에서 호출하는 Drone SOP Jira 후보 사전 확인 트리거."""
+
+    permission_classes: tuple = ()
+
+    def post(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """Jira 생성 대상 존재 여부를 반환합니다.
+
+        요청 예시:
+            예시 요청: POST /api/v1/line-dashboard/sop/jira/precheck
+            헤더 예시: Authorization: Bearer <token>
+
+        반환:
+            예시 응답: 200 {"hasCandidates": true}
+
+        부작용:
+            없음. 읽기 전용 조회입니다.
+
+        오류:
+            401: 토큰 인증 실패
+            500: 서버 오류
+
+        snake_case/camelCase 호환:
+            입력 파라미터는 없습니다.
+        """
+        # -----------------------------------------------------------------------------
+        # 1) Airflow 토큰 검증
+        # -----------------------------------------------------------------------------
+        auth_response = ensure_airflow_token(request, require_bearer=True)
+        if auth_response is not None:
+            return auth_response
+
+        # -----------------------------------------------------------------------------
+        # 2) 액티비티 로그 기록
+        # -----------------------------------------------------------------------------
+        set_activity_summary(request, "Precheck drone_sop Jira candidates")
+        merge_activity_metadata(request, resource="drone_sop", pipeline="jira_precheck")
+
+        # -----------------------------------------------------------------------------
+        # 3) 후보 존재 여부 조회 및 응답 구성
+        # -----------------------------------------------------------------------------
+        try:
+            has_candidates = selectors.has_drone_sop_jira_candidates()
+            set_activity_new_state(request, {"has_candidates": has_candidates})
+            return JsonResponse({"hasCandidates": has_candidates})
+        except Exception:  # 방어적 로깅 (pragma: no cover)
+            logger.exception("Failed to precheck drone SOP Jira candidates")
+            return JsonResponse({"error": "Drone SOP Jira precheck failed"}, status=500)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
 class DroneSopJiraTriggerView(APIView):
     """외부 Airflow에서 호출하는 Drone SOP Jira 생성 트리거."""
 
@@ -1019,6 +1071,7 @@ class DroneSopJiraTriggerView(APIView):
 __all__ = [
     "DroneEarlyInformView",
     "DroneSopInstantInformView",
+    "DroneSopJiraPrecheckView",
     "DroneSopJiraTriggerView",
     "DroneSopPop3IngestTriggerView",
     "LineHistoryView",

@@ -6,7 +6,7 @@ from typing import Any
 
 import requests
 from airflow import DAG
-from airflow.operators.python import PythonOperator
+from airflow.operators.python import PythonOperator, ShortCircuitOperator
 from airflow.utils.dates import days_ago
 from airflow.utils.trigger_rule import TriggerRule
 
@@ -15,6 +15,7 @@ AIRFLOW_TRIGGER_TOKEN = os.getenv("AIRFLOW_TRIGGER_TOKEN") or ""
 DRONE_SOP_POP3_INGEST_TRIGGER_URL = (
     f"{AIRFLOW_API_BASE_URL}/api/v1/line-dashboard/sop/ingest/pop3/trigger"
 )
+DRONE_SOP_JIRA_PRECHECK_URL = f"{AIRFLOW_API_BASE_URL}/api/v1/line-dashboard/sop/jira/precheck"
 DRONE_SOP_JIRA_TRIGGER_URL = f"{AIRFLOW_API_BASE_URL}/api/v1/line-dashboard/sop/jira/trigger"
 DRONE_SOP_POP3_INGEST_HTTP_TIMEOUT = int(os.getenv("DRONE_SOP_POP3_INGEST_HTTP_TIMEOUT") or "60")
 DRONE_SOP_JIRA_HTTP_TIMEOUT = int(os.getenv("DRONE_SOP_JIRA_HTTP_TIMEOUT") or "60")
@@ -39,7 +40,7 @@ def run_drone_sop_pop3_ingest(**_context):
     if not AIRFLOW_API_BASE_URL:
         raise ValueError("AIRFLOW_API_BASE_URL is not set")
 
-    headers = {"Accept": "application/json"}
+    headers = {"Accept": "application/json", "X-Forwarded-Proto": "https"}
     if AIRFLOW_TRIGGER_TOKEN:
         headers["Authorization"] = f"Bearer {AIRFLOW_TRIGGER_TOKEN}"
 
@@ -83,6 +84,33 @@ def run_drone_sop_jira_create(**_context):
         return {"status_code": response.status_code}
 
 
+def run_drone_sop_jira_precheck(**_context):
+    if not AIRFLOW_API_BASE_URL:
+        raise ValueError("AIRFLOW_API_BASE_URL is not set")
+
+    headers = {"Accept": "application/json"}
+    if AIRFLOW_TRIGGER_TOKEN:
+        headers["Authorization"] = f"Bearer {AIRFLOW_TRIGGER_TOKEN}"
+
+    response = requests.post(
+        DRONE_SOP_JIRA_PRECHECK_URL,
+        headers=headers,
+        timeout=DRONE_SOP_JIRA_HTTP_TIMEOUT,
+    )
+    response.raise_for_status()
+
+    data = response.json()
+    has_candidates = data.get("hasCandidates")
+    if isinstance(has_candidates, bool):
+        return has_candidates
+
+    candidates = data.get("candidates")
+    if isinstance(candidates, int):
+        return candidates > 0
+
+    raise ValueError("Invalid Jira precheck response")
+
+
 default_args = {
     "owner": "airflow",
     "depends_on_past": False,
@@ -104,10 +132,16 @@ with DAG(
         python_callable=run_drone_sop_pop3_ingest,
     )
 
-    create_jira = PythonOperator(
-        task_id="create_jira_drone_sop",
-        python_callable=run_drone_sop_jira_create,
+    precheck_jira = ShortCircuitOperator(
+        task_id="precheck_jira_drone_sop",
+        python_callable=run_drone_sop_jira_precheck,
         trigger_rule=TriggerRule.ALL_DONE,
     )
 
-    ingest_pop3 >> create_jira
+    create_jira = PythonOperator(
+        task_id="create_jira_drone_sop",
+        python_callable=run_drone_sop_jira_create,
+        trigger_rule=TriggerRule.ALL_SUCCESS,
+    )
+
+    ingest_pop3 >> precheck_jira >> create_jira

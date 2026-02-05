@@ -1,4 +1,4 @@
-# Multi-stage Dockerfile for Vite build + static preview
+# Vite 빌드 + 정적 프리뷰를 위한 멀티 스테이지 Dockerfile
 
 FROM node:20-alpine AS deps
 WORKDIR /app
@@ -8,7 +8,7 @@ RUN npm install --legacy-peer-deps
 FROM node:20-alpine AS builder
 WORKDIR /app
 ENV NODE_ENV=production
-ARG VITE_BACKEND_URL=/api
+ARG VITE_BACKEND_URL=/
 ARG VITE_AIRFLOW_BASE_URL=/airflow
 ARG VITE_AIRFLOW_USERNAME=airflow
 ARG VITE_AIRFLOW_PASSWORD=airflow

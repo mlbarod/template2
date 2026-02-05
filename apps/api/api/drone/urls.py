@@ -11,6 +11,7 @@ from .views import (
     DroneEarlyInformView,
     DroneJiraKeyView,
     DroneSopInstantInformView,
+    DroneSopJiraPrecheckView,
     DroneSopJiraTriggerView,
     DroneSopPop3IngestTriggerView,
     LineHistoryView,
@@ -31,6 +32,11 @@ urlpatterns = [
         "sop/ingest/pop3/trigger",
         DroneSopPop3IngestTriggerView.as_view(),
         name="drone-sop-pop3-ingest-trigger",
+    ),
+    path(
+        "sop/jira/precheck",
+        DroneSopJiraPrecheckView.as_view(),
+        name="drone-sop-jira-precheck",
     ),
     path(
         "sop/jira/trigger",
