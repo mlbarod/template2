@@ -417,8 +417,8 @@ class AffiliationSelectorTests(TestCase):
 class AccessibleUserSdwtProdTests(TestCase):
     """사용자 접근 가능한 user_sdwt_prod 계산을 검증합니다."""
 
-    def test_pending_change_included_when_no_current_affiliation(self) -> None:
-        """현재 소속이 없을 때 대기 변경이 포함되는지 확인합니다."""
+    def test_pending_change_not_included_when_no_current_affiliation(self) -> None:
+        """현재 소속이 없고 승인 대기 상태라도 접근 목록은 비어 있어야 합니다."""
         User = get_user_model()
         user = User.objects.create_user(
             sabun="S42000",
@@ -440,7 +440,7 @@ class AccessibleUserSdwtProdTests(TestCase):
         )
 
         accessible = get_accessible_user_sdwt_prods_for_user(user)
-        self.assertEqual(accessible, {"group-new"})
+        self.assertEqual(accessible, set())
 
     def test_pending_change_ignored_when_current_affiliation_exists(self) -> None:
         """현재 소속이 있으면 대기 변경이 제외되는지 확인합니다."""

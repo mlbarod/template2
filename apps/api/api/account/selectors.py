@@ -76,17 +76,8 @@ def get_accessible_user_sdwt_prods_for_user(user: Any) -> set[str]:
     user_sdwt_prod = getattr(user, "user_sdwt_prod", None)
     if isinstance(user_sdwt_prod, str) and user_sdwt_prod.strip():
         values.add(user_sdwt_prod)
-    else:
-        # -----------------------------------------------------------------------------
-        # 4) 초기 소속이 없으면 대기 변경 대상 포함
-        # -----------------------------------------------------------------------------
-        pending_change = get_pending_user_sdwt_prod_change(user=user)
-        pending_user_sdwt_prod = getattr(pending_change, "to_user_sdwt_prod", None)
-        if isinstance(pending_user_sdwt_prod, str) and pending_user_sdwt_prod.strip():
-            values.add(pending_user_sdwt_prod.strip())
-
     # -----------------------------------------------------------------------------
-    # 5) 최종 정제 및 반환
+    # 4) 최종 정제 및 반환
     # -----------------------------------------------------------------------------
     return {val for val in values if isinstance(val, str) and val.strip()}
 
