@@ -948,7 +948,13 @@ def run_drone_sop_jira_create_from_env(*, limit: int | None = None) -> DroneSopJ
         # ---------------------------------------------------------------------
         rows = selectors.list_drone_sop_jira_candidates(limit=limit)
         if not rows:
-            return DroneSopJiraCreateResult(candidates=0, created=0, updated_rows=0)
+            return DroneSopJiraCreateResult(
+                candidates=0,
+                created=0,
+                updated_rows=0,
+                skipped=True,
+                skip_reason="no_candidates",
+            )
 
         # ---------------------------------------------------------------------
         # 3) 프로젝트 키/템플릿 키 해석
