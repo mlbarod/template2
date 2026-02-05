@@ -13,6 +13,7 @@ from typing import Any, Sequence
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import requests
+import urllib3
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -93,7 +94,7 @@ class DroneJiraConfig:
                 getattr(settings, "DRONE_JIRA_VERIFY_SSL", None),
                 os.getenv("DRONE_JIRA_VERIFY_SSL"),
             ),
-            True,
+            False,
         )
         issue_type = (
             getattr(settings, "DRONE_JIRA_ISSUE_TYPE", "") or os.getenv("DRONE_JIRA_ISSUE_TYPE") or "Task"
@@ -227,13 +228,13 @@ def _build_jira_summary(*, row: dict[str, Any], template_key: str) -> str:
     """
 
     # -------------------------------------------------------------------------
-    # 1) summary 빌더 선택
+    # 1) 요약 빌더 선택
     # -------------------------------------------------------------------------
     summary_builder = SUMMARY_BUILDERS.get(template_key)
     if not callable(summary_builder):
         raise ValueError(f"Unsupported Jira summary template key: {template_key!r}")
     # -------------------------------------------------------------------------
-    # 2) summary 생성
+    # 2) 요약 생성
     # -------------------------------------------------------------------------
     summary = summary_builder(row)
     if not isinstance(summary, str):
@@ -472,7 +473,7 @@ def _enrich_rows_with_ctttm_urls(*, rows: Sequence[dict[str, Any]], config: Dron
         return
 
     # -------------------------------------------------------------------------
-    # 3) workorder 맵 로드
+    # 3) 워크오더 맵 로드
     # -------------------------------------------------------------------------
     try:
         workorders_by_id = selectors.load_drone_sop_ctttm_workorders_map(sop_ids=sop_ids, ctttm_table=config.table_name)
@@ -481,7 +482,7 @@ def _enrich_rows_with_ctttm_urls(*, rows: Sequence[dict[str, Any]], config: Dron
         return
 
     # -------------------------------------------------------------------------
-    # 4) row별 URL 항목 보강
+    # 4) 행별 URL 항목 보강
     # -------------------------------------------------------------------------
     for row in rows:
         rid = row.get("id")
@@ -525,6 +526,8 @@ def _jira_session(config: DroneJiraConfig) -> requests.Session:
     sess.trust_env = False
     sess.proxies = {}
     sess.verify = bool(config.verify_ssl)
+    if not sess.verify:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     # -------------------------------------------------------------------------
     # 2) 인증 헤더/인증 정보 설정
@@ -697,7 +700,7 @@ def _single_create_jira_issues(
     """
 
     # -------------------------------------------------------------------------
-    # 1) row 단위로 요청 수행
+    # 1) 행 단위로 요청 수행
     # -------------------------------------------------------------------------
     done_ids: list[int] = []
     key_by_id: dict[int, str] = {}
@@ -828,7 +831,7 @@ def _update_drone_sop_jira_status(
         updates["jira_key"] = Case(*key_whens, default=F("jira_key"), output_field=CharField())
 
     # -------------------------------------------------------------------------
-    # 4) DB 업데이트 실행
+    # 4) 데이터베이스 업데이트 실행
     # -------------------------------------------------------------------------
     with transaction.atomic():
         updated = DroneSOP.objects.filter(id__in=list(done_ids)).update(**updates)
@@ -944,7 +947,7 @@ def run_drone_sop_jira_create_from_env(*, limit: int | None = None) -> DroneSopJ
 
     try:
         # ---------------------------------------------------------------------
-        # 2) 대상 row 조회
+        # 2) 대상 행 조회
         # ---------------------------------------------------------------------
         rows = selectors.list_drone_sop_jira_candidates(limit=limit)
         if not rows:
@@ -1070,7 +1073,7 @@ def run_drone_sop_jira_create_from_env(*, limit: int | None = None) -> DroneSopJ
         )
     finally:
         # ---------------------------------------------------------------------
-        # 8) advisory lock 해제
+        # 8) 어드바이저리 락 해제
         # ---------------------------------------------------------------------
         if acquired:
             _release_advisory_lock(lock_id)
@@ -1107,7 +1110,7 @@ def _resolve_project_keys_for_rows(
     missing_ids: list[int] = []
 
     # -------------------------------------------------------------------------
-    # 3) row별 project_key 해석
+    # 3) 행별 project_key 해석
     # -------------------------------------------------------------------------
     for row in rows:
         rid = row.get("id")
@@ -1151,7 +1154,7 @@ def _resolve_template_keys_for_rows(
     missing_ids: list[int] = []
 
     # -------------------------------------------------------------------------
-    # 3) row별 템플릿 키 해석
+    # 3) 행별 템플릿 키 해석
     # -------------------------------------------------------------------------
     for row in rows:
         rid = row.get("id")
