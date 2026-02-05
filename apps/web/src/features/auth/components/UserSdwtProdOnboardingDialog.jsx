@@ -120,8 +120,8 @@ export function UserSdwtProdOnboardingDialog({ user, onCompleted }) {
   }
 
   return (
-    <Dialog open={needsOnboarding} onOpenChange={() => {}}>
-      <DialogContent showCloseButton={false} className="sm:max-w-[calc(100%-2rem)]">
+    <Dialog open={needsOnboarding} onOpenChange={() => { }}>
+      <DialogContent showCloseButton={false} className="sm:max-w-[calc(100%-70rem)]">
         <DialogHeader>
           <DialogTitle>소속 설정</DialogTitle>
           <DialogDescription>
