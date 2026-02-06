@@ -272,7 +272,7 @@ LLM MUST NOT guess.
 
 ```tsx
 <div class="h-screen flex flex-col">
-  <header class="h-16 shrink-0"> ... </header>
+  <header class="h-14 shrink-0"> ... </header>
 
   <main class="flex-1 min-h-0 overflow-hidden">
     {children}

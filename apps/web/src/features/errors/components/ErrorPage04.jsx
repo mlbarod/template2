@@ -11,9 +11,9 @@ function ErrorPage04({
 }) {
   return (
     <div className="h-screen flex flex-col bg-background">
-      <header className="h-16 shrink-0 border-b bg-background" />
+      <header className="h-14 shrink-0 border-b bg-background" />
       <main className="flex-1 min-h-0 overflow-hidden">
-        <div className="flex h-full min-h-0 flex-col items-center justify-center gap-12 overflow-y-auto px-8 py-8 sm:py-16 lg:justify-between lg:py-24">
+        <div className="flex h-full min-h-0 flex-col items-center justify-center gap-12 overflow-y-auto px-8 pt-6 pb-8 sm:pt-14 sm:pb-16 lg:justify-between lg:pt-20 lg:pb-24">
           <Error04Illustration aria-hidden="true" className="h-[clamp(300px,50vh,600px)]" />
           <div className="text-center">
             <h1 className="mb-1.5 text-2xl font-semibold">{title}</h1>

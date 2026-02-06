@@ -183,7 +183,7 @@ const HomeNavbar = ({ navigationItems }) => {
         <ProfileDropdown
           trigger={
             <Button variant="ghost" className="h-full p-0">
-              <Avatar className="size-9.5 rounded-md">
+              <Avatar className="size-9.5 rounded-full">
                 <AvatarImage src={avatarSrc || undefined} alt={displayName} />
                 <AvatarFallback>{initials}</AvatarFallback>
               </Avatar>

@@ -123,10 +123,10 @@ export function NavUser({
               aria-label="사용자 메뉴 열기"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
-              <Avatar className="h-8 w-8 rounded-lg">
+              <Avatar className="h-8 w-8 rounded-full">
                 {/* 아바타 이미지 로딩 실패 시 아바타 폴백(AvatarFallback)이 자동으로 노출 */}
                 <AvatarImage src={avatarSrc || undefined} alt={name || email || "User avatar"} />
-                <AvatarFallback className="rounded-lg">{initial}</AvatarFallback>
+                <AvatarFallback className="rounded-full">{initial}</AvatarFallback>
               </Avatar>
 
               <div className="grid flex-1 text-left text-sm leading-tight">
@@ -149,9 +149,9 @@ export function NavUser({
             {/* 상단 사용자 카드(간단 요약) */}
             <DropdownMenuLabel className="p-0 font-normal">
               <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-                <Avatar className="h-8 w-8 rounded-lg">
+                <Avatar className="h-8 w-8 rounded-full">
                   <AvatarImage src={avatarSrc || undefined} alt={name || email || "User avatar"} />
-                  <AvatarFallback className="rounded-lg">{initial}</AvatarFallback>
+                  <AvatarFallback className="rounded-full">{initial}</AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   {name ? <span className="truncate font-medium">{name}</span> : null}

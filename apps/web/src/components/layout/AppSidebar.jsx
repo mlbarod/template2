@@ -13,7 +13,7 @@ export function AppSidebar({ header, nav, secondary, className, ...props }) {
     <Sidebar
       collapsible="icon"
       aria-label="App navigation"
-      className={cn("md:top-16 md:h-[calc(100svh-4rem)]", className)}
+      className={cn("md:top-14 md:h-[calc(100svh-4rem)]", className)}
       {...props}
     >
       <SidebarHeader>{header ?? null}</SidebarHeader>
