@@ -44,7 +44,8 @@ export function RichTextEditor({
 
     quillRef.current = quill
 
-    const handleTextChange = () => {
+    const handleTextChange = (_delta, _old, source) => {
+      if (source !== Quill.sources.USER) return
       if (!onChangeRef.current || readOnlyRef.current) return
       onChangeRef.current(normalizeHtml(quill.root.innerHTML))
     }
@@ -53,15 +54,22 @@ export function RichTextEditor({
 
     const initialValue = normalizeHtml(value || "")
     if (initialValue) {
-      quill.clipboard.dangerouslyPasteHTML(initialValue)
+      quill.clipboard.dangerouslyPasteHTML(initialValue, Quill.sources.SILENT)
     }
     quill.enable(!readOnly)
 
     return () => {
       quill.off("text-change", handleTextChange)
+      const host = wrapperRef.current?.parentElement
+      if (host) {
+        host.querySelectorAll(".ql-toolbar").forEach((node) => node.remove())
+      }
+      if (wrapperRef.current) {
+        wrapperRef.current.innerHTML = ""
+      }
       quillRef.current = null
     }
-  }, [formats, modules, placeholder, readOnly, value])
+  }, [formats, modules, placeholder])
 
   React.useEffect(() => {
     const quill = quillRef.current
@@ -77,7 +85,7 @@ export function RichTextEditor({
     const currentValue = normalizeHtml(quill.root.innerHTML)
     if (nextValue === currentValue) return
 
-    quill.clipboard.dangerouslyPasteHTML(nextValue)
+    quill.clipboard.dangerouslyPasteHTML(nextValue, Quill.sources.SILENT)
   }, [value])
 
   React.useEffect(() => {
