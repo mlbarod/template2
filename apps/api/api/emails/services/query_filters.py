@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone as dt_timezone
+from datetime import date, datetime, time as dt_time, timezone as dt_timezone
 from typing import Any, Dict, Mapping
 
 from django.utils import timezone
@@ -39,17 +39,44 @@ def parse_int(value: Any, default: int) -> int:
         return default
 
 
-# UTC 기준 정규화를 위해 안전한 타임존 상수를 준비합니다.
 _UTC = getattr(timezone, "utc", dt_timezone.utc)
 
 
-def parse_datetime_value(value: Any) -> datetime | None:
-    """날짜/일시 입력을 timezone-aware datetime(UTC)으로 파싱합니다.
+def _get_default_timezone():
+    """Django 기본 타임존을 반환합니다."""
+
+    return timezone.get_default_timezone()
+
+
+def _normalize_to_utc(value: datetime) -> datetime:
+    """datetime 값을 UTC timezone-aware로 정규화합니다.
+
+    입력:
+        value: datetime 값.
+    반환:
+        UTC timezone-aware datetime.
+    부작용:
+        없음.
+    오류:
+        없음.
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 타임존 보정(기본 타임존 가정) 후 UTC 변환
+    # -----------------------------------------------------------------------------
+    if timezone.is_naive(value):
+        value = timezone.make_aware(value, _get_default_timezone())
+    return value.astimezone(_UTC)
+
+
+def parse_datetime_value(value: Any, *, boundary: str = "start") -> datetime | None:
+    """날짜/일시 입력을 UTC 기준 datetime으로 파싱합니다.
 
     입력:
         value: ISO 날짜/시간 문자열, date/datetime 객체 또는 None.
+        boundary: date 입력일 때 시작/끝 경계("start" | "end").
     반환:
-        timezone-aware datetime 또는 None.
+        timezone-aware datetime 또는 None(기본 타임존 기준 해석 후 UTC 변환).
     부작용:
         없음.
     오류:
@@ -57,16 +84,16 @@ def parse_datetime_value(value: Any) -> datetime | None:
     """
 
     # -----------------------------------------------------------------------------
-    # 1) datetime 파싱 우선 시도
+    # 1) boundary 정규화 및 타입별 처리
     # -----------------------------------------------------------------------------
+    boundary = "end" if boundary == "end" else "start"
     if value is None:
         return None
     if isinstance(value, datetime):
-        if timezone.is_naive(value):
-            return timezone.make_aware(value, _UTC)
-        return value.astimezone(_UTC)
+        return _normalize_to_utc(value)
     if isinstance(value, date):
-        return datetime.combine(value, datetime.min.time(), tzinfo=_UTC)
+        time_value = dt_time.max if boundary == "end" else dt_time.min
+        return _normalize_to_utc(datetime.combine(value, time_value))
     if not isinstance(value, str):
         return None
 
@@ -76,16 +103,15 @@ def parse_datetime_value(value: Any) -> datetime | None:
 
     dt = parse_datetime(raw)
     if dt:
-        if timezone.is_naive(dt):
-            return timezone.make_aware(dt, _UTC)
-        return dt.astimezone(_UTC)
+        return _normalize_to_utc(dt)
 
     # -----------------------------------------------------------------------------
     # 2) date 단독 입력 처리
     # -----------------------------------------------------------------------------
     date_only = parse_date(raw)
     if date_only:
-        return datetime.combine(date_only, datetime.min.time(), tzinfo=_UTC)
+        time_value = dt_time.max if boundary == "end" else dt_time.min
+        return _normalize_to_utc(datetime.combine(date_only, time_value))
     return None
 
 
@@ -134,8 +160,8 @@ def build_email_filters(
         "search": (params.get("q") or "").strip(),
         "sender": (params.get("sender") or "").strip(),
         "recipient": (params.get("recipient") or "").strip(),
-        "date_from": parse_datetime_value(params.get("date_from")),
-        "date_to": parse_datetime_value(params.get("date_to")),
+        "date_from": parse_datetime_value(params.get("date_from"), boundary="start"),
+        "date_to": parse_datetime_value(params.get("date_to"), boundary="end"),
         "page": parse_int(params.get("page"), 1),
         "page_size": min(parse_int(params.get("page_size"), default_page_size), max_page_size),
     }

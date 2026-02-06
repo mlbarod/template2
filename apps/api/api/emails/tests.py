@@ -41,11 +41,12 @@ from api.rag.services import RAG_INDEX_EMAILS, resolve_rag_index_name
 UTC = getattr(timezone, "utc", dt_timezone.utc)
 
 
+@override_settings(TIME_ZONE="Asia/Seoul")
 class EmailQueryFilterTests(SimpleTestCase):
     """emails.services.query_filters의 날짜 파싱을 검증합니다."""
 
     def test_parse_datetime_value_naive_is_utc(self) -> None:
-        """타임존 없는 문자열이 UTC로 정규화되는지 확인합니다."""
+        """타임존 없는 문자열이 KST로 해석되어 UTC로 변환되는지 확인합니다."""
 
         parsed = parse_datetime_value("2025-01-01T10:00:00")
 
@@ -53,7 +54,7 @@ class EmailQueryFilterTests(SimpleTestCase):
         self.assertTrue(timezone.is_aware(parsed))
         self.assertEqual(parsed.tzinfo, UTC)
         self.assertEqual(parsed.utcoffset(), timedelta(0))
-        self.assertEqual(parsed.hour, 10)
+        self.assertEqual(parsed.hour, 1)
 
     def test_parse_datetime_value_with_offset_converts_to_utc(self) -> None:
         """오프셋이 포함된 입력이 UTC 기준으로 변환되는지 확인합니다."""
@@ -66,14 +67,17 @@ class EmailQueryFilterTests(SimpleTestCase):
         self.assertEqual(parsed.hour, 1)
 
     def test_parse_datetime_value_date_only_returns_midnight_utc(self) -> None:
-        """날짜만 입력된 경우 UTC 자정으로 변환되는지 확인합니다."""
+        """날짜만 입력된 경우 KST 자정을 UTC로 변환하는지 확인합니다."""
 
         parsed = parse_datetime_value("2025-01-01")
 
         self.assertIsNotNone(parsed)
         self.assertEqual(parsed.tzinfo, UTC)
         self.assertEqual(parsed.utcoffset(), timedelta(0))
-        self.assertEqual(parsed.hour, 0)
+        self.assertEqual(parsed.year, 2024)
+        self.assertEqual(parsed.month, 12)
+        self.assertEqual(parsed.day, 31)
+        self.assertEqual(parsed.hour, 15)
         self.assertEqual(parsed.minute, 0)
 
     def test_parse_datetime_value_accepts_datetime(self) -> None:
@@ -85,7 +89,7 @@ class EmailQueryFilterTests(SimpleTestCase):
         self.assertTrue(timezone.is_aware(parsed))
         self.assertEqual(parsed.tzinfo, UTC)
         self.assertEqual(parsed.utcoffset(), timedelta(0))
-        self.assertEqual(parsed.hour, 10)
+        self.assertEqual(parsed.hour, 1)
 
     def test_parse_datetime_value_accepts_date(self) -> None:
         """date 입력이 UTC 자정으로 변환되는지 확인합니다."""
@@ -95,8 +99,27 @@ class EmailQueryFilterTests(SimpleTestCase):
         self.assertIsNotNone(parsed)
         self.assertEqual(parsed.tzinfo, UTC)
         self.assertEqual(parsed.utcoffset(), timedelta(0))
-        self.assertEqual(parsed.hour, 0)
+        self.assertEqual(parsed.year, 2024)
+        self.assertEqual(parsed.month, 12)
+        self.assertEqual(parsed.day, 31)
+        self.assertEqual(parsed.hour, 15)
         self.assertEqual(parsed.minute, 0)
+
+    def test_parse_datetime_value_date_only_end_boundary(self) -> None:
+        """종료일 경계가 KST 기준 하루 끝으로 변환되는지 확인합니다."""
+
+        parsed = parse_datetime_value("2025-01-01", boundary="end")
+
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed.tzinfo, UTC)
+        self.assertEqual(parsed.utcoffset(), timedelta(0))
+        self.assertEqual(parsed.year, 2025)
+        self.assertEqual(parsed.month, 1)
+        self.assertEqual(parsed.day, 1)
+        self.assertEqual(parsed.hour, 14)
+        self.assertEqual(parsed.minute, 59)
+        self.assertEqual(parsed.second, 59)
+        self.assertEqual(parsed.microsecond, 999999)
 
 
 class EmailAffiliationTests(TestCase):

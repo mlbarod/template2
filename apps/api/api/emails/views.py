@@ -212,7 +212,7 @@ class EmailInboxListView(APIView):
                 - q: 검색어(제목/본문/발신자/참여자)
                 - sender: 발신자 필터
                 - recipient: 수신자 필터(To/Cc)
-                - date_from/date_to: 수신 기간 필터(ISO)
+                - date_from/date_to: 수신 기간 필터(ISO, 기본 타임존 기준 날짜/시간)
                 - page/page_size: 페이지네이션
         반환:
             예시 응답: {"results": [...], "page": int, "pageSize": int, "total": int, "totalPages": int}
@@ -226,6 +226,9 @@ class EmailInboxListView(APIView):
             예시 요청: GET /api/v1/emails/inbox/?user_sdwt_prod=group-a&q=report&page=1&page_size=20
         snake/camel 호환:
             user_sdwt_prod <-> userSdwtProd만 지원합니다(그 외는 snake_case 사용).
+        날짜 해석:
+            - 타임존 없는 값은 Django 기본 타임존(TIME_ZONE)으로 해석 후 UTC로 변환합니다.
+            - 날짜만 입력 시 date_from=해당 날짜 00:00:00, date_to=해당 날짜 23:59:59.999999로 처리됩니다.
         """
 
         # -----------------------------------------------------------------------------
@@ -289,7 +292,7 @@ class EmailSentListView(APIView):
 
         입력:
             쿼리:
-                - q/sender/recipient/date_from/date_to/page/page_size (검색/기간/페이지)
+                - q/sender/recipient/date_from/date_to/page/page_size (검색/기간/페이지, 기본 타임존 기준 날짜/시간)
         반환:
             예시 응답: {"results": [...], "page": int, "pageSize": int, "total": int, "totalPages": int}
         부작용:
@@ -302,6 +305,9 @@ class EmailSentListView(APIView):
             예시 요청: GET /api/v1/emails/sent/?q=report&page=1&page_size=20
         snake/camel 호환:
             지원하지 않습니다(특히 knox_id/knoxId 파라미터는 허용하지 않음).
+        날짜 해석:
+            - 타임존 없는 값은 Django 기본 타임존(TIME_ZONE)으로 해석 후 UTC로 변환합니다.
+            - 날짜만 입력 시 date_from=해당 날짜 00:00:00, date_to=해당 날짜 23:59:59.999999로 처리됩니다.
         """
 
         # -----------------------------------------------------------------------------
