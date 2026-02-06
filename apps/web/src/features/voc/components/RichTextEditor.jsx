@@ -32,9 +32,16 @@ export function RichTextEditor({
   }, [readOnly])
 
   React.useEffect(() => {
-    if (!wrapperRef.current || quillRef.current) return
+    const editorHost = wrapperRef.current
+    const host = editorHost?.parentElement
+    if (!editorHost || quillRef.current) return
 
-    const quill = new Quill(wrapperRef.current, {
+    if (host) {
+      host.querySelectorAll(".ql-toolbar").forEach((node) => node.remove())
+    }
+    editorHost.innerHTML = ""
+
+    const quill = new Quill(editorHost, {
       theme: "snow",
       placeholder,
       modules,
@@ -60,12 +67,11 @@ export function RichTextEditor({
 
     return () => {
       quill.off("text-change", handleTextChange)
-      const host = wrapperRef.current?.parentElement
       if (host) {
         host.querySelectorAll(".ql-toolbar").forEach((node) => node.remove())
       }
-      if (wrapperRef.current) {
-        wrapperRef.current.innerHTML = ""
+      if (editorHost) {
+        editorHost.innerHTML = ""
       }
       quillRef.current = null
     }
