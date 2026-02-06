@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, timezone as dt_timezone
 from typing import Any, Dict, Mapping
 
 from django.utils import timezone
@@ -39,11 +39,15 @@ def parse_int(value: Any, default: int) -> int:
         return default
 
 
-def parse_datetime_value(value: str | None) -> datetime | None:
-    """날짜/일시 문자열을 timezone-aware datetime(UTC)으로 파싱합니다.
+# UTC 기준 정규화를 위해 안전한 타임존 상수를 준비합니다.
+_UTC = getattr(timezone, "utc", dt_timezone.utc)
+
+
+def parse_datetime_value(value: Any) -> datetime | None:
+    """날짜/일시 입력을 timezone-aware datetime(UTC)으로 파싱합니다.
 
     입력:
-        value: ISO 날짜/시간 문자열 또는 None.
+        value: ISO 날짜/시간 문자열, date/datetime 객체 또는 None.
     반환:
         timezone-aware datetime 또는 None.
     부작용:
@@ -55,20 +59,33 @@ def parse_datetime_value(value: str | None) -> datetime | None:
     # -----------------------------------------------------------------------------
     # 1) datetime 파싱 우선 시도
     # -----------------------------------------------------------------------------
-    if not value:
+    if value is None:
         return None
-    dt = parse_datetime(value)
+    if isinstance(value, datetime):
+        if timezone.is_naive(value):
+            return timezone.make_aware(value, _UTC)
+        return value.astimezone(_UTC)
+    if isinstance(value, date):
+        return datetime.combine(value, datetime.min.time(), tzinfo=_UTC)
+    if not isinstance(value, str):
+        return None
+
+    raw = value.strip()
+    if not raw:
+        return None
+
+    dt = parse_datetime(raw)
     if dt:
         if timezone.is_naive(dt):
-            return timezone.make_aware(dt, timezone.utc)
-        return dt.astimezone(timezone.utc)
+            return timezone.make_aware(dt, _UTC)
+        return dt.astimezone(_UTC)
 
     # -----------------------------------------------------------------------------
     # 2) date 단독 입력 처리
     # -----------------------------------------------------------------------------
-    date_only = parse_date(value)
+    date_only = parse_date(raw)
     if date_only:
-        return datetime.combine(date_only, datetime.min.time(), tzinfo=timezone.utc)
+        return datetime.combine(date_only, datetime.min.time(), tzinfo=_UTC)
     return None
 
 

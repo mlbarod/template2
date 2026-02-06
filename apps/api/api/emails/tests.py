@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import base64
 import os
-from datetime import timedelta
+from datetime import date, datetime, timedelta, timezone as dt_timezone
 from email.message import EmailMessage
 from unittest.mock import Mock, patch
 
@@ -38,6 +38,8 @@ from api.emails.services import (
 )
 from api.rag.services import RAG_INDEX_EMAILS, resolve_rag_index_name
 
+UTC = getattr(timezone, "utc", dt_timezone.utc)
+
 
 class EmailQueryFilterTests(SimpleTestCase):
     """emails.services.query_filters의 날짜 파싱을 검증합니다."""
@@ -49,7 +51,7 @@ class EmailQueryFilterTests(SimpleTestCase):
 
         self.assertIsNotNone(parsed)
         self.assertTrue(timezone.is_aware(parsed))
-        self.assertEqual(parsed.tzinfo, timezone.utc)
+        self.assertEqual(parsed.tzinfo, UTC)
         self.assertEqual(parsed.utcoffset(), timedelta(0))
         self.assertEqual(parsed.hour, 10)
 
@@ -59,7 +61,7 @@ class EmailQueryFilterTests(SimpleTestCase):
         parsed = parse_datetime_value("2025-01-01T10:00:00+09:00")
 
         self.assertIsNotNone(parsed)
-        self.assertEqual(parsed.tzinfo, timezone.utc)
+        self.assertEqual(parsed.tzinfo, UTC)
         self.assertEqual(parsed.utcoffset(), timedelta(0))
         self.assertEqual(parsed.hour, 1)
 
@@ -69,7 +71,29 @@ class EmailQueryFilterTests(SimpleTestCase):
         parsed = parse_datetime_value("2025-01-01")
 
         self.assertIsNotNone(parsed)
-        self.assertEqual(parsed.tzinfo, timezone.utc)
+        self.assertEqual(parsed.tzinfo, UTC)
+        self.assertEqual(parsed.utcoffset(), timedelta(0))
+        self.assertEqual(parsed.hour, 0)
+        self.assertEqual(parsed.minute, 0)
+
+    def test_parse_datetime_value_accepts_datetime(self) -> None:
+        """datetime 입력이 UTC timezone-aware로 변환되는지 확인합니다."""
+
+        parsed = parse_datetime_value(datetime(2025, 1, 1, 10, 0, 0))
+
+        self.assertIsNotNone(parsed)
+        self.assertTrue(timezone.is_aware(parsed))
+        self.assertEqual(parsed.tzinfo, UTC)
+        self.assertEqual(parsed.utcoffset(), timedelta(0))
+        self.assertEqual(parsed.hour, 10)
+
+    def test_parse_datetime_value_accepts_date(self) -> None:
+        """date 입력이 UTC 자정으로 변환되는지 확인합니다."""
+
+        parsed = parse_datetime_value(date(2025, 1, 1))
+
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed.tzinfo, UTC)
         self.assertEqual(parsed.utcoffset(), timedelta(0))
         self.assertEqual(parsed.hour, 0)
         self.assertEqual(parsed.minute, 0)
