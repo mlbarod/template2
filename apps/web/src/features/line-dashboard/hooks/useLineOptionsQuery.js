@@ -1,7 +1,7 @@
 // 파일 경로: src/features/line-dashboard/hooks/useLineOptionsQuery.js
 // 라인 선택 드롭다운에서 사용할 옵션을 React Query로 관리합니다.
 // - account/lineSdwtOptions 응답을 기반으로 line 목록만 추출합니다.
-// - drone_sop_jira_user_template에 존재하는 user_sdwt_prod가 속한 line만 노출합니다.
+// - drone_sop_user_sdwt_channel에 존재하는 target_user_sdwt_prod가 속한 line만 노출합니다.
 
 import { useQuery } from "@tanstack/react-query"
 

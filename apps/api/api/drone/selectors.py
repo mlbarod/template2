@@ -26,7 +26,118 @@ from api.common.services import (
 )
 from api.common.selectors import _get_user_sdwt_prod_values
 
-from .models import DroneEarlyInform, DroneSOP, DroneSopJiraUserTemplate
+from .models import (
+    DroneEarlyInform,
+    DroneSOP,
+    DroneSopNeedToSendRule,
+    DroneSopUserSdwtChannel,
+    DroneSopUserSdwtProdMap,
+)
+
+_DRONE_SOP_COMMON_CANDIDATE_FIELDS = (
+    "id",
+    "line_id",
+    "sdwt_prod",
+    "sample_type",
+    "sample_group",
+    "eqp_id",
+    "chamber_ids",
+    "lot_id",
+    "proc_id",
+    "ppid",
+    "main_step",
+    "metro_current_step",
+    "metro_steps",
+    "metro_end_step",
+    "status",
+    "knox_id",
+    "user_sdwt_prod",
+    "comment",
+    "defect_url",
+    "defect_png_url",
+    "needtosend",
+    "instant_inform",
+    "custom_end_step",
+)
+_DRONE_SOP_JIRA_CANDIDATE_FIELDS = (*_DRONE_SOP_COMMON_CANDIDATE_FIELDS, "send_jira")
+_DRONE_SOP_INFORM_CANDIDATE_FIELDS = (
+    *_DRONE_SOP_COMMON_CANDIDATE_FIELDS,
+    "send_jira",
+    "send_messenger",
+    "send_mail",
+)
+
+# =============================================================================
+# 공통 정규화 유틸
+# =============================================================================
+def _normalize_str(value: Any, *, allow_non_str: bool = False) -> str | None:
+    """문자열 값을 정규화합니다.
+
+    인자:
+        value: 원본 값.
+        allow_non_str: 문자열이 아닐 때 str() 변환 허용 여부.
+
+    반환:
+        정규화된 문자열 또는 None.
+
+    부작용:
+        없음. 순수 정규화입니다.
+    """
+
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        if not allow_non_str:
+            return None
+        value = str(value)
+    trimmed = value.strip()
+    return trimmed if trimmed else None
+
+
+def _normalize_str_list(values: Sequence[Any], *, allow_non_str: bool = False) -> list[str]:
+    """문자열 리스트를 정규화합니다.
+
+    인자:
+        values: 원본 값 시퀀스.
+        allow_non_str: 문자열이 아닐 때 str() 변환 허용 여부.
+
+    반환:
+        정규화된 문자열 리스트.
+
+    부작용:
+        없음. 순수 정규화입니다.
+    """
+
+    normalized: list[str] = []
+    for value in values:
+        cleaned = _normalize_str(value, allow_non_str=allow_non_str)
+        if cleaned:
+            normalized.append(cleaned)
+    return normalized
+
+
+def _normalize_chatroom_id(value: Any) -> int | None:
+    """채팅룸 ID 값을 정수로 정규화합니다.
+
+    인자:
+        value: 원본 값.
+
+    반환:
+        양의 정수 chatroom_id 또는 None.
+
+    부작용:
+        없음. 순수 정규화입니다.
+    """
+
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed <= 0:
+        return None
+    return parsed
 
 
 def list_early_inform_entries(*, line_id: str) -> QuerySet[DroneEarlyInform]:
@@ -87,17 +198,38 @@ def get_drone_sop_for_update(*, sop_id: int) -> DroneSOP | None:
     return DroneSOP.objects.select_for_update().filter(id=sop_id).first()
 
 
-def list_drone_sop_jira_templates_by_user_sdwt_prods(
-    *,
-    user_sdwt_prod_values: set[str] | list[str],
-) -> dict[str, str]:
-    """user_sdwt_prod별 Jira 템플릿 키 맵을 조회합니다.
-
-    인자:
-        user_sdwt_prod_values: user_sdwt_prod 집합 또는 리스트.
+def list_drone_sop_user_sdwt_maps() -> list[dict[str, Any]]:
+    """드론 SOP 사용자 매핑 규칙 목록을 조회합니다.
 
     반환:
-        {user_sdwt_prod: template_key} 형태의 dict.
+        매핑 규칙 dict 리스트.
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 활성 매핑 규칙 조회
+    # -----------------------------------------------------------------------------
+    rows = (
+        DroneSopUserSdwtProdMap.objects.filter(is_active=True)
+        .values("sdwt_prod", "user_sdwt_prod", "target_user_sdwt_prod")
+        .order_by("id")
+    )
+    return list(rows)
+
+
+def get_drone_sop_needtosend_rule_by_target(
+    *,
+    target_user_sdwt_prod: str,
+) -> DroneSopNeedToSendRule | None:
+    """target_user_sdwt_prod 기준 needtosend 규칙을 조회합니다.
+
+    인자:
+        target_user_sdwt_prod: 대상 소속 문자열.
+
+    반환:
+        DroneSopNeedToSendRule 인스턴스 또는 None.
 
     부작용:
         없음. 읽기 전용 조회입니다.
@@ -106,32 +238,102 @@ def list_drone_sop_jira_templates_by_user_sdwt_prods(
     # -----------------------------------------------------------------------------
     # 1) 입력 정규화
     # -----------------------------------------------------------------------------
-    normalized_users = [
-        user_sdwt_prod.strip()
-        for user_sdwt_prod in user_sdwt_prod_values
-        if isinstance(user_sdwt_prod, str) and user_sdwt_prod.strip()
-    ]
-    if not normalized_users:
+    normalized = _normalize_str(target_user_sdwt_prod, allow_non_str=True)
+    if not normalized:
+        return None
+
+    # -----------------------------------------------------------------------------
+    # 2) 활성 규칙 조회
+    # -----------------------------------------------------------------------------
+    return (
+        DroneSopNeedToSendRule.objects.filter(target_user_sdwt_prod=normalized, is_active=True)
+        .order_by("id")
+        .first()
+    )
+
+
+def list_drone_sop_user_sdwt_channels_by_targets(
+    *,
+    target_user_sdwt_prod_values: set[str] | list[str],
+) -> dict[str, dict[str, str | bool | int | None]]:
+    """target_user_sdwt_prod별 채널 설정 맵을 조회합니다.
+
+    인자:
+        target_user_sdwt_prod_values: target_user_sdwt_prod 집합 또는 리스트.
+
+    반환:
+        {target_user_sdwt_prod: {jira_key, chatroom_id, jira_template_key, mail_template_key, messenger_template_key, jira_enabled, messenger_enabled, mail_enabled}} 형태의 dict.
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 입력 정규화
+    # -----------------------------------------------------------------------------
+    normalized_targets = _normalize_str_list(target_user_sdwt_prod_values)
+    if not normalized_targets:
         return {}
 
     # -----------------------------------------------------------------------------
-    # 2) 템플릿 조회 및 매핑 구성
+    # 2) 채널 설정 조회 및 매핑 구성
     # -----------------------------------------------------------------------------
-    rows = DroneSopJiraUserTemplate.objects.filter(user_sdwt_prod__in=normalized_users).values(
-        "user_sdwt_prod",
-        "template_key",
+    rows = DroneSopUserSdwtChannel.objects.filter(
+        target_user_sdwt_prod__in=normalized_targets,
+        is_active=True,
+    ).values(
+        "target_user_sdwt_prod",
+        "jira_key",
+        "chatroom_id",
+        "jira_template_key",
+        "mail_template_key",
+        "messenger_template_key",
+        "jira_enabled",
+        "messenger_enabled",
+        "mail_enabled",
     )
-    mapping: dict[str, str] = {}
+    mapping: dict[str, dict[str, str | bool | int | None]] = {}
     for row in rows:
-        user_sdwt_prod = row.get("user_sdwt_prod")
-        template_key = row.get("template_key")
-        if not isinstance(user_sdwt_prod, str) or not user_sdwt_prod.strip():
+        target = _normalize_str(row.get("target_user_sdwt_prod"))
+        if not target:
             continue
-        if not isinstance(template_key, str) or not template_key.strip():
-            continue
-        mapping[user_sdwt_prod.strip()] = template_key.strip()
-
+        chatroom_id = _normalize_chatroom_id(row.get("chatroom_id"))
+        mapping[target] = {
+            "jira_key": _normalize_str(row.get("jira_key")),
+            "chatroom_id": chatroom_id,
+            "jira_template_key": _normalize_str(row.get("jira_template_key")),
+            "mail_template_key": _normalize_str(row.get("mail_template_key")),
+            "messenger_template_key": _normalize_str(row.get("messenger_template_key")),
+            "jira_enabled": bool(row.get("jira_enabled", True)),
+            "messenger_enabled": bool(row.get("messenger_enabled", True)),
+            "mail_enabled": bool(row.get("mail_enabled", True)),
+        }
     return mapping
+
+
+def list_drone_sop_jira_templates_by_target_user_sdwt_prods(
+    *,
+    target_user_sdwt_prod_values: set[str] | list[str],
+) -> dict[str, str | None]:
+    """target_user_sdwt_prod별 Jira 템플릿 키 맵을 조회합니다.
+
+    인자:
+        target_user_sdwt_prod_values: target_user_sdwt_prod 집합 또는 리스트.
+
+    반환:
+        {target_user_sdwt_prod: template_key} 형태의 dict(없으면 None).
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+    """
+
+    channels = list_drone_sop_user_sdwt_channels_by_targets(
+        target_user_sdwt_prod_values=target_user_sdwt_prod_values,
+    )
+    return {
+        target: config.get("jira_template_key")
+        for target, config in channels.items()
+    }
 
 
 def load_drone_sop_custom_end_step_map() -> dict[tuple[str, str], str | None]:
@@ -183,6 +385,54 @@ def load_drone_sop_custom_end_step_map() -> dict[tuple[str, str], str | None]:
     return mapping
 
 
+def _drone_sop_jira_candidates_queryset() -> QuerySet[DroneSOP]:
+    """Jira 전송 대상 DroneSOP 기본 QuerySet을 구성합니다.
+
+    반환:
+        DroneSOP QuerySet.
+
+    부작용:
+        없음. 읽기 전용 조회 조건만 생성합니다.
+    """
+
+    return DroneSOP.objects.filter(send_jira=0).filter(Q(needtosend=1, status="COMPLETE") | Q(instant_inform=1))
+
+
+def _drone_sop_inform_candidates_queryset() -> QuerySet[DroneSOP]:
+    """멀티 채널 전송 대상 DroneSOP 기본 QuerySet을 구성합니다.
+
+    반환:
+        DroneSOP QuerySet.
+
+    부작용:
+        없음. 읽기 전용 조회 조건만 생성합니다.
+    """
+
+    send_pending = (
+        Q(send_jira=0)
+        | Q(send_jira__isnull=True)
+        | Q(send_messenger=0)
+        | Q(send_messenger__isnull=True)
+        | Q(send_mail=0)
+        | Q(send_mail__isnull=True)
+    )
+    return DroneSOP.objects.filter(send_pending).filter(Q(needtosend=1, status="COMPLETE") | Q(instant_inform=1))
+
+
+def _list_candidate_rows(
+    *,
+    queryset: QuerySet[DroneSOP],
+    fields: Sequence[str],
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    """대상 QuerySet에서 후보 row를 공통 방식으로 조회합니다."""
+
+    ordered = queryset.order_by("id")
+    if isinstance(limit, int) and limit > 0:
+        ordered = ordered[:limit]
+    return list(ordered.values(*fields))
+
+
 def list_drone_sop_jira_candidates(*, limit: int | None = None) -> list[dict[str, Any]]:
     """Jira 전송 대상 DroneSOP 로우를 조회합니다.
 
@@ -200,46 +450,35 @@ def list_drone_sop_jira_candidates(*, limit: int | None = None) -> list[dict[str
         없음. 읽기 전용 조회입니다.
     """
 
-    # -----------------------------------------------------------------------------
-    # 1) 대상 쿼리 구성
-    # -----------------------------------------------------------------------------
-    qs = (
-        DroneSOP.objects.filter(send_jira=0)
-        .filter(Q(needtosend=1, status="COMPLETE") | Q(instant_inform=1))
-        .order_by("id")
+    return _list_candidate_rows(
+        queryset=_drone_sop_jira_candidates_queryset(),
+        fields=_DRONE_SOP_JIRA_CANDIDATE_FIELDS,
+        limit=limit,
     )
-    if isinstance(limit, int) and limit > 0:
-        qs = qs[:limit]
 
-    # -----------------------------------------------------------------------------
-    # 2) 필요한 컬럼만 반환
-    # -----------------------------------------------------------------------------
-    fields = [
-        "id",
-        "line_id",
-        "sdwt_prod",
-        "sample_type",
-        "sample_group",
-        "eqp_id",
-        "chamber_ids",
-        "lot_id",
-        "proc_id",
-        "ppid",
-        "main_step",
-        "metro_current_step",
-        "metro_steps",
-        "metro_end_step",
-        "status",
-        "knox_id",
-        "user_sdwt_prod",
-        "comment",
-        "defect_url",
-        "needtosend",
-        "instant_inform",
-        "custom_end_step",
-    ]
 
-    return list(qs.values(*fields))
+def list_drone_sop_inform_candidates(*, limit: int | None = None) -> list[dict[str, Any]]:
+    """멀티 채널 전송 대상 DroneSOP 로우를 조회합니다.
+
+    조건:
+        - (send_jira=0 또는 NULL) 또는 (send_messenger=0 또는 NULL) 또는 (send_mail=0 또는 NULL)
+        - (needtosend = 1 & status = 'COMPLETE') 또는 instant_inform = 1
+
+    인자:
+        limit: 최대 조회 건수(옵션).
+
+    반환:
+        DroneSOP row dict 리스트.
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+    """
+
+    return _list_candidate_rows(
+        queryset=_drone_sop_inform_candidates_queryset(),
+        fields=_DRONE_SOP_INFORM_CANDIDATE_FIELDS,
+        limit=limit,
+    )
 
 
 def has_drone_sop_jira_candidates() -> bool:
@@ -259,7 +498,32 @@ def has_drone_sop_jira_candidates() -> bool:
     # -----------------------------------------------------------------------------
     # 1) 대상 쿼리 구성
     # -----------------------------------------------------------------------------
-    qs = DroneSOP.objects.filter(send_jira=0).filter(Q(needtosend=1, status="COMPLETE") | Q(instant_inform=1))
+    qs = _drone_sop_jira_candidates_queryset()
+
+    # -----------------------------------------------------------------------------
+    # 2) 존재 여부 반환
+    # -----------------------------------------------------------------------------
+    return qs.exists()
+
+
+def has_drone_sop_inform_candidates() -> bool:
+    """멀티 채널 전송 대상 DroneSOP가 존재하는지 확인합니다.
+
+    조건:
+        - (send_jira=0 또는 NULL) 또는 (send_messenger=0 또는 NULL) 또는 (send_mail=0 또는 NULL)
+        - (needtosend = 1 & status = 'COMPLETE') 또는 instant_inform = 1
+
+    반환:
+        존재 여부(boolean).
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 대상 쿼리 구성
+    # -----------------------------------------------------------------------------
+    qs = _drone_sop_inform_candidates_queryset()
 
     # -----------------------------------------------------------------------------
     # 2) 존재 여부 반환
@@ -424,17 +688,49 @@ def affiliation_exists_for_user_sdwt_prod(*, user_sdwt_prod: str) -> bool:
     return account_selectors.affiliation_exists_for_user_sdwt_prod(user_sdwt_prod=user_sdwt_prod)
 
 
-def get_drone_sop_jira_user_template(
-    *,
-    user_sdwt_prod: str,
-) -> DroneSopJiraUserTemplate | None:
-    """user_sdwt_prod에 해당하는 Jira 템플릿/프로젝트 키 설정을 조회합니다.
+def list_mail_receiver_emails_for_user_sdwt_prod(*, user_sdwt_prod: str) -> list[str]:
+    """user_sdwt_prod에 해당하는 메일 수신자 이메일 목록을 조회합니다.
 
     인자:
-        user_sdwt_prod: 사용자 소속 값.
+        user_sdwt_prod: 최종 사용자 소속 값.
 
     반환:
-        DroneSopJiraUserTemplate 또는 None.
+        이메일 주소 리스트.
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+    """
+
+    return account_selectors.list_active_user_emails_by_user_sdwt_prod(user_sdwt_prod=user_sdwt_prod)
+
+
+def list_messenger_receiver_knox_ids_for_user_sdwt_prod(*, user_sdwt_prod: str) -> list[str]:
+    """user_sdwt_prod에 해당하는 메신저 수신자 knox_id 목록을 조회합니다.
+
+    인자:
+        user_sdwt_prod: 최종 사용자 소속 값.
+
+    반환:
+        knox_id 리스트.
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+    """
+
+    return account_selectors.list_active_user_knox_ids_by_user_sdwt_prod(user_sdwt_prod=user_sdwt_prod)
+
+
+def get_drone_sop_channel_by_target_user_sdwt_prod(
+    *,
+    target_user_sdwt_prod: str,
+) -> DroneSopUserSdwtChannel | None:
+    """target_user_sdwt_prod에 해당하는 채널 설정을 조회합니다.
+
+    인자:
+        target_user_sdwt_prod: 최종 사용자 소속 값.
+
+    반환:
+        DroneSopUserSdwtChannel 또는 None.
 
     부작용:
         없음. 읽기 전용 조회입니다.
@@ -443,20 +739,24 @@ def get_drone_sop_jira_user_template(
     # -----------------------------------------------------------------------------
     # 1) 입력 유효성 확인
     # -----------------------------------------------------------------------------
-    if not isinstance(user_sdwt_prod, str) or not user_sdwt_prod.strip():
+    normalized = _normalize_str(target_user_sdwt_prod)
+    if not normalized:
         return None
 
     # -----------------------------------------------------------------------------
-    # 2) 템플릿/프로젝트 키 조회
+    # 2) 채널 설정 조회
     # -----------------------------------------------------------------------------
-    return DroneSopJiraUserTemplate.objects.filter(user_sdwt_prod=user_sdwt_prod.strip()).first()
+    return DroneSopUserSdwtChannel.objects.filter(
+        target_user_sdwt_prod=normalized,
+        is_active=True,
+    ).first()
 
 
-def list_drone_sop_jira_user_sdwt_prods() -> list[str]:
-    """drone_sop_jira_user_template에 등록된 user_sdwt_prod 목록을 조회합니다.
+def list_drone_sop_jira_target_user_sdwt_prods() -> list[str]:
+    """활성 채널 설정에 등록된 target_user_sdwt_prod 목록을 조회합니다.
 
     반환:
-        user_sdwt_prod 문자열 리스트.
+        target_user_sdwt_prod 문자열 리스트.
 
     부작용:
         없음. 읽기 전용 조회입니다.
@@ -466,31 +766,28 @@ def list_drone_sop_jira_user_sdwt_prods() -> list[str]:
     """
 
     # -----------------------------------------------------------------------------
-    # 1) user_sdwt_prod 목록 조회
+    # 1) target_user_sdwt_prod 목록 조회
     # -----------------------------------------------------------------------------
     rows = (
-        DroneSopJiraUserTemplate.objects.exclude(user_sdwt_prod__isnull=True)
-        .exclude(user_sdwt_prod__exact="")
-        .values_list("user_sdwt_prod", flat=True)
+        DroneSopUserSdwtChannel.objects.filter(is_active=True)
+        .exclude(target_user_sdwt_prod__isnull=True)
+        .exclude(target_user_sdwt_prod__exact="")
+        .values_list("target_user_sdwt_prod", flat=True)
         .distinct()
-        .order_by("user_sdwt_prod")
+        .order_by("target_user_sdwt_prod")
     )
 
     # -----------------------------------------------------------------------------
     # 2) 공백 제거 및 반환
     # -----------------------------------------------------------------------------
-    return [
-        value.strip()
-        for value in rows
-        if isinstance(value, str) and value.strip()
-    ]
+    return _normalize_str_list(rows)
 
 
-def get_drone_sop_jira_project_key_for_user_sdwt_prod(*, user_sdwt_prod: str) -> str | None:
-    """user_sdwt_prod에 해당하는 Jira project key를 조회합니다.
+def get_drone_sop_jira_project_key_for_target_user_sdwt_prod(*, target_user_sdwt_prod: str) -> str | None:
+    """target_user_sdwt_prod에 해당하는 Jira project key를 조회합니다.
 
     인자:
-        user_sdwt_prod: 사용자 소속 값.
+        target_user_sdwt_prod: 사용자 소속 값.
 
     반환:
         Jira project key 문자열 또는 None.
@@ -502,39 +799,39 @@ def get_drone_sop_jira_project_key_for_user_sdwt_prod(*, user_sdwt_prod: str) ->
     # -----------------------------------------------------------------------------
     # 1) 입력 유효성 확인
     # -----------------------------------------------------------------------------
-    if not isinstance(user_sdwt_prod, str) or not user_sdwt_prod.strip():
+    normalized = _normalize_str(target_user_sdwt_prod)
+    if not normalized:
         return None
 
     # -----------------------------------------------------------------------------
     # 2) 비어있지 않은 키 조회
     # -----------------------------------------------------------------------------
     key = (
-        DroneSopJiraUserTemplate.objects.filter(user_sdwt_prod=user_sdwt_prod.strip())
-        .exclude(jira_key__isnull=True)
-        .exclude(jira_key="")
+        DroneSopUserSdwtChannel.objects.filter(target_user_sdwt_prod=normalized, is_active=True)
         .values_list("jira_key", flat=True)
         .order_by("jira_key")
         .first()
     )
-    if isinstance(key, str) and key.strip():
-        return key.strip()
+    normalized_key = _normalize_str(key)
+    if normalized_key:
+        return normalized_key
     # -----------------------------------------------------------------------------
     # 3) 기본값 반환
     # -----------------------------------------------------------------------------
     return None
 
 
-def list_drone_sop_jira_project_keys_by_user_sdwt_prod(
+def list_drone_sop_jira_project_keys_by_target_user_sdwt_prods(
     *,
-    user_sdwt_prod_values: set[str] | list[str],
+    target_user_sdwt_prod_values: set[str] | list[str],
 ) -> dict[str, str | None]:
-    """user_sdwt_prod별 Jira project key 맵을 조회합니다.
+    """target_user_sdwt_prod별 Jira project key 맵을 조회합니다.
 
     인자:
-        user_sdwt_prod_values: user_sdwt_prod 집합 또는 리스트.
+        target_user_sdwt_prod_values: target_user_sdwt_prod 집합 또는 리스트.
 
     반환:
-        {user_sdwt_prod: jira_key} 형태의 dict.
+        {target_user_sdwt_prod: jira_key} 형태의 dict.
 
     부작용:
         없음. 읽기 전용 조회입니다.
@@ -543,27 +840,27 @@ def list_drone_sop_jira_project_keys_by_user_sdwt_prod(
     # -----------------------------------------------------------------------------
     # 1) 입력 정규화
     # -----------------------------------------------------------------------------
-    normalized_sdwt = [
-        value.strip() for value in user_sdwt_prod_values if isinstance(value, str) and value.strip()
-    ]
-    if not normalized_sdwt:
+    normalized_targets = _normalize_str_list(target_user_sdwt_prod_values)
+    if not normalized_targets:
         return {}
 
     # -----------------------------------------------------------------------------
     # 2) 조회 및 매핑 생성
     # -----------------------------------------------------------------------------
-    rows = DroneSopJiraUserTemplate.objects.filter(user_sdwt_prod__in=normalized_sdwt).values(
-        "user_sdwt_prod",
+    rows = DroneSopUserSdwtChannel.objects.filter(
+        target_user_sdwt_prod__in=normalized_targets,
+        is_active=True,
+    ).values(
+        "target_user_sdwt_prod",
         "jira_key",
     )
     mapping: dict[str, str | None] = {}
     for row in rows:
-        sdwt = row.get("user_sdwt_prod")
-        if not isinstance(sdwt, str) or not sdwt.strip():
+        sdwt = _normalize_str(row.get("target_user_sdwt_prod"))
+        if not sdwt:
             continue
-        key = row.get("jira_key")
-        normalized_key = key.strip() if isinstance(key, str) and key.strip() else None
-        mapping[sdwt.strip()] = normalized_key
+        normalized_key = _normalize_str(row.get("jira_key"))
+        mapping[sdwt] = normalized_key
 
     return mapping
 
@@ -584,7 +881,8 @@ def list_line_ids_for_user_sdwt_prod(*, user_sdwt_prod: str) -> list[str]:
     # -----------------------------------------------------------------------------
     # 1) 입력 검증
     # -----------------------------------------------------------------------------
-    if not isinstance(user_sdwt_prod, str) or not user_sdwt_prod.strip():
+    normalized = _normalize_str(user_sdwt_prod)
+    if not normalized:
         return []
 
     # -----------------------------------------------------------------------------
@@ -599,13 +897,9 @@ def list_line_ids_for_user_sdwt_prod(*, user_sdwt_prod: str) -> list[str]:
           AND line <> ''
         ORDER BY line_id
         """.format(table=LINE_SDWT_TABLE_NAME),
-        [user_sdwt_prod.strip()],
+        [normalized],
     )
-    return [
-        row["line_id"].strip()
-        for row in rows
-        if isinstance(row.get("line_id"), str) and row.get("line_id").strip()
-    ]
+    return _normalize_str_list([row.get("line_id") for row in rows])
 
 
 def list_distinct_line_ids() -> list[str]:
@@ -626,11 +920,7 @@ def list_distinct_line_ids() -> list[str]:
         ORDER BY line_id
         """.format(table=LINE_SDWT_TABLE_NAME)
     )
-    return [
-        row["line_id"].strip()
-        for row in rows
-        if isinstance(row.get("line_id"), str) and row.get("line_id").strip()
-    ]
+    return _normalize_str_list([row.get("line_id") for row in rows])
 
 
 def _normalize_bucket_value(value: Any) -> Optional[str]:

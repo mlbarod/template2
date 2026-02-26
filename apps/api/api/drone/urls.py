@@ -9,6 +9,8 @@ from django.urls import path
 
 from .views import (
     DroneEarlyInformView,
+    DroneSopInformPrecheckView,
+    DroneSopInformTriggerView,
     DroneJiraKeyView,
     DroneSopInstantInformView,
     DroneSopJiraPrecheckView,
@@ -48,5 +50,15 @@ urlpatterns = [
         "sop/jira/trigger",
         DroneSopJiraTriggerView.as_view(),
         name="drone-sop-jira-trigger",
+    ),
+    path(
+        "sop/inform/precheck",
+        DroneSopInformPrecheckView.as_view(),
+        name="drone-sop-inform-precheck",
+    ),
+    path(
+        "sop/inform/trigger",
+        DroneSopInformTriggerView.as_view(),
+        name="drone-sop-inform-trigger",
     ),
 ]

@@ -114,6 +114,7 @@ INSTALLED_APPS = [
     "api.emails",
     "api.health",
     "api.management",
+    "api.messenger",
     "api.rag",
     "api.tables",
     "api.timeline",
@@ -287,6 +288,7 @@ DRONE_SOP_POP3_SUBJECT_CONTAINS = env("DRONE_SOP_POP3_SUBJECT_CONTAINS", "[drone
 
 DRONE_SOP_DUMMY_MODE = env_bool("DRONE_SOP_DUMMY_MODE", False)
 DRONE_SOP_DUMMY_MAIL_MESSAGES_URL = env("DRONE_SOP_DUMMY_MAIL_MESSAGES_URL", "")
+DRONE_SOP_DEFECTMAP_URL = env("DRONE_SOP_DEFECTMAP_URL", "")
 
 
 # ===================

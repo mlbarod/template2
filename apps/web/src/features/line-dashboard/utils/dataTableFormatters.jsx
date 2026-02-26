@@ -1,4 +1,4 @@
-// src/features/line-dashboard/utils/dataTableFormatters.jsx
+// 파일 경로: src/features/line-dashboard/utils/dataTableFormatters.jsx
 // 테이블 셀 표시/검색/스텝 렌더링에 필요한 포맷터 모음입니다.
 
 import { useCallback, useEffect, useRef } from "react"
@@ -340,7 +340,10 @@ function MetroStepFlowCell({ rowData }) {
   const customEndStep = normalizeStepValue(rowData.custom_end_step)
   const metroEndStep = normalizeStepValue(rowData.metro_end_step)
   const needToSend = toBooleanFlag(rowData.needtosend)                 // 예약(보낼 예정)
-  const sendjira = toBooleanFlag(rowData.send_jira)                    // 실제 “인폼 완료” 플래그
+  const sendJira = toBooleanFlag(rowData.send_jira)
+  const sendMessenger = toBooleanFlag(rowData.send_messenger)
+  const sendMail = toBooleanFlag(rowData.send_mail)
+  const isAnyInformed = sendJira || sendMessenger || sendMail          // 채널 중 하나라도 전송 완료
 
   // END 표시 후보: custom_end_step 우선 → metro_end_step
   const endStep = customEndStep || metroEndStep
@@ -367,7 +370,7 @@ function MetroStepFlowCell({ rowData }) {
   let informLabelType = "none"  // "none" | "done" | "planned"
   let informLabelStep = null
 
-  if (sendjira) {
+  if (isAnyInformed) {
     informLabelType = "done"
     informLabelStep = informStep || endStep || null
   } else if (needToSend) {

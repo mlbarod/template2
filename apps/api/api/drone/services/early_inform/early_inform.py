@@ -12,8 +12,8 @@ from typing import Any
 
 from django.db import IntegrityError, transaction
 
-from .. import selectors
-from ..models import DroneEarlyInform
+from ... import selectors
+from ...models import DroneEarlyInform
 
 
 class DroneEarlyInformDuplicateError(RuntimeError):

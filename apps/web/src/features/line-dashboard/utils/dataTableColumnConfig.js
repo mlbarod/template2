@@ -1,4 +1,4 @@
-// src/features/line-dashboard/utils/dataTableColumnConfig.js
+// 파일 경로: src/features/line-dashboard/utils/dataTableColumnConfig.js
 // 컬럼 기본 동작(순서/라벨/정렬/기본 너비 등)을 한 곳에 모아둔 객체입니다.
 export const DEFAULT_CONFIG = {
   order: [
@@ -17,6 +17,8 @@ export const DEFAULT_CONFIG = {
     "instant_inform",
     "needtosend",
     "send_jira",
+    "send_messenger",
+    "send_mail",
     "informed_at",
     "jira_key",
     "defect_url",
@@ -30,6 +32,8 @@ export const DEFAULT_CONFIG = {
     instant_inform: "즉시인폼",
     needtosend: "예약",
     send_jira: "JIRA",
+    send_messenger: "MSG",
+    send_mail: "MAIL",
     status: "Status",
     knox_id: "KnoxID",
     process_flow: "Process Flow",
@@ -41,6 +45,8 @@ export const DEFAULT_CONFIG = {
     instant_inform: true,
     needtosend: true,
     send_jira: true,
+    send_messenger: true,
+    send_mail: true,
     status: true,
   },
   sortTypes: {
@@ -48,6 +54,8 @@ export const DEFAULT_CONFIG = {
     instant_inform: "number",
     needtosend: "number",
     send_jira: "number",
+    send_messenger: "number",
+    send_mail: "number",
     status: "text",
   },
   width: {
@@ -66,6 +74,8 @@ export const DEFAULT_CONFIG = {
     instant_inform: 60,
     needtosend: 40,
     send_jira: 40,
+    send_messenger: 40,
+    send_mail: 40,
     informed_at: 100,
     jira_key: 40,
     defect_url: 60,
@@ -90,6 +100,8 @@ export const DEFAULT_CONFIG = {
     instant_inform: "center",
     needtosend: "center",
     send_jira: "center",
+    send_messenger: "center",
+    send_mail: "center",
     informed_at: "center",
     jira_key: "center",
     defect_url: "center",
@@ -112,6 +124,8 @@ export const DEFAULT_CONFIG = {
     instant_inform: "center",
     needtosend: "center",
     send_jira: "center",
+    send_messenger: "center",
+    send_mail: "center",
     informed_at: "center",
     jira_key: "center",
     defect_url: "center",

@@ -22,6 +22,61 @@ from .. import selectors
 from .utils import _raise_if_table_missing
 
 # =============================================================================
+# 상수: Drone SOP reason camelCase alias
+# =============================================================================
+_DRONE_SOP_REASON_ALIASES = (
+    ("jira_reason", "jiraReason"),
+    ("messenger_reason", "messengerReason"),
+    ("mail_reason", "mailReason"),
+)
+
+
+def _append_drone_sop_reason_aliases(
+    *,
+    table_name: str,
+    columns: list[str],
+    rows: list[dict[str, Any]],
+) -> tuple[list[str], list[dict[str, Any]]]:
+    """drone_sop 조회 응답에 reason camelCase 별칭 필드를 추가합니다.
+
+    입력:
+    - table_name: 조회 대상 테이블명
+    - columns: 원본 컬럼 목록
+    - rows: 원본 행 목록
+
+    반환:
+    - tuple[list[str], list[dict[str, Any]]]: (보강된 컬럼 목록, 보강된 행 목록)
+
+    부작용:
+    - 없음(입력 리스트를 직접 수정하지 않고 복사본을 생성합니다)
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) drone_sop 테이블이 아니면 원본 그대로 반환
+    # -----------------------------------------------------------------------------
+    if table_name != "drone_sop":
+        return columns, rows
+
+    # -----------------------------------------------------------------------------
+    # 2) 행 복사본 생성
+    # -----------------------------------------------------------------------------
+    next_columns = list(columns)
+    next_rows = [dict(row) for row in rows]
+
+    # -----------------------------------------------------------------------------
+    # 3) reason snake_case -> camelCase 별칭 추가
+    # -----------------------------------------------------------------------------
+    for snake_key, camel_key in _DRONE_SOP_REASON_ALIASES:
+        has_source = snake_key in next_columns or any(snake_key in row for row in next_rows)
+        if not has_source:
+            continue
+        for row in next_rows:
+            row[camel_key] = row.get(snake_key)
+
+    return next_columns, next_rows
+
+
+# =============================================================================
 # 상수: recentHours 기본/범위 설정
 # =============================================================================
 RECENT_HOURS_MIN = 0
@@ -219,7 +274,16 @@ def get_table_list_payload(*, params: Mapping[str, Any]) -> dict[str, Any]:
         raise
 
     # -----------------------------------------------------------------------------
-    # 7) 응답 페이로드 반환
+    # 7) drone_sop reason 별칭 보강
+    # -----------------------------------------------------------------------------
+    response_columns, response_rows = _append_drone_sop_reason_aliases(
+        table_name=table_name,
+        columns=column_names,
+        rows=rows,
+    )
+
+    # -----------------------------------------------------------------------------
+    # 8) 응답 페이로드 반환
     # -----------------------------------------------------------------------------
     return {
         "table": table_name,
@@ -228,7 +292,7 @@ def get_table_list_payload(*, params: Mapping[str, Any]) -> dict[str, Any]:
         ).format(col=base_ts_col, start=recent_hours_start, end=recent_hours_end),
         "from": from_param or None,
         "to": to_param or None,
-        "rowCount": len(rows),
-        "columns": column_names,
-        "rows": rows,
+        "rowCount": len(response_rows),
+        "columns": response_columns,
+        "rows": response_rows,
     }

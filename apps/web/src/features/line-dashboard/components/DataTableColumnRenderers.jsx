@@ -1,4 +1,4 @@
-// src/features/line-dashboard/components/DataTableColumnRenderers.jsx
+// 파일 경로: src/features/line-dashboard/components/DataTableColumnRenderers.jsx
 // 컬럼별로 서로 다른 UI 표현을 담당하는 렌더러 모음입니다.
 import { ExternalLink, Check, AlertTriangle } from "lucide-react"
 
@@ -22,6 +22,62 @@ import { CommentCell } from "./CommentCell"
 import { InstantInformCell } from "./InstantInformCell"
 import { NeedToSendCell } from "./NeedToSendCell"
 import { deriveFlagState } from "../utils/dataTableFlagState"
+
+const CHANNEL_LABELS = {
+  send_jira: "JIRA",
+  send_messenger: "MSG",
+  send_mail: "MAIL",
+}
+
+const CHANNEL_REASON_KEYS = {
+  send_jira: ["jiraReason", "jira_reason"],
+  send_messenger: ["messengerReason", "messenger_reason"],
+  send_mail: ["mailReason", "mail_reason"],
+}
+
+function resolveChannelReason(rowOriginal, channelKey) {
+  if (!rowOriginal) return null
+  const keys = CHANNEL_REASON_KEYS[channelKey] ?? []
+  for (const key of keys) {
+    const raw = rowOriginal?.[key]
+    if (typeof raw === "string" && raw.trim()) return raw.trim()
+  }
+  return null
+}
+
+function renderSendChannelCell({ value, rowOriginal, channelKey }) {
+  const { state, numericValue, isOn } = deriveFlagState(value, 0)
+  const label = CHANNEL_LABELS[channelKey] ?? channelKey
+  const reason = resolveChannelReason(rowOriginal, channelKey)
+  const title =
+    state === "error"
+      ? `${label} 전송 오류 상태 (값: ${numericValue}${reason ? `, 사유: ${reason}` : ""})`
+      : isOn
+        ? `${label} 전송 완료`
+        : `${label} 미전송`
+
+  return (
+    <span
+      className={[
+        "inline-flex h-5 w-5 items-center justify-center rounded-full border text-muted-foreground transition-colors",
+        state === "error"
+          ? "border-destructive/60 bg-destructive/10 text-destructive"
+          : isOn
+            ? "bg-primary border-primary text-primary-foreground"
+            : "border-border",
+      ].join(" ")}
+      title={title}
+      aria-label={title}
+      role="img"
+    >
+      {state === "error" ? (
+        <AlertTriangle className="h-3 w-3" strokeWidth={3} />
+      ) : isOn ? (
+        <Check className="h-3 w-3" strokeWidth={3} />
+      ) : null}
+    </span>
+  )
+}
 
 const CellRenderers = {
   defect_url: ({ value }) => {
@@ -115,36 +171,12 @@ const CellRenderers = {
     )
   },
 
-  send_jira: ({ value }) => {
-    const { state, numericValue, isOn } = deriveFlagState(value, 0)
-    const title =
-      state === "error"
-        ? `JIRA 전송 오류 상태 (값: ${numericValue})`
-        : isOn
-          ? "Sent to JIRA"
-          : "Not sent"
-    return (
-      <span
-        className={[
-          "inline-flex h-5 w-5 items-center justify-center rounded-full border text-muted-foreground transition-colors",
-          state === "error"
-            ? "border-destructive/60 bg-destructive/10 text-destructive"
-            : isOn
-              ? "bg-primary border-primary text-primary-foreground"
-              : "border-border",
-        ].join(" ")}
-        title={title}
-        aria-label={title}
-        role="img"
-      >
-        {state === "error" ? (
-          <AlertTriangle className="h-3 w-3" strokeWidth={3} />
-        ) : isOn ? (
-          <Check className="h-3 w-3" strokeWidth={3} />
-        ) : null}
-      </span>
-    )
-  },
+  send_jira: ({ value, rowOriginal }) =>
+    renderSendChannelCell({ value, rowOriginal, channelKey: "send_jira" }),
+  send_messenger: ({ value, rowOriginal }) =>
+    renderSendChannelCell({ value, rowOriginal, channelKey: "send_messenger" }),
+  send_mail: ({ value, rowOriginal }) =>
+    renderSendChannelCell({ value, rowOriginal, channelKey: "send_mail" }),
 
   status: ({ value, rowOriginal }) => {
     const status = normalizeStatus(value)

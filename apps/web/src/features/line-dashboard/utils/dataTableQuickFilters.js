@@ -1,4 +1,4 @@
-// src/features/line-dashboard/utils/dataTableQuickFilters.js
+// 파일 경로: src/features/line-dashboard/utils/dataTableQuickFilters.js
 // 퀵 필터 섹션을 생성하고 적용하는 로직입니다.
 import { STATUS_LABELS, STATUS_SEQUENCE } from "./statusLabels"
 import { deriveFlagState } from "./dataTableFlagState"
@@ -415,6 +415,44 @@ const QUICK_FILTER_DEFINITIONS = [
     key: "send_jira",
     label: "Jira전송완료",
     resolveColumn: (columns) => findMatchingColumn(columns, "send_jira"),
+    normalizeValue: normalizeFlagState,
+    formatValue: (value) => {
+      if (value === "on") return "Y"
+      if (value === "off") return "N"
+      if (value === "error") return "Error"
+      return String(value)
+    },
+    compareOptions: (a, b) => {
+      const order = { on: 0, off: 1, error: 2 }
+      const orderA = order[a.value] ?? 99
+      const orderB = order[b.value] ?? 99
+      if (orderA !== orderB) return orderA - orderB
+      return String(a.value).localeCompare(String(b.value))
+    },
+  },
+  {
+    key: "send_messenger",
+    label: "메신저전송완료",
+    resolveColumn: (columns) => findMatchingColumn(columns, "send_messenger"),
+    normalizeValue: normalizeFlagState,
+    formatValue: (value) => {
+      if (value === "on") return "Y"
+      if (value === "off") return "N"
+      if (value === "error") return "Error"
+      return String(value)
+    },
+    compareOptions: (a, b) => {
+      const order = { on: 0, off: 1, error: 2 }
+      const orderA = order[a.value] ?? 99
+      const orderB = order[b.value] ?? 99
+      if (orderA !== orderB) return orderA - orderB
+      return String(a.value).localeCompare(String(b.value))
+    },
+  },
+  {
+    key: "send_mail",
+    label: "메일전송완료",
+    resolveColumn: (columns) => findMatchingColumn(columns, "send_mail"),
     normalizeValue: normalizeFlagState,
     formatValue: (value) => {
       if (value === "on") return "Y"

@@ -1,13 +1,14 @@
 # =============================================================================
 # 모듈: 드론 공통 유틸
-# 주요 함수: _lock_key, _try_advisory_lock, _parse_bool
+# 주요 함수: _advisory_lock, _lock_key, _parse_bool, _truncate_text
 # 주요 가정: PostgreSQL 환경에서 advisory lock을 사용합니다.
 # =============================================================================
 from __future__ import annotations
 
 import logging
 import zlib
-from typing import Any
+from contextlib import contextmanager
+from typing import Any, Iterator
 
 from django.db import connection
 
@@ -84,6 +85,35 @@ def _release_advisory_lock(lock_id: int) -> None:
         logger.exception("Failed to release advisory lock id=%s", lock_id)
 
 
+@contextmanager
+def _advisory_lock(name: str) -> Iterator[bool]:
+    """어드바이저리 락 획득/해제를 묶는 컨텍스트 매니저입니다.
+
+    인자:
+        name: 락 이름 문자열.
+
+    반환:
+        획득 성공 여부(boolean)를 yield 합니다.
+
+    부작용:
+        DB 커서 실행이 발생합니다.
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 락 획득
+    # -----------------------------------------------------------------------------
+    lock_id = _lock_key(name)
+    acquired = _try_advisory_lock(lock_id)
+    try:
+        yield acquired
+    finally:
+        # -------------------------------------------------------------------------
+        # 2) 락 해제
+        # -------------------------------------------------------------------------
+        if acquired:
+            _release_advisory_lock(lock_id)
+
+
 def _parse_bool(value: Any, default: bool = False) -> bool:
     """값을 boolean으로 파싱합니다.
 
@@ -142,6 +172,30 @@ def _parse_int(value: Any, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return parsed
+
+
+def _truncate_text(value: str, max_len: int) -> str:
+    """문자열을 최대 길이로 자릅니다.
+
+    인자:
+        value: 원본 문자열.
+        max_len: 최대 길이.
+
+    반환:
+        제한 길이를 적용한 문자열.
+
+    부작용:
+        없음. 순수 문자열 처리입니다.
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 길이 제한 적용
+    # -----------------------------------------------------------------------------
+    if len(value) <= max_len:
+        return value
+    if max_len <= 3:
+        return value[:max_len]
+    return value[: max_len - 3] + "..."
 
 
 def _first_defined(*values: Any) -> Any:

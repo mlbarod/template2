@@ -41,6 +41,56 @@ class TablesEndpointTests(TestCase):
         self.assertEqual(payload["table"], "demo_table")
         self.assertEqual(payload["rowCount"], 1)
 
+    @patch("api.tables.services.selectors.fetch_rows")
+    @patch("api.tables.services.resolve_table_schema")
+    def test_tables_list_exposes_drone_sop_reason_aliases(self, mock_schema, mock_fetch_rows) -> None:
+        mock_schema.return_value = SimpleNamespace(
+            name="drone_sop",
+            columns=["id", "created_at", "jira_reason", "messenger_reason", "mail_reason"],
+            timestamp_column="created_at",
+        )
+        mock_fetch_rows.return_value = [
+            {
+                "id": 1,
+                "created_at": "2024-01-01 00:00:00",
+                "jira_reason": "disabled_by_policy",
+                "messenger_reason": None,
+                "mail_reason": "send_failed",
+            }
+        ]
+
+        response = self.client.get(reverse("tables"), {"table": "drone_sop"})
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertNotIn("jiraReason", payload["columns"])
+        self.assertNotIn("messengerReason", payload["columns"])
+        self.assertNotIn("mailReason", payload["columns"])
+        row = payload["rows"][0]
+        self.assertEqual(row["jiraReason"], "disabled_by_policy")
+        self.assertIsNone(row["messengerReason"])
+        self.assertEqual(row["mailReason"], "send_failed")
+
+    @patch("api.tables.services.selectors.fetch_rows")
+    @patch("api.tables.services.resolve_table_schema")
+    def test_tables_list_does_not_add_reason_aliases_for_non_drone_table(self, mock_schema, mock_fetch_rows) -> None:
+        mock_schema.return_value = SimpleNamespace(
+            name="demo_table",
+            columns=["id", "created_at", "reason"],
+            timestamp_column="created_at",
+        )
+        mock_fetch_rows.return_value = [{"id": 1, "created_at": "2024-01-01 00:00:00", "reason": "ok"}]
+
+        response = self.client.get(reverse("tables"), {"table": "demo_table"})
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertNotIn("jiraReason", payload["columns"])
+        self.assertNotIn("messengerReason", payload["columns"])
+        self.assertNotIn("mailReason", payload["columns"])
+        row = payload["rows"][0]
+        self.assertNotIn("jiraReason", row)
+        self.assertNotIn("messengerReason", row)
+        self.assertNotIn("mailReason", row)
+
     @patch("api.tables.services.execute")
     @patch("api.tables.services.selectors.fetch_row")
     @patch("api.tables.services.selectors.list_columns")

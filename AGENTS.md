@@ -368,7 +368,7 @@ apps/api/api/<feature>
 
 Each `<feature>` is a real Django app installed as `api.<feature>`.
 
-### Allowed Files / Folders (max depth 2)
+### Allowed Files / Folders (기본 max depth 2, `services/`는 예외)
 
 ```
 apps.py
@@ -377,7 +377,7 @@ urls.py
 callback_urls.py   (auth only; OIDC form_post callback)
 views.py
 serializers.py
-services/   (required; includes `services/__init__.py` facade)
+services/   (required; includes `services/__init__.py` facade, 하위 중첩 허용)
 selectors.py
 permissions.py
 admin.py
@@ -398,7 +398,7 @@ apps/api/api/management
 LLM MUST obey:
 
 - NO new backend folders outside the paths above.
-- NO nesting deeper than 2 levels (except `migrations/` and `management/commands/`).
+- NO nesting deeper than 2 levels (except `migrations/`, `management/commands/`, `services/`).
 - NO cross‑feature imports except through another feature’s public `services/__init__.py` (facade) or `selectors.py`.
 - Every concrete DB model MUST live in exactly one `<feature>/models.py`. Creating new models in `apps/api/api/models.py` is **FORBIDDEN**.
 - Shared base classes/mixins MAY live in `apps/api/api/common/models.py` and MUST be `abstract = True`.

@@ -1,6 +1,6 @@
 # =============================================================================
 # 모듈: 드론 SOP/조기 알림 모델
-# 주요 구성: DroneSOP, DroneEarlyInform, Jira 템플릿/프로젝트 키(user_sdwt_prod) 모델
+# 주요 구성: DroneSOP, DroneEarlyInform, sdwt_prod/user_sdwt_prod 매핑 및 채널 설정
 # 주요 가정: sop_key는 필드 조합으로 생성합니다.
 # =============================================================================
 from __future__ import annotations
@@ -61,7 +61,7 @@ class DroneSOP(models.Model):
 
     sop_key = models.CharField(max_length=300, unique=True)
     line_id = models.CharField(max_length=50, null=True, blank=True)
-    sdwt_prod = models.CharField(max_length=50, null=True, blank=True)
+    sdwt_prod = models.CharField(max_length=64, null=True, blank=True)
     sample_type = models.CharField(max_length=50, null=True, blank=True)
     sample_group = models.CharField(max_length=50, null=True, blank=True)
     eqp_id = models.CharField(max_length=50, null=True, blank=True)
@@ -76,9 +76,15 @@ class DroneSOP(models.Model):
     status = models.CharField(max_length=50, null=True, blank=True)
     knox_id = models.CharField(max_length=50, null=True, blank=True)
     comment = models.TextField(null=True, blank=True)
-    user_sdwt_prod = models.CharField(max_length=50, null=True, blank=True)
+    user_sdwt_prod = models.CharField(max_length=64, null=True, blank=True)
     defect_url = models.TextField(null=True, blank=True)
+    defect_png_url = models.TextField(null=True, blank=True)
     send_jira = models.SmallIntegerField(null=True, blank=True, default=0, db_default=0)
+    send_messenger = models.SmallIntegerField(null=True, blank=True, default=0, db_default=0)
+    send_mail = models.SmallIntegerField(null=True, blank=True, default=0, db_default=0)
+    jira_reason = models.CharField(max_length=64, null=True, blank=True)
+    messenger_reason = models.CharField(max_length=64, null=True, blank=True)
+    mail_reason = models.CharField(max_length=64, null=True, blank=True)
     instant_inform = models.SmallIntegerField(default=0)
     needtosend = models.SmallIntegerField(default=1)
     custom_end_step = models.CharField(max_length=50, null=True, blank=True)
@@ -142,25 +148,119 @@ class DroneSOP(models.Model):
         super().save(*args, **kwargs)
 
 
-class DroneSopJiraUserTemplate(models.Model):
-    """Drone SOP Jira 템플릿/프로젝트 키(user_sdwt_prod 매핑)을 저장하는 모델입니다."""
 
-    user_sdwt_prod = models.CharField(max_length=50, unique=True)
-    template_key = models.CharField(max_length=50, null=True, blank=True)
-    jira_key = models.CharField(max_length=64, null=True, blank=True)
+
+class DroneSopUserSdwtProdMap(models.Model):
+    """Drone SOP sdwt_prod/user_sdwt_prod 조합을 target_user_sdwt_prod로 매핑하는 모델입니다."""
+
+    sdwt_prod = models.CharField(max_length=64, null=True, blank=True)
+    user_sdwt_prod = models.CharField(max_length=64, null=True, blank=True)
+    target_user_sdwt_prod = models.CharField(max_length=64)
+    is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True, db_default=Now())
     updated_at = models.DateTimeField(auto_now=True, db_default=Now())
 
     class Meta:
-        db_table = "drone_sop_jira_user_template"
-        indexes = [
-            models.Index(fields=["user_sdwt_prod"], name="idx_dro_sop_jir_usr_tmpl_a256d"),
+        db_table = "drone_sop_user_sdwt_map"
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    (Q(sdwt_prod__isnull=False) & ~Q(sdwt_prod=""))
+                    | (Q(user_sdwt_prod__isnull=False) & ~Q(user_sdwt_prod=""))
+                ),
+                name="chk_dro_sop_sdw_usr_req",
+            ),
+            models.UniqueConstraint(
+                fields=["sdwt_prod", "user_sdwt_prod"],
+                name="uniq_dro_sop_sdw_usr_map",
+                condition=(
+                    Q(sdwt_prod__isnull=False)
+                    & ~Q(sdwt_prod="")
+                    & Q(user_sdwt_prod__isnull=False)
+                    & ~Q(user_sdwt_prod="")
+                ),
+            ),
+            models.UniqueConstraint(
+                fields=["sdwt_prod"],
+                name="uniq_dro_sop_sdw_map",
+                condition=(
+                    Q(sdwt_prod__isnull=False)
+                    & ~Q(sdwt_prod="")
+                    & (Q(user_sdwt_prod__isnull=True) | Q(user_sdwt_prod=""))
+                ),
+            ),
+            models.UniqueConstraint(
+                fields=["user_sdwt_prod"],
+                name="uniq_dro_sop_usr_map",
+                condition=(
+                    Q(user_sdwt_prod__isnull=False)
+                    & ~Q(user_sdwt_prod="")
+                    & (Q(sdwt_prod__isnull=True) | Q(sdwt_prod=""))
+                ),
+            ),
         ]
 
     def __str__(self) -> str:  # 관리자/디버깅용 문자열 표현(커버리지 제외): pragma: no cover
         """관리자/디버깅용 문자열 표현을 반환합니다."""
 
-        return f"{self.user_sdwt_prod} -> {self.template_key}"
+        return f"{self.sdwt_prod or '-'} / {self.user_sdwt_prod or '-'} -> {self.target_user_sdwt_prod}"
+
+
+class DroneSopUserSdwtChannel(models.Model):
+    """target_user_sdwt_prod 기준 채널 키/템플릿/채팅룸 ID를 저장하는 모델입니다."""
+
+    target_user_sdwt_prod = models.CharField(max_length=64)
+    jira_key = models.CharField(max_length=64, null=True, blank=True)
+    chatroom_id = models.BigIntegerField(null=True, blank=True)
+    jira_template_key = models.CharField(max_length=50, null=True, blank=True)
+    mail_template_key = models.CharField(max_length=50, null=True, blank=True)
+    messenger_template_key = models.CharField(max_length=50, null=True, blank=True)
+    jira_enabled = models.BooleanField(default=True)
+    messenger_enabled = models.BooleanField(default=True)
+    mail_enabled = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_default=Now())
+    updated_at = models.DateTimeField(auto_now=True, db_default=Now())
+
+    class Meta:
+        db_table = "drone_sop_user_sdwt_channel"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["target_user_sdwt_prod"],
+                name="uniq_dro_sop_usr_chn",
+            ),
+        ]
+
+    def __str__(self) -> str:  # 관리자/디버깅용 문자열 표현(커버리지 제외): pragma: no cover
+        """관리자/디버깅용 문자열 표현을 반환합니다."""
+
+        chatroom_display = self.chatroom_id if self.chatroom_id is not None else "-"
+        return f"{self.target_user_sdwt_prod} (jira={self.jira_key or '-'}, msg={chatroom_display})"
+
+
+class DroneSopNeedToSendRule(models.Model):
+    """target_user_sdwt_prod 기준 needtosend 계산 규칙을 저장하는 모델입니다."""
+
+    target_user_sdwt_prod = models.CharField(max_length=64)
+    comment_last_at = models.CharField(max_length=64)
+    ignore_sample_type = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_default=Now())
+    updated_at = models.DateTimeField(auto_now=True, db_default=Now())
+
+    class Meta:
+        db_table = "drone_sop_needtosend_rule"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["target_user_sdwt_prod"],
+                name="uniq_dro_sop_nts_trg",
+            ),
+        ]
+
+    def __str__(self) -> str:  # 관리자/디버깅용 문자열 표현(커버리지 제외): pragma: no cover
+        """관리자/디버깅용 문자열 표현을 반환합니다."""
+
+        return f"{self.target_user_sdwt_prod} (comment_last_at={self.comment_last_at})"
 
 
 class DroneEarlyInform(models.Model):
@@ -191,6 +291,8 @@ class DroneEarlyInform(models.Model):
 __all__ = [
     "DroneEarlyInform",
     "DroneSOP",
-    "DroneSopJiraUserTemplate",
+    "DroneSopNeedToSendRule",
+    "DroneSopUserSdwtChannel",
+    "DroneSopUserSdwtProdMap",
     "build_sop_key",
 ]

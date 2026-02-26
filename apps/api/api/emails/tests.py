@@ -206,7 +206,7 @@ class EmailAffiliationTests(TestCase):
         User = get_user_model()
         user = User.objects.create_user(sabun="S77777", password="test-password")
         user.knox_id = "loginid3"
-        user.user_sdwt_prod = "group-new"
+        user.user_sdwt_prod = "group-old"
         user.save(update_fields=["knox_id", "user_sdwt_prod"])
 
         # -------------------------------------------------------------------------

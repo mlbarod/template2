@@ -15,11 +15,11 @@ AIRFLOW_TRIGGER_TOKEN = os.getenv("AIRFLOW_TRIGGER_TOKEN") or ""
 DRONE_SOP_POP3_INGEST_TRIGGER_URL = (
     f"{AIRFLOW_API_BASE_URL}/api/v1/line-dashboard/sop/ingest/pop3/trigger"
 )
-DRONE_SOP_JIRA_TRIGGER_URL = f"{AIRFLOW_API_BASE_URL}/api/v1/line-dashboard/sop/jira/trigger"
+DRONE_SOP_INFORM_TRIGGER_URL = f"{AIRFLOW_API_BASE_URL}/api/v1/line-dashboard/sop/inform/trigger"
 DRONE_SOP_POP3_INGEST_HTTP_TIMEOUT = int(os.getenv("DRONE_SOP_POP3_INGEST_HTTP_TIMEOUT") or "60")
-DRONE_SOP_JIRA_HTTP_TIMEOUT = int(os.getenv("DRONE_SOP_JIRA_HTTP_TIMEOUT") or "60")
-DRONE_SOP_POP3_INGEST_JIRA_CREATE_SCHEDULE = (
-    os.getenv("DRONE_SOP_POP3_INGEST_JIRA_CREATE_SCHEDULE") or "*/1 * * * *"
+DRONE_SOP_INFORM_HTTP_TIMEOUT = int(os.getenv("DRONE_SOP_INFORM_HTTP_TIMEOUT") or "60")
+DRONE_SOP_POP3_INGEST_INFORM_CREATE_SCHEDULE = (
+    os.getenv("DRONE_SOP_POP3_INGEST_INFORM_CREATE_SCHEDULE") or "*/1 * * * *"
 )
 
 
@@ -56,7 +56,7 @@ def run_drone_sop_pop3_ingest(**_context):
         return {"status_code": response.status_code}
 
 
-def run_drone_sop_jira_create(**_context):
+def run_drone_sop_inform_create(**_context):
     if not AIRFLOW_API_BASE_URL:
         raise ValueError("AIRFLOW_API_BASE_URL is not set")
 
@@ -65,15 +65,15 @@ def run_drone_sop_jira_create(**_context):
         headers["Authorization"] = f"Bearer {AIRFLOW_TRIGGER_TOKEN}"
 
     payload = {}
-    limit = _parse_optional_int(os.getenv("DRONE_SOP_JIRA_LIMIT"))
+    limit = _parse_optional_int(os.getenv("DRONE_SOP_INFORM_LIMIT"))
     if limit is not None:
         payload["limit"] = limit
 
     response = requests.post(
-        DRONE_SOP_JIRA_TRIGGER_URL,
+        DRONE_SOP_INFORM_TRIGGER_URL,
         headers=headers,
         json=payload or None,
-        timeout=DRONE_SOP_JIRA_HTTP_TIMEOUT,
+        timeout=DRONE_SOP_INFORM_HTTP_TIMEOUT,
     )
     response.raise_for_status()
 
@@ -91,23 +91,23 @@ default_args = {
 }
 
 with DAG(
-    dag_id="drone_sop_pop3_ingest_jira_create",
+    dag_id="drone_sop_pop3_ingest_inform_create",
     default_args=default_args,
-    schedule=DRONE_SOP_POP3_INGEST_JIRA_CREATE_SCHEDULE,
+    schedule=DRONE_SOP_POP3_INGEST_INFORM_CREATE_SCHEDULE,
     start_date=days_ago(1),
     catchup=False,
     max_active_runs=1,
-    tags=["drone", "sop", "pop3", "jira"],
+    tags=["drone", "sop", "pop3", "inform"],
 ) as dag:
     ingest_pop3 = PythonOperator(
         task_id="ingest_pop3_drone_sop",
         python_callable=run_drone_sop_pop3_ingest,
     )
 
-    create_jira = PythonOperator(
-        task_id="create_jira_drone_sop",
-        python_callable=run_drone_sop_jira_create,
+    create_inform = PythonOperator(
+        task_id="create_inform_drone_sop",
+        python_callable=run_drone_sop_inform_create,
         trigger_rule=TriggerRule.ALL_DONE,
     )
 
-    ingest_pop3 >> create_jira
+    ingest_pop3 >> create_inform

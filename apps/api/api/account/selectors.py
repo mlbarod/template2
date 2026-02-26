@@ -288,6 +288,100 @@ def affiliation_exists_for_user_sdwt_prod(*, user_sdwt_prod: str) -> bool:
     return Affiliation.objects.filter(user_sdwt_prod=user_sdwt_prod.strip()).exists()
 
 
+def list_active_user_emails_by_user_sdwt_prod(*, user_sdwt_prod: str) -> list[str]:
+    """user_sdwt_prod에 대응하는 활성 사용자 이메일 목록을 조회합니다.
+
+    입력:
+    - user_sdwt_prod: 소속 식별자
+
+    반환:
+    - list[str]: 이메일 주소 목록
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - 없음
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 입력 유효성 확인
+    # -----------------------------------------------------------------------------
+    if not isinstance(user_sdwt_prod, str) or not user_sdwt_prod.strip():
+        return []
+
+    # -----------------------------------------------------------------------------
+    # 2) 활성 사용자 이메일 조회
+    # -----------------------------------------------------------------------------
+    User = get_user_model()
+    rows = (
+        User.objects.filter(user_sdwt_prod=user_sdwt_prod.strip(), is_active=True)
+        .exclude(email__isnull=True)
+        .exclude(email__exact="")
+        .values_list("email", flat=True)
+        .order_by("email")
+        .distinct()
+    )
+    normalized_emails: list[str] = []
+    seen: set[str] = set()
+    for email in rows:
+        if not isinstance(email, str):
+            continue
+        cleaned = email.strip()
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        normalized_emails.append(cleaned)
+    return normalized_emails
+
+
+def list_active_user_knox_ids_by_user_sdwt_prod(*, user_sdwt_prod: str) -> list[str]:
+    """user_sdwt_prod에 대응하는 활성 사용자 knox_id 목록을 조회합니다.
+
+    입력:
+    - user_sdwt_prod: 소속 식별자
+
+    반환:
+    - list[str]: knox_id 목록
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - 없음
+    """
+
+    # -----------------------------------------------------------------------------
+    # 1) 입력 유효성 확인
+    # -----------------------------------------------------------------------------
+    if not isinstance(user_sdwt_prod, str) or not user_sdwt_prod.strip():
+        return []
+
+    # -----------------------------------------------------------------------------
+    # 2) 활성 사용자 knox_id 조회
+    # -----------------------------------------------------------------------------
+    User = get_user_model()
+    rows = (
+        User.objects.filter(user_sdwt_prod=user_sdwt_prod.strip(), is_active=True)
+        .exclude(knox_id__isnull=True)
+        .exclude(knox_id__exact="")
+        .values_list("knox_id", flat=True)
+        .order_by("knox_id")
+        .distinct()
+    )
+    normalized_knox_ids: list[str] = []
+    seen: set[str] = set()
+    for knox_id in rows:
+        if not isinstance(knox_id, str):
+            continue
+        cleaned = knox_id.strip()
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        normalized_knox_ids.append(cleaned)
+    return normalized_knox_ids
+
+
 def list_user_sdwt_prod_access_rows(*, user: Any) -> list[UserSdwtProdAccess]:
     """사용자의 접근 권한(UserSdwtProdAccess) 행 목록을 조회합니다.
 

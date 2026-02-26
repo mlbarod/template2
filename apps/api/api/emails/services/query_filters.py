@@ -101,17 +101,19 @@ def parse_datetime_value(value: Any, *, boundary: str = "start") -> datetime | N
     if not raw:
         return None
 
-    dt = parse_datetime(raw)
-    if dt:
-        return _normalize_to_utc(dt)
-
     # -----------------------------------------------------------------------------
     # 2) date 단독 입력 처리
     # -----------------------------------------------------------------------------
+    # Django 버전에 따라 parse_datetime("YYYY-MM-DD")가 datetime으로 파싱될 수 있어
+    # 경계(boundary=end) 정보가 무시되지 않도록 date-only를 먼저 판별합니다.
     date_only = parse_date(raw)
-    if date_only:
+    if date_only and "T" not in raw and " " not in raw and ":" not in raw:
         time_value = dt_time.max if boundary == "end" else dt_time.min
         return _normalize_to_utc(datetime.combine(date_only, time_value))
+
+    dt = parse_datetime(raw)
+    if dt:
+        return _normalize_to_utc(dt)
     return None
 
 

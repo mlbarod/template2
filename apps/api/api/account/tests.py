@@ -29,6 +29,8 @@ from api.account.models import (
 from api.account.selectors import (
     get_accessible_user_sdwt_prods_for_user,
     get_next_user_sdwt_prod_change,
+    list_active_user_emails_by_user_sdwt_prod,
+    list_active_user_knox_ids_by_user_sdwt_prod,
     list_affiliation_options,
     list_line_sdwt_pairs,
     resolve_user_affiliation,
@@ -285,7 +287,7 @@ class AccountEndpointTests(TestCase):
         # -----------------------------------------------------------------------------
         sync_response = self.client.post(
             reverse("account-external-affiliation-sync"),
-            data='{"records":[{"knox_id":"knox-50000","user_sdwt_prod":"group-a"}]}',
+            data='{"records":[{"knox_id":"knox-50000","department":"Dept","user_sdwt_prod":"group-a"}]}',
             content_type="application/json",
             HTTP_AUTHORIZATION="Bearer token",
         )
@@ -1732,3 +1734,103 @@ class AccountProfileAccessServiceTests(TestCase):
             UserSdwtProdAccess.objects.filter(user=user, user_sdwt_prod="group-a").count(),
             1,
         )
+
+
+class AccountSelectorEmailTests(TestCase):
+    """계정 이메일 셀렉터 동작을 검증합니다."""
+
+    def test_list_active_user_emails_deduplicates_and_filters_invalid_values(self) -> None:
+        """활성 사용자 이메일 목록이 중복 제거/공백 제거되어 반환되는지 확인합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) 사용자 데이터 준비
+        # -----------------------------------------------------------------------------
+        User = get_user_model()
+
+        user_a = User.objects.create_user(sabun="S82001", password="test-password")
+        user_a.user_sdwt_prod = "group-a"
+        user_a.email = "dup@example.com"
+        user_a.save(update_fields=["user_sdwt_prod", "email"])
+
+        user_b = User.objects.create_user(sabun="S82002", password="test-password")
+        user_b.user_sdwt_prod = "group-a"
+        user_b.email = " dup@example.com "
+        user_b.save(update_fields=["user_sdwt_prod", "email"])
+
+        user_c = User.objects.create_user(sabun="S82003", password="test-password")
+        user_c.user_sdwt_prod = "group-a"
+        user_c.email = "other@example.com"
+        user_c.save(update_fields=["user_sdwt_prod", "email"])
+
+        user_inactive = User.objects.create_user(sabun="S82004", password="test-password")
+        user_inactive.user_sdwt_prod = "group-a"
+        user_inactive.email = "inactive@example.com"
+        user_inactive.is_active = False
+        user_inactive.save(update_fields=["user_sdwt_prod", "email", "is_active"])
+
+        user_blank = User.objects.create_user(sabun="S82005", password="test-password")
+        user_blank.user_sdwt_prod = "group-a"
+        user_blank.email = "   "
+        user_blank.save(update_fields=["user_sdwt_prod", "email"])
+
+        user_other_group = User.objects.create_user(sabun="S82006", password="test-password")
+        user_other_group.user_sdwt_prod = "group-b"
+        user_other_group.email = "group-b@example.com"
+        user_other_group.save(update_fields=["user_sdwt_prod", "email"])
+
+        # -----------------------------------------------------------------------------
+        # 2) 셀렉터 호출
+        # -----------------------------------------------------------------------------
+        emails = list_active_user_emails_by_user_sdwt_prod(user_sdwt_prod="group-a")
+
+        # -----------------------------------------------------------------------------
+        # 3) 결과 검증
+        # -----------------------------------------------------------------------------
+        self.assertEqual(emails, ["dup@example.com", "other@example.com"])
+
+    def test_list_active_user_knox_ids_deduplicates_and_filters_invalid_values(self) -> None:
+        """활성 사용자 knox_id 목록이 중복 제거/공백 제거되어 반환되는지 확인합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) 사용자 데이터 준비
+        # -----------------------------------------------------------------------------
+        User = get_user_model()
+
+        user_a = User.objects.create_user(sabun="S82011", password="test-password")
+        user_a.user_sdwt_prod = "group-a"
+        user_a.knox_id = "knox-dup"
+        user_a.save(update_fields=["user_sdwt_prod", "knox_id"])
+
+        user_b = User.objects.create_user(sabun="S82012", password="test-password")
+        user_b.user_sdwt_prod = "group-a"
+        user_b.knox_id = " knox-dup "
+        user_b.save(update_fields=["user_sdwt_prod", "knox_id"])
+
+        user_c = User.objects.create_user(sabun="S82013", password="test-password")
+        user_c.user_sdwt_prod = "group-a"
+        user_c.knox_id = "knox-other"
+        user_c.save(update_fields=["user_sdwt_prod", "knox_id"])
+
+        user_inactive = User.objects.create_user(sabun="S82014", password="test-password")
+        user_inactive.user_sdwt_prod = "group-a"
+        user_inactive.knox_id = "knox-inactive"
+        user_inactive.is_active = False
+        user_inactive.save(update_fields=["user_sdwt_prod", "knox_id", "is_active"])
+
+        user_blank = User.objects.create_user(sabun="S82015", password="test-password")
+        user_blank.user_sdwt_prod = "group-a"
+        user_blank.knox_id = "   "
+        user_blank.save(update_fields=["user_sdwt_prod", "knox_id"])
+
+        user_other_group = User.objects.create_user(sabun="S82016", password="test-password")
+        user_other_group.user_sdwt_prod = "group-b"
+        user_other_group.knox_id = "knox-group-b"
+        user_other_group.save(update_fields=["user_sdwt_prod", "knox_id"])
+
+        # -----------------------------------------------------------------------------
+        # 2) 셀렉터 호출
+        # -----------------------------------------------------------------------------
+        knox_ids = list_active_user_knox_ids_by_user_sdwt_prod(user_sdwt_prod="group-a")
+
+        # -----------------------------------------------------------------------------
+        # 3) 결과 검증
+        # -----------------------------------------------------------------------------
+        self.assertEqual(knox_ids, ["knox-dup", "knox-other"])
