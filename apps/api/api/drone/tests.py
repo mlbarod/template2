@@ -2472,3 +2472,212 @@ class DroneSopJiraSummaryTests(TestCase):
 
         self.assertEqual(fields_a.get("summary"), "L1-S")
         self.assertEqual(fields_b.get("summary"), "S-003")
+
+
+class DroneSopMessengerLineATemplateTests(TestCase):
+    """line_a 메신저 템플릿의 Excel Table 전송 경로를 검증합니다."""
+
+    @patch("api.drone.services.messenger.templates.messenger_template_line_a.messenger_services.send_excel_table_message_from_file")
+    def test_send_excel_table_message_uses_knox_excel_sender(self, mock_send_excel: Mock) -> None:
+        """line_a 템플릿이 Excel Table API를 호출하는지 확인합니다."""
+
+        from api.drone.services.messenger.templates import messenger_template_line_a as line_a_template
+        from api.messenger import services as messenger_services
+
+        captured: dict[str, str] = {}
+
+        def _capture_excel_payload(**kwargs: object) -> None:
+            html_path = str(kwargs.get("html_path") or "")
+            with open(html_path, "r", encoding="utf-8") as file:
+                captured["html"] = file.read()
+            captured["html_path"] = html_path
+
+        mock_send_excel.side_effect = _capture_excel_payload
+        config = messenger_services.KnoxMessengerConfig(
+            base_url="http://example.local/messenger/",
+            authorization="Bearer test",
+            system_id="sys-test",
+            timeout_seconds=5,
+        )
+
+        line_a_template.send_excel_table_message(
+            chatroom_id=123,
+            context={
+                "sop_id": "1",
+                "main_step": "ST003",
+                "ppid": "PPID",
+                "eqp_cb": "EQP-1",
+                "lot_id": "LOT-1",
+                "user_sdwt_prod": "SDWT",
+                "knoxid": "knox",
+                "comment_raw": "코멘트",
+            },
+            actions=[
+                {
+                    "type": "Action.OpenUrl",
+                    "title": "CTTTM",
+                    "url": "https://example.com/ctttm",
+                }
+            ],
+            ttl=900,
+            config=config,
+        )
+
+        mock_send_excel.assert_called_once()
+        self.assertIn("<table ", captured.get("html", ""))
+        self.assertIn("Step_seq", captured.get("html", ""))
+        self.assertIn("📄 CTTTM URL", captured.get("html", ""))
+        self.assertIn("https://example.com/ctttm", captured.get("html", ""))
+        self.assertFalse(os.path.exists(captured.get("html_path", "")))
+
+
+class DroneSopMessengerLineBTemplateTests(TestCase):
+    """line_b 메신저 템플릿의 Excel Table 전송 경로를 검증합니다."""
+
+    @patch("api.drone.services.messenger.templates.messenger_template_line_b.messenger_services.send_excel_table_message_from_file")
+    def test_send_excel_table_message_uses_knox_excel_sender(self, mock_send_excel: Mock) -> None:
+        """line_b 템플릿이 Excel Table API를 호출하는지 확인합니다."""
+
+        from api.drone.services.messenger.templates import messenger_template_line_b as line_b_template
+        from api.messenger import services as messenger_services
+
+        captured: dict[str, str] = {}
+
+        def _capture_excel_payload(**kwargs: object) -> None:
+            html_path = str(kwargs.get("html_path") or "")
+            with open(html_path, "r", encoding="utf-8") as file:
+                captured["html"] = file.read()
+            captured["html_path"] = html_path
+
+        mock_send_excel.side_effect = _capture_excel_payload
+        config = messenger_services.KnoxMessengerConfig(
+            base_url="http://example.local/messenger/",
+            authorization="Bearer test",
+            system_id="sys-test",
+            timeout_seconds=5,
+        )
+
+        line_b_template.send_excel_table_message(
+            chatroom_id=456,
+            context={
+                "main_step": "ST009",
+                "ppid": "PPID-B",
+                "eqp_cb": "EQP-9",
+                "lot_id": "LOT-9",
+                "user_sdwt_prod": "SDWT-B",
+                "knoxid": "knox-b",
+                "comment_raw": "line_b 코멘트",
+            },
+            actions=[
+                {
+                    "type": "Action.OpenUrl",
+                    "title": "Defect",
+                    "url": "https://example.com/defect",
+                }
+            ],
+            ttl=1200,
+            config=config,
+        )
+
+        mock_send_excel.assert_called_once()
+        self.assertIn("<table ", captured.get("html", ""))
+        self.assertIn("Step_seq", captured.get("html", ""))
+        self.assertIn("💿 Defect URL", captured.get("html", ""))
+        self.assertIn("https://example.com/defect", captured.get("html", ""))
+        self.assertFalse(os.path.exists(captured.get("html_path", "")))
+
+
+class DroneSopMessengerApiRoutingTests(TestCase):
+    """템플릿 키별 메신저 전송 라우팅을 검증합니다."""
+
+    def _build_config(self):
+        from api.drone.services.messenger import messenger_api
+        from api.messenger import services as messenger_services
+
+        return messenger_api.DroneMessengerConfig(
+            ttl=1800,
+            knox_config=messenger_services.KnoxMessengerConfig(
+                base_url="http://example.local/messenger/",
+                authorization="Bearer test",
+                system_id="sys-test",
+                timeout_seconds=5,
+            ),
+        )
+
+    @patch("api.drone.services.messenger.messenger_api.build_drone_sop_messenger_template_inputs")
+    def test_line_a_uses_excel_table_sender(self, mock_build_inputs: Mock) -> None:
+        """line_a는 Excel Table sender를 사용하는지 확인합니다."""
+
+        from api.drone.services.messenger import messenger_api
+
+        config = self._build_config()
+        row = {"id": 1}
+        mock_build_inputs.return_value = ({"sop_id": "1"}, [])
+        mock_sender = Mock()
+
+        with patch.dict(
+            messenger_api.EXCEL_TABLE_TEMPLATE_SENDERS,
+            {"line_a": mock_sender},
+            clear=False,
+        ):
+            messenger_api.send_drone_sop_messenger_message(
+                row=row,
+                chatroom_id=777,
+                messenger_template_key="line_a",
+                config=config,
+            )
+
+        mock_build_inputs.assert_called_once_with(row=row)
+        mock_sender.assert_called_once_with(
+            chatroom_id=777,
+            context={"sop_id": "1"},
+            actions=[],
+            ttl=1800,
+            config=config.knox_config,
+        )
+
+    @patch("api.drone.services.messenger.messenger_api.build_drone_sop_messenger_template_inputs")
+    def test_line_b_uses_excel_table_sender(self, mock_build_inputs: Mock) -> None:
+        """line_b도 Excel Table sender를 사용하는지 확인합니다."""
+
+        from api.drone.services.messenger import messenger_api
+
+        config = self._build_config()
+        row = {"id": 2}
+        mock_build_inputs.return_value = ({"main_step": "ST009"}, [])
+        mock_sender = Mock()
+
+        with patch.dict(
+            messenger_api.EXCEL_TABLE_TEMPLATE_SENDERS,
+            {"line_b": mock_sender},
+            clear=False,
+        ):
+            messenger_api.send_drone_sop_messenger_message(
+                row=row,
+                chatroom_id=888,
+                messenger_template_key="line_b",
+                config=config,
+            )
+
+        mock_build_inputs.assert_called_once_with(row=row)
+        mock_sender.assert_called_once_with(
+            chatroom_id=888,
+            context={"main_step": "ST009"},
+            actions=[],
+            ttl=1800,
+            config=config.knox_config,
+        )
+
+    def test_unsupported_template_key_raises_error(self) -> None:
+        """미지원 템플릿 키는 ValueError를 발생시키는지 확인합니다."""
+
+        from api.drone.services.messenger import messenger_api
+
+        config = self._build_config()
+        with self.assertRaises(ValueError):
+            messenger_api.send_drone_sop_messenger_message(
+                row={"id": 3},
+                chatroom_id=999,
+                messenger_template_key="unknown-template",
+                config=config,
+            )

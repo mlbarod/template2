@@ -20,6 +20,7 @@ from .services.knox_client import (
     _knox_testutil_compress_java_compatible,
     knox_decrypt,
     knox_encrypt,
+    resolve_user_ids_by_single_ids,
     send_chat_message,
 )
 
@@ -114,3 +115,28 @@ class KnoxClientUtilsTests(SimpleTestCase):
         params = payload["chatMessageParams"][0]
         self.assertEqual(params["msgType"], 7)
         self.assertEqual(params["chatMsg"], "{\"a\": 1}")
+
+    def test_resolve_user_ids_by_single_ids_casts_user_id_to_string(self) -> None:
+        """singleID 조회 결과의 userID가 숫자여도 문자열로 반환하는지 확인합니다."""
+
+        # ---------------------------------------------------------------------
+        # 1) Knox 응답 모킹(숫자 userID 포함)
+        # ---------------------------------------------------------------------
+        mocked_results = [
+            {"singleID": "abc.park", "userID": 123123123123},
+            {"singleID": "def.park", "userID": "U-2"},
+        ]
+
+        # ---------------------------------------------------------------------
+        # 2) userID 해석 실행
+        # ---------------------------------------------------------------------
+        with patch(
+            "api.messenger.services.knox_client.search_user_ids_by_single_ids",
+            return_value=mocked_results,
+        ):
+            resolved = resolve_user_ids_by_single_ids(single_ids=["abc.park", "def.park"])
+
+        # ---------------------------------------------------------------------
+        # 3) 문자열 결과 검증
+        # ---------------------------------------------------------------------
+        self.assertEqual(resolved, ["123123123123", "U-2"])

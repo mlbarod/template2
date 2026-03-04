@@ -1,7 +1,7 @@
 # =============================================================================
 # 모듈: Drone SOP 메신저 템플릿 렌더링
-# 주요 기능: 템플릿 키로 Adaptive Card payload 생성
-# 주요 가정: 템플릿 키는 레지스트리에 사전 등록되어야 합니다.
+# 주요 기능: 템플릿 입력용 컨텍스트/액션 생성
+# 주요 가정: 템플릿별 전송은 messenger_api에서 처리합니다.
 # =============================================================================
 """Drone SOP 메신저 템플릿 렌더러."""
 
@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from .templates.messenger_template_registry import CARD_TEMPLATE_BUILDERS
 from ..shared.inform_context import build_inform_context
 
 
@@ -26,7 +25,7 @@ def _normalize_value(value: Any) -> str:
 
 
 def _build_actions(context: dict[str, Any]) -> list[dict[str, Any]]:
-    """Adaptive Card용 OpenUrl 액션 목록을 구성합니다."""
+    """메신저 템플릿용 OpenUrl 액션 목록을 구성합니다."""
 
     actions: list[dict[str, Any]] = []
     ctttm_urls = context.get("ctttm_urls")
@@ -65,33 +64,19 @@ def _build_context(row: dict[str, Any]) -> dict[str, Any]:
     return context
 
 
-def build_drone_sop_messenger_card(*, template_key: str, row: dict[str, Any]) -> dict[str, Any]:
-    """템플릿 키에 맞는 Adaptive Card payload를 생성합니다.
+def build_drone_sop_messenger_template_inputs(*, row: dict[str, Any]) -> tuple[dict[str, str], list[dict[str, Any]]]:
+    """Drone SOP 메신저 템플릿 입력(정규화 컨텍스트/액션)을 구성합니다.
 
     인자:
-        template_key: 템플릿 키.
         row: Drone SOP 행 dict.
 
     반환:
-        Adaptive Card JSON dict.
+        (정규화 컨텍스트, OpenUrl 액션 목록) 튜플.
 
     부작용:
         없음. 순수 변환입니다.
     """
 
-    # -------------------------------------------------------------------------
-    # 1) 템플릿 키 확인
-    # -------------------------------------------------------------------------
-    if not isinstance(template_key, str) or not template_key.strip():
-        raise ValueError("messenger_template_key is required")
-
-    builder = CARD_TEMPLATE_BUILDERS.get(template_key.strip())
-    if not callable(builder):
-        raise ValueError(f"Unsupported messenger template key: {template_key!r}")
-
-    # -------------------------------------------------------------------------
-    # 2) 컨텍스트 및 액션 구성
-    # -------------------------------------------------------------------------
     context = _build_context(row)
     normalized_context = {
         "sop_id": _normalize_value(context.get("sop_id")),
@@ -105,11 +90,7 @@ def build_drone_sop_messenger_card(*, template_key: str, row: dict[str, Any]) ->
         "comment_raw": _normalize_value(context.get("comment_raw")),
     }
     actions = _build_actions(context)
-
-    # -------------------------------------------------------------------------
-    # 3) 템플릿 빌더 실행
-    # -------------------------------------------------------------------------
-    return builder(context=normalized_context, actions=actions)
+    return normalized_context, actions
 
 
-__all__ = ["build_drone_sop_messenger_card"]
+__all__ = ["build_drone_sop_messenger_template_inputs"]

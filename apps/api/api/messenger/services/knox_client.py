@@ -167,7 +167,6 @@ def _fetch_key_iv(config: KnoxMessengerConfig, headers: dict[str, str]) -> tuple
         timeout=config.timeout_seconds,
     )
     response.raise_for_status()
-
     return _split_key_iv(response.json()["key"])
 
 
@@ -215,8 +214,9 @@ def search_user_ids_by_single_ids(
     base_url = _normalize_base_url(resolved.base_url)
 
     payload = create_request_parameters(single_ids)
+    request_url = f"{base_url}contact/api/v2.0/profile/o1/search/loginid"
     response = requests.post(
-        f"{base_url}contact/api/v2.0/profile/o1/search/loginid",
+        request_url,
         headers=headers,
         data=json.dumps(payload),
         verify=False,
@@ -233,8 +233,18 @@ def resolve_user_ids_by_single_ids(
 ) -> list[str]:
     results = search_user_ids_by_single_ids(single_ids=single_ids, config=config)
 
-    by_single = {item["singleID"]: item["userID"] for item in results}
-    return [by_single[single_id] for single_id in single_ids if single_id in by_single]
+    normalized_single_ids = [
+        str(single_id).strip()
+        for single_id in single_ids
+        if str(single_id).strip()
+    ]
+    by_single = {
+        str(item.get("singleID") or "").strip(): str(item.get("userID") or "").strip()
+        for item in results
+        if str(item.get("singleID") or "").strip() and str(item.get("userID") or "").strip()
+    }
+    resolved_user_ids = [by_single[single_id] for single_id in normalized_single_ids if single_id in by_single]
+    return resolved_user_ids
 
 
 # =============================================================================
@@ -256,7 +266,6 @@ def create_chatroom(
         "receivers": [str(user_id) for user_id in user_ids],
         "chatroomTitle": str(title),
     }
-
     response = _post_encrypted(context, "message/api/v2.0/message/createChatroomRequest", payload)
     decrypted = knox_decrypt(context.key, context.iv, response.text)
     return json.loads(decrypted)["chatroomId"]
@@ -274,6 +283,7 @@ def send_chat_message(
     context = _prepare_knox_context(resolved)
 
     now_ms = int(time.time() * 1000)
+    chat_msg_text = str(chat_msg)
     payload = {
         "requestId": now_ms,
         "chatroomId": int(chatroom_id),
@@ -281,12 +291,11 @@ def send_chat_message(
             {
                 "msgId": now_ms,
                 "msgType": int(msg_type),
-                "chatMsg": str(chat_msg),
+                "chatMsg": chat_msg_text,
                 "msgTtl": int(ttl),
             }
         ],
     }
-
     _post_encrypted(context, "message/api/v2.0/message/chatRequest", payload)
 
 
@@ -305,7 +314,6 @@ def change_chatroom_title(
         "chatroomId": int(chatroom_id),
         "title": str(title),
     }
-
     _post_encrypted(context, "message/api/v2.0/message/changeChatroomMetaRequest", payload)
 
 

@@ -1,13 +1,12 @@
 # =============================================================================
 # 모듈: Drone SOP 메신저 전송(Knox API)
-# 주요 기능: 공통 Knox 메신저 서비스로 메시지 전송
+# 주요 기능: 공통 Knox 메신저 Excel Table(msgType=7) 전송
 # 주요 가정: chatroom_id는 채팅룸 ID(정수)입니다.
 # =============================================================================
 """Drone SOP Knox 메신저 전송 유틸리티."""
 
 from __future__ import annotations
 
-import json
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -16,10 +15,10 @@ from django.conf import settings
 
 from api.messenger import services as messenger_services
 
-from .messenger_sender import build_drone_sop_messenger_card
+from .messenger_sender import build_drone_sop_messenger_template_inputs
+from .templates.messenger_template_registry import EXCEL_TABLE_TEMPLATE_SENDERS
 from ..shared.utils import _parse_int
 
-_DEFAULT_MSG_TYPE = 0
 _DEFAULT_TTL = 7200
 
 
@@ -27,30 +26,23 @@ _DEFAULT_TTL = 7200
 class DroneMessengerConfig:
     """Drone SOP 메신저 전송 설정입니다."""
 
-    msg_type: int
     ttl: int
     knox_config: messenger_services.KnoxMessengerConfig
 
     @classmethod
     def from_settings(cls) -> "DroneMessengerConfig":
-        """settings/env에서 메시지 타입/TTL과 Knox 설정을 로드합니다."""
+        """settings/env에서 TTL과 Knox 설정을 로드합니다."""
 
-        msg_type_raw = (
-            getattr(settings, "DRONE_MESSENGER_MSG_TYPE", None)
-            or os.getenv("DRONE_MESSENGER_MSG_TYPE")
-        )
         ttl_raw = (
             getattr(settings, "DRONE_MESSENGER_TTL", None)
             or os.getenv("DRONE_MESSENGER_TTL")
         )
 
-        msg_type = _parse_int(msg_type_raw, _DEFAULT_MSG_TYPE)
         ttl = _parse_int(ttl_raw, _DEFAULT_TTL)
         if ttl <= 0:
             ttl = _DEFAULT_TTL
 
         return cls(
-            msg_type=msg_type,
             ttl=ttl,
             knox_config=messenger_services.KnoxMessengerConfig.from_env(),
         )
@@ -59,12 +51,6 @@ class DroneMessengerConfig:
         """Knox 설정 준비 여부를 반환합니다."""
 
         return self.knox_config.is_ready()
-
-
-def _resolve_chat_message(card_payload: dict[str, Any]) -> str:
-    """카드 payload를 Knox chatMsg 문자열로 변환합니다."""
-
-    return json.dumps(card_payload, ensure_ascii=False)
 
 
 def send_drone_sop_messenger_message(
@@ -100,18 +86,25 @@ def send_drone_sop_messenger_message(
         raise ValueError("messenger_template_key is required")
 
     # -------------------------------------------------------------------------
-    # 2) 메시지 payload 구성
+    # 2) 템플릿별 전송기 선택
     # -------------------------------------------------------------------------
-    card_payload = build_drone_sop_messenger_card(template_key=messenger_template_key, row=row)
-    chat_msg = _resolve_chat_message(card_payload)
+    normalized_template_key = messenger_template_key.strip()
+    template_sender = EXCEL_TABLE_TEMPLATE_SENDERS.get(normalized_template_key)
+    if not callable(template_sender):
+        raise ValueError(f"Unsupported messenger template key: {messenger_template_key!r}")
 
     # -------------------------------------------------------------------------
-    # 3) Knox 메신저 전송
+    # 3) 템플릿 입력 구성
     # -------------------------------------------------------------------------
-    messenger_services.send_chat_message(
+    normalized_context, actions = build_drone_sop_messenger_template_inputs(row=row)
+
+    # -------------------------------------------------------------------------
+    # 4) Excel Table(msgType=7) 전송
+    # -------------------------------------------------------------------------
+    template_sender(
         chatroom_id=chatroom_id,
-        msg_type=config.msg_type,
-        chat_msg=chat_msg,
+        context=normalized_context,
+        actions=actions,
         ttl=config.ttl,
         config=config.knox_config,
     )
