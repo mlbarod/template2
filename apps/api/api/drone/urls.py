@@ -13,6 +13,7 @@ from .views import (
     DroneSopInformTriggerView,
     DroneJiraKeyView,
     DroneSopInstantInformView,
+    DroneSopRetryChannelView,
     DroneSopJiraPrecheckView,
     DroneSopJiraTriggerView,
     DroneSopPop3IngestTriggerView,
@@ -35,6 +36,11 @@ urlpatterns = [
         "sop/<int:sop_id>/instant-inform",
         DroneSopInstantInformView.as_view(),
         name="drone-sop-instant-inform",
+    ),
+    path(
+        "sop/<int:sop_id>/retry-channel",
+        DroneSopRetryChannelView.as_view(),
+        name="drone-sop-retry-channel",
     ),
     path(
         "sop/ingest/pop3/trigger",

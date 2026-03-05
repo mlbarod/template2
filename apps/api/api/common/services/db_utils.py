@@ -1,4 +1,4 @@
-# common/services/db_utils.py
+# 공용 DB 유틸
 """데이터베이스 스키마 및 쿼리 관련 헬퍼 함수 모음."""
 from __future__ import annotations
 
@@ -40,15 +40,28 @@ def build_line_filters(column_names: Sequence[str], line_id: Optional[str]) -> D
     if not line_id:
         return {"filters": filters, "params": params}
 
-    usdwt_col = find_column(column_names, "user_sdwt_prod")
-    if usdwt_col:
+    sdwt_col = find_column(column_names, "sdwt_prod")
+    if sdwt_col:
         filters.append(
             "{col} IN ("
             "SELECT user_sdwt_prod FROM {table} "
             "WHERE line = %s "
             "AND user_sdwt_prod IS NOT NULL "
             "AND user_sdwt_prod <> ''"
-            ")".format(col=usdwt_col, table=LINE_SDWT_TABLE_NAME)
+            ")".format(col=sdwt_col, table=LINE_SDWT_TABLE_NAME)
+        )
+        params.append(line_id)
+        return {"filters": filters, "params": params}
+
+    user_sdwt_col = find_column(column_names, "user_sdwt_prod")
+    if user_sdwt_col:
+        filters.append(
+            "{col} IN ("
+            "SELECT user_sdwt_prod FROM {table} "
+            "WHERE line = %s "
+            "AND user_sdwt_prod IS NOT NULL "
+            "AND user_sdwt_prod <> ''"
+            ")".format(col=user_sdwt_col, table=LINE_SDWT_TABLE_NAME)
         )
         params.append(line_id)
         return {"filters": filters, "params": params}

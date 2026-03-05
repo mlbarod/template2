@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from django.test import SimpleTestCase
 
-from api.common.services import sanitize_identifier
+from api.common.services import build_line_filters, LINE_SDWT_TABLE_NAME, sanitize_identifier
 
 
 class CommonNormalizationTests(SimpleTestCase):
@@ -49,3 +49,63 @@ class CommonNormalizationTests(SimpleTestCase):
         result = sanitize_identifier(123, "  ok_table ")
 
         self.assertEqual(result, "ok_table")
+
+
+class CommonDbUtilsTests(SimpleTestCase):
+    """공용 DB 유틸 필터 규칙을 검증합니다."""
+
+    def test_build_line_filters_returns_empty_when_line_missing(self) -> None:
+        """lineId가 없으면 필터가 비어있는지 확인합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) lineId 미지정 시 필터 없음
+        # -----------------------------------------------------------------------------
+        result = build_line_filters(["sdwt_prod", "line_id"], None)
+
+        self.assertEqual(result["filters"], [])
+        self.assertEqual(result["params"], [])
+
+    def test_build_line_filters_prefers_sdwt_prod(self) -> None:
+        """sdwt_prod가 있으면 sdwt_prod 기준 필터를 사용하는지 확인합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) sdwt_prod 우선 규칙 확인
+        # -----------------------------------------------------------------------------
+        result = build_line_filters(["user_sdwt_prod", "sdwt_prod", "line_id"], "L1")
+
+        expected = (
+            "sdwt_prod IN ("
+            f"SELECT user_sdwt_prod FROM {LINE_SDWT_TABLE_NAME} "
+            "WHERE line = %s "
+            "AND user_sdwt_prod IS NOT NULL "
+            "AND user_sdwt_prod <> ''"
+            ")"
+        )
+        self.assertEqual(result["filters"], [expected])
+        self.assertEqual(result["params"], ["L1"])
+
+    def test_build_line_filters_uses_user_sdwt_prod_when_sdwt_missing(self) -> None:
+        """sdwt_prod가 없으면 user_sdwt_prod 기준 필터를 사용하는지 확인합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) user_sdwt_prod fallback 확인
+        # -----------------------------------------------------------------------------
+        result = build_line_filters(["user_sdwt_prod", "line_id"], "L1")
+
+        expected = (
+            "user_sdwt_prod IN ("
+            f"SELECT user_sdwt_prod FROM {LINE_SDWT_TABLE_NAME} "
+            "WHERE line = %s "
+            "AND user_sdwt_prod IS NOT NULL "
+            "AND user_sdwt_prod <> ''"
+            ")"
+        )
+        self.assertEqual(result["filters"], [expected])
+        self.assertEqual(result["params"], ["L1"])
+
+    def test_build_line_filters_falls_back_to_line_id(self) -> None:
+        """sdwt_prod가 없으면 line_id 직접 비교로 fallback 되는지 확인합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) line_id fallback 확인
+        # -----------------------------------------------------------------------------
+        result = build_line_filters(["line_id", "created_at"], "L1")
+
+        self.assertEqual(result["filters"], ["line_id = %s"])
+        self.assertEqual(result["params"], ["L1"])

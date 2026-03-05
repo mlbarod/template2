@@ -539,11 +539,16 @@ def _upsert_drone_sop_rows(*, rows: Sequence[dict[str, Any]]) -> int:
     quoted_insert_cols = ", ".join(f'"{col}"' for col in insert_cols)
     conflict_target = ", ".join(f'"{col}"' for col in conflict_cols)
 
-    update_parts = [
-        f'"{col}" = COALESCE(EXCLUDED."{col}", {quoted_table}."{col}")'
-        for col in insert_cols
-        if col not in exclude_update_cols
-    ]
+    update_parts: list[str] = []
+    for col in insert_cols:
+        if col in exclude_update_cols:
+            continue
+        if col == "target_user_sdwt_prod":
+            update_parts.append(f'"{col}" = EXCLUDED."{col}"')
+            continue
+        update_parts.append(
+            f'"{col}" = COALESCE(EXCLUDED."{col}", {quoted_table}."{col}")'
+        )
     update_clause = ", ".join(update_parts)
 
     sql = f"""

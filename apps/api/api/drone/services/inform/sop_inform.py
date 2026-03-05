@@ -138,7 +138,6 @@ def _mark_pending_failed(
     sop_ids: Sequence[int],
     channel_fields: Sequence[str],
     failure_reason: str,
-    mark_instant_inform: bool = False,
 ) -> None:
     """대기 상태 채널을 실패 사유로 기록합니다."""
 
@@ -149,7 +148,6 @@ def _mark_pending_failed(
         sop_ids=normalized_ids,
         channel_fields=channel_fields,
         failure_reason=failure_reason,
-        mark_instant_inform=mark_instant_inform,
     )
 
 
@@ -157,7 +155,6 @@ def _mark_reason_group_failures(
     *,
     reason_groups: dict[str, list[int]],
     channel_fields: Sequence[str],
-    mark_instant_inform: bool = False,
 ) -> None:
     """사유별 실패 그룹을 일괄 반영합니다."""
 
@@ -166,7 +163,6 @@ def _mark_reason_group_failures(
             sop_ids=ids,
             channel_fields=channel_fields,
             failure_reason=reason,
-            mark_instant_inform=mark_instant_inform,
         )
 
 
@@ -370,20 +366,11 @@ def _run_jira_inform(
     if not jira_rows:
         return 0, 0
 
-    instant_inform_ids = [
-        row_id for row in jira_rows if (row_id := _extract_row_id(row)) is not None and row.get("instant_inform") == 1
-    ]
     try:
         result = run_drone_sop_jira_create_from_rows(rows=jira_rows)
     except Exception:
-        # sop_jira 서비스에서 즉시 인폼 실패 마킹까지 수행하므로 여기서는 채널 격리만 담당합니다.
+        # Jira 상태 갱신 책임은 sop_jira 서비스에 두고, inform은 채널 격리만 담당합니다.
         logger.exception("Drone SOP Jira pipeline failed during inform run")
-        _mark_pending_failed(
-            sop_ids=instant_inform_ids,
-            channel_fields=["send_jira"],
-            failure_reason=REASON_SEND_FAILED,
-            mark_instant_inform=True,
-        )
         return 0, 0
 
     return int(result.created or 0), int(result.updated_rows or 0)
@@ -559,7 +546,10 @@ def run_drone_sop_inform_from_env(*, limit: int | None = None) -> DroneSopInform
         # ---------------------------------------------------------------------
         targets, missing_ids = resolve_target_user_sdwt_prod_values(rows=rows)
         if missing_ids:
-            mark_missing_target_as_failed(sop_ids=missing_ids)
+            mark_missing_target_as_failed(
+                sop_ids=missing_ids,
+                channel_fields=["send_messenger", "send_mail"],
+            )
             rows = _filter_rows_by_excluded_ids(rows=rows, excluded_ids=missing_ids)
         if not rows:
             return DroneSopInformResult(

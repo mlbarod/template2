@@ -38,6 +38,14 @@ function showAlreadyInformedToast() {
   })
 }
 
+function showJiraFailedLockedToast(reason) {
+  const detail = typeof reason === "string" && reason.trim() ? reason.trim() : "send_failed"
+  toast.info("JIRA 실패 상태입니다.", {
+    description: `즉시인폼으로는 재시도되지 않습니다. (reason: ${detail})`,
+    ...buildToastOptions({ intent: "info", duration: 3200 }),
+  })
+}
+
 export function InstantInformCell({
   meta,
   recordId,
@@ -50,7 +58,11 @@ export function InstantInformCell({
 
   const baseState = deriveFlagState(baseValue, 0)
   const sendJiraState = deriveFlagState(rowOriginal?.send_jira, 0)
-  const isLocked = disabled || sendJiraState.isOn
+  const jiraReason =
+    typeof rowOriginal?.jira_reason === "string" && rowOriginal.jira_reason.trim()
+      ? rowOriginal.jira_reason.trim()
+      : null
+  const isLocked = disabled || sendJiraState.isOn || sendJiraState.isError
   const draftValue = meta?.instantInformDrafts?.[recordId]
   const effectiveState = draftValue === undefined ? baseState : deriveFlagState(draftValue, baseState.numericValue)
   const { isOn, isError } = effectiveState
@@ -84,6 +96,10 @@ export function InstantInformCell({
     if (isSaving) return
     if (sendJiraState.isOn) {
       showAlreadyInformedToast()
+      return
+    }
+    if (sendJiraState.isError) {
+      showJiraFailedLockedToast(jiraReason)
       return
     }
     if (isLocked) {
@@ -135,7 +151,9 @@ export function InstantInformCell({
   }
 
   const titleText = isLocked
-    ? disabledReason
+    ? sendJiraState.isError
+      ? `JIRA 실패 상태 (reason: ${jiraReason ?? "send_failed"})`
+      : disabledReason
     : isError
       ? "즉시인폼 오류 상태"
       : isChecked

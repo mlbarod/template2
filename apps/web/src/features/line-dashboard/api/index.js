@@ -5,6 +5,7 @@ export { getJiraUserSdwtProds } from "./getJiraUserSdwtProds"
 export { getLineSdwtOptions } from "./getLineSdwtOptions"
 export { getAirflowDagOverview } from "./getAirflowDagOverview"
 export { instantInformDroneSop } from "./instantInform"
+export { retryDroneSopChannel } from "./retryChannel"
 export { lineDashboardQueryKeys } from "./queryKeys"
 export {
   createLineSetting,

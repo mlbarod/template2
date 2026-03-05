@@ -10,8 +10,10 @@ import logging
 import os
 from datetime import datetime, timezone as dt_timezone
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import Mock, patch
 
+import requests
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.test.utils import override_settings
@@ -219,6 +221,35 @@ class DroneSopUpsertTests(TestCase):
         self.assertEqual(refreshed.defect_png_url, "https://example.com/new.png")
         self.assertEqual(refreshed.target_user_sdwt_prod, "new-target")
 
+    def test_upsert_overwrites_target_user_sdwt_prod_with_null(self) -> None:
+        """target_user_sdwt_prod가 None이면 NULL로 덮어쓰는지 확인합니다."""
+        existing = _create_drone_sop(
+            line_id="L1",
+            eqp_id="EQP1",
+            chamber_ids="1",
+            lot_id="LOT.1",
+            main_step="MS",
+            target_user_sdwt_prod="old-target",
+        )
+
+        services._upsert_drone_sop_rows(
+            rows=[
+                {
+                    "line_id": "L1",
+                    "eqp_id": "EQP1",
+                    "chamber_ids": "1",
+                    "lot_id": "LOT.1",
+                    "main_step": "MS",
+                    "needtosend": 1,
+                    "status": "COMPLETE",
+                    "target_user_sdwt_prod": None,
+                }
+            ]
+        )
+
+        refreshed = DroneSOP.objects.get(id=existing.id)
+        self.assertIsNone(refreshed.target_user_sdwt_prod)
+
 
 class DroneSopJiraCandidateTests(TestCase):
     """Jira 후보 조회 로직을 검증합니다."""
@@ -296,7 +327,7 @@ class DroneSopInstantInformTests(TestCase):
     """즉시 인폼 요청 로직을 검증합니다."""
 
     def test_enqueue_instant_inform_marks_requested(self) -> None:
-        """즉시 인폼 체크 요청 시 instant_inform/send_jira 값이 갱신되는지 확인합니다."""
+        """즉시 인폼 체크 요청 시 instant_inform 값만 갱신되는지 확인합니다."""
         row = _create_drone_sop(
             sdwt_prod="SDWT",
             user_sdwt_prod="SDWT",
@@ -312,15 +343,15 @@ class DroneSopInstantInformTests(TestCase):
         self.assertFalse(result.already_informed)
         self.assertEqual(result.updated_fields.get("comment"), "hello")
         self.assertEqual(result.updated_fields.get("instant_inform"), 1)
-        self.assertEqual(result.updated_fields.get("send_jira"), 0)
+        self.assertIsNone(result.updated_fields.get("send_jira"))
 
         refreshed = DroneSOP.objects.get(id=row.id)
         self.assertEqual(refreshed.comment, "hello")
         self.assertEqual(refreshed.instant_inform, 1)
-        self.assertEqual(refreshed.send_jira, 0)
+        self.assertEqual(refreshed.send_jira, -1)
 
     def test_enqueue_instant_inform_returns_already_informed(self) -> None:
-        """이미 Jira 전송된 항목은 already_informed로 응답하는지 확인합니다."""
+        """이미 Jira 전송된 항목도 instant_inform을 1로 유지하는지 확인합니다."""
         row = _create_drone_sop(
             sdwt_prod="SDWT",
             user_sdwt_prod="SDWT",
@@ -334,9 +365,58 @@ class DroneSopInstantInformTests(TestCase):
         self.assertFalse(result.queued)
         self.assertEqual(result.jira_key, "JIRA-1")
         self.assertEqual(result.updated_fields.get("comment"), "updated")
+        self.assertEqual(result.updated_fields.get("instant_inform"), 1)
 
         refreshed = DroneSOP.objects.get(id=row.id)
         self.assertEqual(refreshed.comment, "updated")
+        self.assertEqual(refreshed.instant_inform, 1)
+
+
+class DroneSopRetryChannelTests(TestCase):
+    """단건 채널 재시도 요청 로직을 검증합니다."""
+
+    def test_retry_channel_resets_failed_state_to_pending(self) -> None:
+        """실패 채널(send=-1)을 재시도 시 대기(0)로 복구하는지 확인합니다."""
+        row = _create_drone_sop(
+            send_jira=-1,
+            jira_reason="send_failed",
+            instant_inform=1,
+        )
+
+        result = services.retry_drone_sop_channel(sop_id=int(row.id), channel="jira")
+        self.assertTrue(result.queued)
+        self.assertFalse(result.already_pending)
+        self.assertFalse(result.already_sent)
+        self.assertEqual(result.updated_fields.get("send_jira"), 0)
+        self.assertIsNone(result.updated_fields.get("jira_reason"))
+
+        refreshed = DroneSOP.objects.get(id=row.id)
+        self.assertEqual(refreshed.send_jira, 0)
+        self.assertIsNone(refreshed.jira_reason)
+        self.assertEqual(refreshed.instant_inform, 1)
+
+    def test_retry_channel_returns_already_pending_when_not_failed(self) -> None:
+        """실패 상태가 아니면 이미 대기 상태로 응답하는지 확인합니다."""
+        row = _create_drone_sop(
+            send_messenger=0,
+            messenger_reason=None,
+        )
+
+        result = services.retry_drone_sop_channel(sop_id=int(row.id), channel="messenger")
+        self.assertFalse(result.queued)
+        self.assertTrue(result.already_pending)
+        self.assertFalse(result.already_sent)
+
+        refreshed = DroneSOP.objects.get(id=row.id)
+        self.assertEqual(refreshed.send_messenger, 0)
+        self.assertIsNone(refreshed.messenger_reason)
+
+    def test_retry_channel_rejects_invalid_channel(self) -> None:
+        """지원하지 않는 채널 키는 오류로 거부하는지 확인합니다."""
+        row = _create_drone_sop(send_mail=-1, mail_reason="send_failed")
+
+        with self.assertRaises(ValueError):
+            services.retry_drone_sop_channel(sop_id=int(row.id), channel="sms")
 
 
 class DroneEndpointTests(TestCase):
@@ -417,6 +497,92 @@ class DroneEndpointTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json().get("status"), "queued")
+
+    @patch("api.drone.views.services.retry_drone_sop_channel")
+    def test_drone_sop_retry_channel(self, mock_service) -> None:
+        """채널 재시도 API가 정상 응답하는지 확인합니다."""
+        mock_service.return_value = SimpleNamespace(
+            channel="jira",
+            queued=True,
+            already_pending=False,
+            already_sent=False,
+            updated_fields={"send_jira": 0, "jira_reason": None},
+        )
+        response = self.client.post(
+            reverse("drone-sop-retry-channel", kwargs={"sop_id": 123}),
+            data='{"channel":"jira"}',
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json().get("status"), "queued")
+        self.assertEqual(response.json().get("channel"), "jira")
+
+    def test_drone_sop_retry_channel_rejects_invalid_channel(self) -> None:
+        """지원하지 않는 채널 요청은 400으로 거부하는지 확인합니다."""
+        response = self.client.post(
+            reverse("drone-sop-retry-channel", kwargs={"sop_id": 123}),
+            data='{"channel":"sms"}',
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json().get("error"), "channel must be one of: jira, messenger, mail")
+
+    @patch("api.drone.views.services.retry_drone_sop_channel")
+    def test_drone_sop_retry_channel_returns_bad_request_when_sop_missing(self, mock_service) -> None:
+        """서비스가 SOP 미존재 오류를 반환하면 400으로 응답하는지 확인합니다."""
+        mock_service.side_effect = ValueError("DroneSOP not found")
+
+        response = self.client.post(
+            reverse("drone-sop-retry-channel", kwargs={"sop_id": 999999}),
+            data='{"channel":"jira"}',
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json().get("error"), "DroneSOP not found")
+
+    @patch("api.drone.views.services.retry_drone_sop_channel")
+    def test_drone_sop_retry_channel_returns_already_pending(self, mock_service) -> None:
+        """대기 상태 응답이 API status=already_pending으로 매핑되는지 확인합니다."""
+        mock_service.return_value = SimpleNamespace(
+            channel="mail",
+            queued=False,
+            already_pending=True,
+            already_sent=False,
+            updated_fields={"send_mail": 0, "mail_reason": None},
+        )
+
+        response = self.client.post(
+            reverse("drone-sop-retry-channel", kwargs={"sop_id": 123}),
+            data='{"channel":"mail"}',
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json().get("status"), "already_pending")
+        self.assertFalse(response.json().get("queued"))
+        self.assertTrue(response.json().get("alreadyPending"))
+        self.assertFalse(response.json().get("alreadySent"))
+
+    @patch("api.drone.views.services.retry_drone_sop_channel")
+    def test_drone_sop_retry_channel_returns_already_sent(self, mock_service) -> None:
+        """완료 상태 응답이 API status=already_sent로 매핑되는지 확인합니다."""
+        mock_service.return_value = SimpleNamespace(
+            channel="messenger",
+            queued=False,
+            already_pending=False,
+            already_sent=True,
+            updated_fields={"send_messenger": 1, "messenger_reason": None},
+        )
+
+        response = self.client.post(
+            reverse("drone-sop-retry-channel", kwargs={"sop_id": 123}),
+            data='{"channel":"messenger"}',
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json().get("status"), "already_sent")
+        self.assertFalse(response.json().get("queued"))
+        self.assertFalse(response.json().get("alreadyPending"))
+        self.assertTrue(response.json().get("alreadySent"))
 
     @override_settings(AIRFLOW_TRIGGER_TOKEN="token")
     @patch("api.drone.views.services.run_drone_sop_pop3_ingest_from_env")
@@ -1012,7 +1178,7 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
         refreshed = DroneSOP.objects.get(id=sop.id)
         self.assertEqual(refreshed.send_jira, -1)
         self.assertEqual(refreshed.jira_reason, "config_missing")
-        self.assertEqual(refreshed.instant_inform, -1)
+        self.assertEqual(refreshed.instant_inform, 1)
 
     @override_settings(DRONE_JIRA_BASE_URL="")
     @patch("api.drone.services.jira.sop_jira._jira_session")
@@ -1071,8 +1237,8 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
 
         refreshed = DroneSOP.objects.get(id=sop.id)
         self.assertEqual(refreshed.send_jira, -1)
-        self.assertEqual(refreshed.jira_reason, "no_valid_target")
-        self.assertEqual(refreshed.instant_inform, -1)
+        self.assertEqual(refreshed.jira_reason, "target_missing")
+        self.assertEqual(refreshed.instant_inform, 1)
 
     @override_settings(
         DRONE_JIRA_BASE_URL="http://example.local/jira",
@@ -1080,12 +1246,12 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
     )
     @patch("api.drone.services.jira.sop_jira._jira_session")
     @patch("api.drone.services.jira.sop_jira._single_create_jira_issues")
-    def test_jira_create_marks_instant_inform_failed_when_create_fails(
+    def test_jira_create_keeps_instant_inform_when_create_fails(
         self,
         mock_single_create: Mock,
         mock_session: Mock,
     ) -> None:
-        """즉시인폼 대상이 생성 실패 시 instant_inform이 실패로 표시되는지 확인합니다."""
+        """즉시인폼 대상이 생성 실패해도 instant_inform이 유지되는지 확인합니다."""
         mock_session.return_value = Mock()
 
         DroneSopUserSdwtChannel.objects.create(
@@ -1127,10 +1293,99 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
         refreshed_instant = DroneSOP.objects.get(id=instant.id)
         refreshed_normal = DroneSOP.objects.get(id=normal.id)
 
-        self.assertEqual(refreshed_instant.instant_inform, -1)
+        self.assertEqual(refreshed_instant.instant_inform, 1)
         self.assertEqual(refreshed_instant.send_jira, 0)
         self.assertEqual(refreshed_normal.send_jira, 1)
         mock_single_create.assert_called_once()
+
+    @override_settings(
+        DRONE_JIRA_BASE_URL="http://example.local/jira",
+        DRONE_JIRA_USE_BULK_API=False,
+    )
+    @patch("api.drone.services.jira.sop_jira._jira_session")
+    def test_jira_create_keeps_pending_when_request_error_occurs(
+        self,
+        mock_session: Mock,
+    ) -> None:
+        """일부 요청 예외가 나도 성공 건은 반영하고 실패 건은 0 유지하는지 확인합니다."""
+        session = Mock()
+        mock_session.return_value = session
+
+        DroneSopUserSdwtChannel.objects.create(
+            target_user_sdwt_prod="SDWT_ENABLED_1",
+            jira_template_key="line_a",
+            jira_key="PROJ1",
+            jira_enabled=True,
+        )
+        DroneSopUserSdwtChannel.objects.create(
+            target_user_sdwt_prod="SDWT_ENABLED_2",
+            jira_template_key="line_a",
+            jira_key="PROJ2",
+            jira_enabled=True,
+        )
+        DroneSopUserSdwtChannel.objects.create(
+            target_user_sdwt_prod="SDWT_DISABLED",
+            jira_template_key="line_a",
+            jira_key="PROJ3",
+            jira_enabled=False,
+        )
+        _ensure_target_mapping(sdwt_prod="SDWT_ENABLED_1", user_sdwt_prod="SDWT_ENABLED_1")
+        _ensure_target_mapping(sdwt_prod="SDWT_ENABLED_2", user_sdwt_prod="SDWT_ENABLED_2")
+        _ensure_target_mapping(sdwt_prod="SDWT_DISABLED", user_sdwt_prod="SDWT_DISABLED")
+
+        enabled_row_1 = _create_drone_sop(
+            sdwt_prod="SDWT_ENABLED_1",
+            user_sdwt_prod="SDWT_ENABLED_1",
+            metro_current_step="ST001",
+        )
+        enabled_row_2 = _create_drone_sop(
+            line_id="L2",
+            sdwt_prod="SDWT_ENABLED_2",
+            user_sdwt_prod="SDWT_ENABLED_2",
+            eqp_id="EQP2",
+            lot_id="LOT.2",
+            metro_current_step="ST001",
+        )
+        disabled_row = _create_drone_sop(
+            line_id="L3",
+            sdwt_prod="SDWT_DISABLED",
+            user_sdwt_prod="SDWT_DISABLED",
+            eqp_id="EQP3",
+            lot_id="LOT.3",
+            metro_current_step="ST001",
+        )
+
+        ok_resp = Mock(status_code=201)
+        ok_resp.json.return_value = {"key": "PROJ2-1"}
+
+        def _post_side_effect(*args: Any, **kwargs: Any) -> Mock:
+            payload = kwargs.get("json") or {}
+            project_key = (
+                payload.get("fields", {})
+                .get("project", {})
+                .get("key")
+            )
+            if project_key == "PROJ1":
+                raise requests.Timeout("jira unavailable")
+            return ok_resp
+
+        session.post.side_effect = _post_side_effect
+
+        result = services.run_drone_sop_jira_create_from_env()
+        self.assertEqual(result.candidates, 3)
+        self.assertEqual(result.created, 1)
+
+        refreshed_enabled_1 = DroneSOP.objects.get(id=enabled_row_1.id)
+        refreshed_enabled_2 = DroneSOP.objects.get(id=enabled_row_2.id)
+        refreshed_disabled = DroneSOP.objects.get(id=disabled_row.id)
+
+        self.assertEqual(refreshed_enabled_1.send_jira, 0)
+        self.assertIsNone(refreshed_enabled_1.jira_reason)
+        self.assertEqual(refreshed_enabled_2.send_jira, 1)
+        self.assertIsNone(refreshed_enabled_2.jira_reason)
+        self.assertEqual(refreshed_disabled.send_jira, 0)
+        self.assertEqual(refreshed_disabled.jira_reason, "disabled_by_policy")
+        self.assertEqual(session.post.call_count, 2)
 
 
 class DroneSopInformPolicyTests(TestCase):
@@ -1176,10 +1431,10 @@ class DroneSopInformPolicyTests(TestCase):
         self.assertEqual(refreshed.send_jira, -1)
         self.assertEqual(refreshed.send_messenger, -1)
         self.assertEqual(refreshed.send_mail, -1)
-        self.assertEqual(refreshed.jira_reason, "no_valid_target")
-        self.assertEqual(refreshed.messenger_reason, "no_valid_target")
-        self.assertEqual(refreshed.mail_reason, "no_valid_target")
-        self.assertEqual(refreshed.instant_inform, -1)
+        self.assertEqual(refreshed.jira_reason, "target_missing")
+        self.assertEqual(refreshed.messenger_reason, "target_missing")
+        self.assertEqual(refreshed.mail_reason, "target_missing")
+        self.assertEqual(refreshed.instant_inform, 1)
 
     @override_settings(DRONE_JIRA_BASE_URL="")
     def test_inform_marks_jira_failed_when_base_url_missing(self) -> None:
@@ -1199,7 +1454,7 @@ class DroneSopInformPolicyTests(TestCase):
         refreshed = DroneSOP.objects.get(id=sop.id)
         self.assertEqual(refreshed.send_jira, -1)
         self.assertEqual(refreshed.jira_reason, "config_missing")
-        self.assertEqual(refreshed.instant_inform, -1)
+        self.assertEqual(refreshed.instant_inform, 1)
         self.assertEqual(refreshed.send_messenger, 1)
         self.assertEqual(refreshed.send_mail, 1)
 
@@ -1237,6 +1492,7 @@ class DroneSopInformPolicyTests(TestCase):
         DRONE_JIRA_BASE_URL="http://example.local/jira",
         DRONE_MAIL_SENDER="",
     )
+    @patch.dict(os.environ, {"DRONE_MAIL_SENDER": ""})
     def test_inform_marks_mail_failed_when_sender_missing(self) -> None:
         """메일 발신자 미설정 시 send_mail이 실패 처리되는지 확인합니다."""
         sop = _create_drone_sop(
@@ -1560,7 +1816,7 @@ class DroneSopInformPolicyTests(TestCase):
         mock_run_jira: Mock,
         mock_messenger: Mock,
     ) -> None:
-        """Jira 처리 예외가 발생해도 메신저 채널 처리는 계속 수행하는지 확인합니다."""
+        """Jira 처리 예외가 발생해도 메신저 채널 처리가 계속되는지 확인합니다."""
         mock_run_jira.side_effect = RuntimeError("jira unavailable")
 
         DroneSopUserSdwtChannel.objects.create(
@@ -1595,6 +1851,7 @@ class DroneSopInformPolicyTests(TestCase):
 
         refreshed = DroneSOP.objects.get(id=sop.id)
         self.assertEqual(refreshed.send_jira, 0)
+        self.assertIsNone(refreshed.jira_reason)
         self.assertEqual(refreshed.send_messenger, 1)
 
     @override_settings(
@@ -2290,9 +2547,10 @@ class DroneSopDefectMapPostTests(TestCase):
         self.assertEqual(
             mock_post.call_args.kwargs.get("json"),
             {
-                "lot_id": "LOT-1",
+                "lotid": "LOT-1",
                 "scandate": "2026-02-05 13:00:00.750 +0900",
-                "step": "ST003",
+                "step": "",
+                "stepid": "ST003",
                 "data": "https://example.com/defect.png",
             },
         )

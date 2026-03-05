@@ -1,6 +1,7 @@
 // 파일 경로: src/features/line-dashboard/components/DataTableColumnRenderers.jsx
 // 컬럼별로 서로 다른 UI 표현을 담당하는 렌더러 모음입니다.
 import { ExternalLink, Check, AlertTriangle } from "lucide-react"
+import { toast } from "sonner"
 
 import {
   buildJiraBrowseUrl,
@@ -22,6 +23,7 @@ import { CommentCell } from "./CommentCell"
 import { InstantInformCell } from "./InstantInformCell"
 import { NeedToSendCell } from "./NeedToSendCell"
 import { deriveFlagState } from "../utils/dataTableFlagState"
+import { buildToastOptions } from "../utils/toast"
 
 const CHANNEL_LABELS = {
   send_jira: "JIRA",
@@ -45,18 +47,63 @@ function resolveChannelReason(rowOriginal, channelKey) {
   return null
 }
 
-function renderSendChannelCell({ value, rowOriginal, channelKey }) {
-  const { state, numericValue, isOn } = deriveFlagState(value, 0)
+function showRetryQueuedToast(label) {
+  toast.info(`${label} 재시도 요청 완료`, {
+    description: "다음 배치 실행 시 해당 채널이 재처리됩니다.",
+    ...buildToastOptions({ intent: "info", duration: 2200 }),
+  })
+}
+
+function showRetryAlreadyPendingToast(label) {
+  toast.info(`${label} 이미 대기 상태입니다.`, {
+    description: "추가 변경 없이 다음 배치에서 처리됩니다.",
+    ...buildToastOptions({ intent: "info", duration: 2200 }),
+  })
+}
+
+function showRetryAlreadySentToast(label) {
+  toast.info(`${label} 이미 전송 완료 상태입니다.`, {
+    ...buildToastOptions({ intent: "info", duration: 2200 }),
+  })
+}
+
+function showRetryUnknownStatusToast(status) {
+  const normalized = typeof status === "string" && status.trim() ? status.trim() : "empty"
+  toast.info("채널 재시도 응답 확인 필요", {
+    description: `알 수 없는 상태값(${normalized})을 받았습니다. 새로고침 후 상태를 확인해 주세요.`,
+    ...buildToastOptions({ intent: "info", duration: 2600 }),
+  })
+}
+
+function showRetryFailedToast(message) {
+  toast.error("채널 재시도 실패", {
+    description: message || "채널 재시도 처리 중 오류가 발생했습니다.",
+    ...buildToastOptions({ intent: "destructive", duration: 3000 }),
+  })
+}
+
+function renderSendChannelCell({ value, rowOriginal, channelKey, meta }) {
+  const { state, numericValue, isOn, isError } = deriveFlagState(value, 0)
   const label = CHANNEL_LABELS[channelKey] ?? channelKey
   const reason = resolveChannelReason(rowOriginal, channelKey)
+  const recordId = getRecordId(rowOriginal)
+  const cellKey = recordId ? `${recordId}:${channelKey}` : null
+  const isRetryLoading = Boolean(cellKey && meta?.updatingCells?.[cellKey])
+  const canRetry =
+    isError &&
+    !isRetryLoading &&
+    Boolean(recordId) &&
+    typeof meta?.handleRetryChannel === "function"
   const title =
     state === "error"
-      ? `${label} 전송 오류 상태 (값: ${numericValue}${reason ? `, 사유: ${reason}` : ""})`
+      ? canRetry
+        ? `${label} 전송 오류 상태 (값: ${numericValue}${reason ? `, 사유: ${reason}` : ""}) - 클릭해 재시도`
+        : `${label} 전송 오류 상태 (값: ${numericValue}${reason ? `, 사유: ${reason}` : ""})`
       : isOn
         ? `${label} 전송 완료`
         : `${label} 미전송`
 
-  return (
+  const icon = (
     <span
       className={[
         "inline-flex h-5 w-5 items-center justify-center rounded-full border text-muted-foreground transition-colors",
@@ -76,6 +123,48 @@ function renderSendChannelCell({ value, rowOriginal, channelKey }) {
         <Check className="h-3 w-3" strokeWidth={3} />
       ) : null}
     </span>
+  )
+
+  if (!isError || typeof meta?.handleRetryChannel !== "function" || !recordId) {
+    return icon
+  }
+
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      disabled={isRetryLoading}
+      onClick={async () => {
+        if (!canRetry) return
+        const result = await meta.handleRetryChannel(recordId, { channelKey })
+        if (!result?.ok) {
+          showRetryFailedToast(result?.message)
+          return
+        }
+
+        const status = typeof result.status === "string" ? result.status : ""
+        if (status === "queued") {
+          showRetryQueuedToast(label)
+          return
+        }
+        if (status === "already_pending") {
+          showRetryAlreadyPendingToast(label)
+          return
+        }
+        if (status === "already_sent") {
+          showRetryAlreadySentToast(label)
+          return
+        }
+        showRetryUnknownStatusToast(status)
+      }}
+      className={[
+        "inline-flex rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        canRetry ? "cursor-pointer" : "cursor-not-allowed opacity-70",
+      ].join(" ")}
+    >
+      {icon}
+    </button>
   )
 }
 
@@ -171,12 +260,12 @@ const CellRenderers = {
     )
   },
 
-  send_jira: ({ value, rowOriginal }) =>
-    renderSendChannelCell({ value, rowOriginal, channelKey: "send_jira" }),
-  send_messenger: ({ value, rowOriginal }) =>
-    renderSendChannelCell({ value, rowOriginal, channelKey: "send_messenger" }),
-  send_mail: ({ value, rowOriginal }) =>
-    renderSendChannelCell({ value, rowOriginal, channelKey: "send_mail" }),
+  send_jira: ({ value, rowOriginal, meta }) =>
+    renderSendChannelCell({ value, rowOriginal, meta, channelKey: "send_jira" }),
+  send_messenger: ({ value, rowOriginal, meta }) =>
+    renderSendChannelCell({ value, rowOriginal, meta, channelKey: "send_messenger" }),
+  send_mail: ({ value, rowOriginal, meta }) =>
+    renderSendChannelCell({ value, rowOriginal, meta, channelKey: "send_mail" }),
 
   status: ({ value, rowOriginal }) => {
     const status = normalizeStatus(value)

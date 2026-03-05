@@ -3,6 +3,7 @@ import * as React from "react"
 
 import { buildBackendUrl } from "@/lib/api"
 import { instantInformDroneSop } from "../api/instantInform"
+import { retryDroneSopChannel } from "../api/retryChannel"
 import { useCellIndicators } from "./useCellIndicators"
 import { useTableQuery } from "./useTableQuery"
 
@@ -276,6 +277,88 @@ export function useDataTableState({ lineId }) {
   )
 
   /* ────────────────────────────────────────────────────────────────────────
+   * handleRetryChannel: 단건 채널 재시도 요청
+   *  - 실패 채널(send_*=-1)을 대기(0)로 되돌리고, 다음 배치 처리 대상에 포함합니다.
+   * ──────────────────────────────────────────────────────────────────────── */
+  const handleRetryChannel = React.useCallback(
+    async (recordId, { channelKey }) => {
+      if (!recordId) {
+        return { ok: false, message: "recordId is required" }
+      }
+
+      const channelByField = {
+        send_jira: "jira",
+        send_messenger: "messenger",
+        send_mail: "mail",
+      }
+      const normalizedChannelKey = typeof channelKey === "string" ? channelKey.trim() : ""
+      const channel = channelByField[normalizedChannelKey]
+      if (!channel) {
+        return { ok: false, message: "Invalid retry channel" }
+      }
+
+      const cellKeys = [`${recordId}:${normalizedChannelKey}`]
+
+      setUpdatingCells((prev) => {
+        const next = { ...prev }
+        for (const key of cellKeys) next[key] = true
+        return next
+      })
+
+      setUpdateErrors((prev) => {
+        const next = { ...prev }
+        for (const key of cellKeys) {
+          if (key in next) delete next[key]
+        }
+        return next
+      })
+
+      begin(cellKeys)
+
+      let updateSucceeded = false
+
+      try {
+        const payload = await retryDroneSopChannel({ id: recordId, channel })
+        const updated = payload?.updated
+        const nextUpdates =
+          updated && typeof updated === "object" && !Array.isArray(updated) ? updated : {}
+
+        setRows((previousRows) =>
+          previousRows.map((row) => {
+            const rowId = String(row?.id ?? "")
+            return rowId === recordId ? { ...row, ...nextUpdates } : row
+          })
+        )
+
+        updateSucceeded = true
+        return {
+          ok: true,
+          status: typeof payload?.status === "string" ? payload.status : "",
+          payload,
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to retry channel"
+        setUpdateErrors((prev) => {
+          const next = { ...prev }
+          for (const key of cellKeys) next[key] = message
+          return next
+        })
+        return { ok: false, message }
+      } finally {
+        setUpdatingCells((prev) => deleteKeys(prev, cellKeys))
+        finalize(cellKeys, updateSucceeded ? "success" : "error")
+      }
+    },
+    [
+      begin,
+      finalize,
+      setRows,
+      setUpdateErrors,
+      setUpdatingCells,
+    ]
+  )
+
+  /* ────────────────────────────────────────────────────────────────────────
    * comment 편집 상태/드래프트 값 컨트롤러 (셀 컴포넌트가 호출)
    * ──────────────────────────────────────────────────────────────────────── */
   const setCommentEditingState = React.useCallback((recordId, editing) => {
@@ -341,6 +424,7 @@ export function useDataTableState({ lineId }) {
     removeInstantInformDraftValue,
     handleUpdate,
     handleInstantInform,
+    handleRetryChannel,
   }
 
   /* ────────────────────────────────────────────────────────────────────────

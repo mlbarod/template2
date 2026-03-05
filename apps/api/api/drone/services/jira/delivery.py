@@ -294,11 +294,19 @@ def _bulk_create_jira_issues(
         if not issue_updates:
             continue
 
-        resp = session.post(
-            config.bulk_url,
-            json={"issueUpdates": issue_updates},
-            timeout=(config.connect_timeout, config.read_timeout),
-        )
+        try:
+            resp = session.post(
+                config.bulk_url,
+                json={"issueUpdates": issue_updates},
+                timeout=(config.connect_timeout, config.read_timeout),
+            )
+        except requests.RequestException:
+            logger.exception(
+                "Jira bulk create request failed(start=%s, size=%s)",
+                st,
+                len(valid_chunk),
+            )
+            continue
         if resp.status_code != 201:
             logger.error("Jira bulk create failed %s: %s", resp.status_code, resp.text[:300])
             continue
@@ -356,18 +364,22 @@ def _single_create_jira_issues(
         template_key = template_key_by_id.get(rid)
         if not template_key:
             continue
-        resp = session.post(
-            config.create_url,
-            json={
-                "fields": _build_jira_issue_fields(
-                    row=row,
-                    project_key=project_key,
-                    template_key=template_key,
-                    config=config,
-                )
-            },
-            timeout=(config.connect_timeout, config.read_timeout),
-        )
+        try:
+            resp = session.post(
+                config.create_url,
+                json={
+                    "fields": _build_jira_issue_fields(
+                        row=row,
+                        project_key=project_key,
+                        template_key=template_key,
+                        config=config,
+                    )
+                },
+                timeout=(config.connect_timeout, config.read_timeout),
+            )
+        except requests.RequestException:
+            logger.exception("Jira create request failed id=%s", rid)
+            continue
         if resp.status_code != 201:
             logger.error("Jira create failed id=%s %s: %s", rid, resp.status_code, resp.text[:300])
             continue

@@ -1239,6 +1239,96 @@ class DroneSopInstantInformView(DroneAuthenticatedView):
 
 
 @method_decorator(csrf_exempt, name="dispatch")
+class DroneSopRetryChannelView(DroneAuthenticatedView):
+    """라인 대시보드에서 호출하는 Drone SOP 단건 채널 재시도 요청."""
+
+    permission_classes: tuple = ()
+
+    def post(self, request: HttpRequest, sop_id: int, *args: object, **kwargs: object) -> JsonResponse:
+        """Drone SOP 단건 채널 재시도 요청을 처리합니다.
+
+        요청 예시:
+            예시 요청: POST /api/v1/line-dashboard/sop/123/retry-channel
+            예시 바디: {"channel":"jira"}
+
+        반환:
+            예시 응답: 200 {"status":"queued","channel":"jira","updated":{...}}
+
+        부작용:
+            실패 채널(send_*=-1)이면 해당 채널을 대기(0)로 되돌립니다.
+
+        오류:
+            400: 입력 검증 오류
+            401: 비인증
+            500: 서버 오류
+
+        snake_case/camelCase 호환:
+            요청 본문은 channel만 사용하며 camelCase만 지원합니다.
+        """
+        # -----------------------------------------------------------------------------
+        # 1) 인증 확인
+        # -----------------------------------------------------------------------------
+        auth_response = self._authorize_user(request)
+        if auth_response is not None:
+            return auth_response
+
+        # -----------------------------------------------------------------------------
+        # 2) JSON 파싱 및 channel 검증
+        # -----------------------------------------------------------------------------
+        payload = _parse_json_body_or_empty(request)
+        raw_channel = payload.get("channel")
+        if not isinstance(raw_channel, str):
+            return JsonResponse({"error": "channel must be a string"}, status=400)
+        channel = raw_channel.strip().lower()
+        if not channel:
+            return JsonResponse({"error": "channel is required"}, status=400)
+
+        # -----------------------------------------------------------------------------
+        # 3) 액티비티 로그 기록
+        # -----------------------------------------------------------------------------
+        set_activity_summary(request, f"Retry drone_sop #{sop_id} channel={channel}")
+        merge_activity_metadata(request, resource="drone_sop", action="retry_channel", sop_id=sop_id, channel=channel)
+
+        # -----------------------------------------------------------------------------
+        # 4) 서비스 호출 및 응답 구성
+        # -----------------------------------------------------------------------------
+        try:
+            result = services.retry_drone_sop_channel(sop_id=sop_id, channel=channel)
+            if result.queued:
+                status = "queued"
+            elif result.already_sent:
+                status = "already_sent"
+            else:
+                status = "already_pending"
+
+            set_activity_new_state(
+                request,
+                {
+                    "status": status,
+                    "channel": result.channel,
+                    "queued": result.queued,
+                    "already_pending": result.already_pending,
+                    "already_sent": result.already_sent,
+                },
+            )
+
+            response_payload = {
+                "status": status,
+                "channel": result.channel,
+                "queued": result.queued,
+                "alreadyPending": result.already_pending,
+                "alreadySent": result.already_sent,
+                "updated": result.updated_fields,
+            }
+            return JsonResponse(response_payload, status=200)
+        except ValueError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
+        except Exception:  # 방어적 로깅 (pragma: no cover)
+            logger.exception("Drone SOP retry-channel failed")
+            return JsonResponse({"error": "Drone SOP retry-channel failed"}, status=500)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
 class DroneSopPop3IngestTriggerView(DroneAirflowTriggerView):
     """외부 Airflow에서 호출하는 Drone SOP POP3 수집 트리거."""
 

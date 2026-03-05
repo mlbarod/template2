@@ -149,19 +149,6 @@ def _collect_rows_to_send(
     return rows_to_send
 
 
-def _collect_instant_inform_ids(*, rows: Sequence[dict[str, Any]]) -> list[int]:
-    """즉시 인폼 대상 SOP ID 목록을 수집합니다."""
-
-    instant_ids: list[int] = []
-    for row in rows:
-        row_id = row.get("id")
-        if not isinstance(row_id, int):
-            continue
-        if row.get("instant_inform") == 1:
-            instant_ids.append(row_id)
-    return instant_ids
-
-
 def _run_jira_create_api(
     *,
     rows: Sequence[dict[str, Any]],
@@ -190,19 +177,6 @@ def _run_jira_create_api(
         )
     finally:
         session.close()
-
-
-def _mark_instant_inform_failed(*, sop_ids: Sequence[int]) -> None:
-    """즉시 인폼 대상의 실패 상태를 반영합니다."""
-
-    normalized_ids: list[int] = []
-    for value in sop_ids:
-        if isinstance(value, int) and value > 0 and value not in normalized_ids:
-            normalized_ids.append(value)
-    if not normalized_ids:
-        return
-    with transaction.atomic():
-        DroneSOP.objects.filter(id__in=normalized_ids, instant_inform=1).update(instant_inform=-1)
 
 
 def _mark_pending_jira_when_disabled(
@@ -237,7 +211,6 @@ def _mark_pending_jira_when_disabled(
             sop_ids=failed_ids,
             channel_fields=["send_jira"],
             failure_reason=REASON_CONFIG_MISSING,
-            mark_instant_inform=True,
         )
 
 
@@ -256,7 +229,7 @@ def enqueue_drone_sop_jira_instant_inform(
         DroneSopInstantInformResult 결과 객체(queued/already_informed/updated_fields 포함).
 
     부작용:
-        - comment/instant_inform/send_jira 상태 업데이트(필요 시)
+        - comment/instant_inform 상태 업데이트(필요 시)
 
     오류:
         입력 검증 실패 시 ValueError를 발생시킵니다.
@@ -286,10 +259,16 @@ def enqueue_drone_sop_jira_instant_inform(
 
         send_jira_value = int(sop.send_jira or 0)
         if send_jira_value > 0:
+            if sop.instant_inform is None or int(sop.instant_inform) != 1:
+                sop.instant_inform = 1
+                updated_fields["instant_inform"] = 1
+                update_fields.append("instant_inform")
+            else:
+                updated_fields["instant_inform"] = sop.instant_inform
+
             if update_fields:
                 sop.save(update_fields=[*update_fields, "updated_at"])
             updated_fields["send_jira"] = sop.send_jira
-            updated_fields["instant_inform"] = sop.instant_inform
             updated_fields["jira_key"] = sop.jira_key
             updated_fields["inform_step"] = sop.inform_step
             updated_fields["informed_at"] = sop.informed_at.isoformat() if sop.informed_at else None
@@ -298,11 +277,6 @@ def enqueue_drone_sop_jira_instant_inform(
                 jira_key=sop.jira_key,
                 updated_fields=updated_fields,
             )
-
-        if sop.send_jira is not None and int(sop.send_jira) < 0:
-            sop.send_jira = 0
-            updated_fields["send_jira"] = 0
-            update_fields.append("send_jira")
 
         if sop.instant_inform is None or int(sop.instant_inform) != 1:
             sop.instant_inform = 1
@@ -354,7 +328,10 @@ def _run_drone_sop_jira_create_with_rows(
     # ---------------------------------------------------------------------
     target_values, missing_ids = resolve_target_user_sdwt_prod_values(rows=rows)
     if missing_ids:
-        mark_missing_target_as_failed(sop_ids=missing_ids)
+        mark_missing_target_as_failed(
+            sop_ids=missing_ids,
+            channel_fields=["send_jira"],
+        )
         missing_id_set = set(missing_ids)
         rows = [
             row
@@ -404,7 +381,6 @@ def _run_drone_sop_jira_create_with_rows(
         sop_ids=plan.skip_ids,
         channel_fields=["send_jira"],
         failure_reason=REASON_CHANNEL_CONFIG_MISSING,
-        mark_instant_inform=True,
     )
     if plan.invalid_ids:
         logger.warning("Invalid Jira config for %s drone_sop rows", len(plan.invalid_ids))
@@ -412,7 +388,6 @@ def _run_drone_sop_jira_create_with_rows(
         sop_ids=plan.invalid_ids,
         channel_fields=["send_jira"],
         failure_reason=REASON_CHANNEL_CONFIG_INVALID,
-        mark_instant_inform=True,
     )
     mark_pending_channels_as_disabled(
         sop_ids=plan.disabled_ids,
@@ -431,23 +406,14 @@ def _run_drone_sop_jira_create_with_rows(
     _enrich_rows_with_ctttm_urls(rows=rows_to_send, config=DroneCtttmConfig.from_settings())
 
     # ---------------------------------------------------------------------
-    # 5) Jira API 호출 및 즉시 인폼 실패 반영
+    # 5) Jira API 호출
     # ---------------------------------------------------------------------
-    instant_inform_ids = _collect_instant_inform_ids(rows=rows_to_send)
-    try:
-        done_ids, key_by_id = _run_jira_create_api(
-            rows=rows_to_send,
-            config=config,
-            project_key_by_id=plan.project_key_by_id,
-            template_key_by_id=plan.template_key_by_id,
-        )
-    except Exception:
-        _mark_instant_inform_failed(sop_ids=instant_inform_ids)
-        raise
-
-    done_id_set = set(done_ids)
-    failed_instant_ids = [sop_id for sop_id in instant_inform_ids if sop_id not in done_id_set]
-    _mark_instant_inform_failed(sop_ids=failed_instant_ids)
+    done_ids, key_by_id = _run_jira_create_api(
+        rows=rows_to_send,
+        config=config,
+        project_key_by_id=plan.project_key_by_id,
+        template_key_by_id=plan.template_key_by_id,
+    )
 
     # ---------------------------------------------------------------------
     # 6) 상태 업데이트 및 결과 반환
@@ -513,7 +479,6 @@ def run_drone_sop_jira_create_from_env(*, limit: int | None = None) -> DroneSopJ
     부작용:
         - Jira API 호출
         - drone_sop 상태 컬럼(send_jira/inform_step/jira_key/informed_at) 업데이트
-        - 즉시인폼 실패 시 instant_inform=-1 업데이트
 
     오류:
         - Jira API 호출 실패 등 예외가 발생할 수 있습니다.

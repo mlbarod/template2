@@ -30,6 +30,7 @@ from .early_inform.early_inform import (
     update_early_inform_entry,
 )
 from .inform.sop_inform import DroneSopInformResult, run_drone_sop_inform_from_env
+from .inform.retry_channel import DroneSopRetryChannelResult, retry_drone_sop_channel
 from .jira.config import DroneJiraConfig
 from .jira.sop_jira import (
     DroneSopInstantInformResult,
@@ -62,6 +63,7 @@ __all__ = [
     "DroneSopInstantInformResult",
     "DroneSopInformResult",
     "DroneSopJiraCreateResult",
+    "DroneSopRetryChannelResult",
     "DroneSopPop3Config",
     "DroneSopPop3IngestResult",
     "NeedToSendRule",
@@ -77,6 +79,7 @@ __all__ = [
     "create_early_inform_entry",
     "delete_early_inform_entry",
     "enqueue_drone_sop_jira_instant_inform",
+    "retry_drone_sop_channel",
     "run_drone_sop_inform_from_env",
     "run_drone_sop_jira_create_from_env",
     "run_drone_sop_pop3_ingest_from_env",
