@@ -1,5 +1,5 @@
 // src/features/line-dashboard/components/DataTableToolbar.jsx
-import { IconChevronDown, IconDatabase, IconRefresh } from "@tabler/icons-react"
+import { IconDatabase, IconRefresh } from "@tabler/icons-react"
 
 import { cn } from "@/lib/utils"
 import { Button } from "components/ui/button"
@@ -47,12 +47,6 @@ export function DataTableToolbar({
     onDeleteFavorite,
     resetSignal,
   } = favorites ?? {}
-  const selectedOption = LINE_FILTER_MODE_OPTIONS.find((option) => option.value === lineFilterMode)
-  const selectedLabel =
-    selectedOption && labels?.[selectedOption.labelKey]
-      ? labels[selectedOption.labelKey]
-      : labels?.lineFilterModeTargetUserSdwt ?? "기본"
-
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex flex-col gap-1">
@@ -69,32 +63,24 @@ export function DataTableToolbar({
       </div>
 
       <div className="ml-auto flex flex-wrap items-end gap-2">
-        <div className="flex flex-col items-start gap-1">
-          <span className="pl-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Line Filter
-          </span>
-          <div className="relative">
-            <select
-              value={lineFilterMode}
-              onChange={(event) => onChangeLineFilterMode?.(event.target.value)}
-              className={cn(
-                "quick-filter-select h-8 w-44 appearance-none rounded-md border border-input bg-background px-3 pr-8 text-xs font-medium text-foreground transition-colors hover:bg-muted focus:outline-none focus:ring-1 focus:ring-ring"
-              )}
-              aria-label="Line Filter"
-              title={selectedLabel}
+        <fieldset className="flex flex-wrap items-center gap-2 rounded-md border px-2 py-1">
+          <legend className="px-1 text-[10px] text-muted-foreground">Line Filter</legend>
+          {LINE_FILTER_MODE_OPTIONS.map((option) => (
+            <label
+              key={option.value}
+              className="inline-flex h-7 items-center gap-2 rounded-md px-2 text-xs font-medium text-foreground"
             >
-              {LINE_FILTER_MODE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {labels[option.labelKey]}
-                </option>
-              ))}
-            </select>
-            <IconChevronDown
-              className="pointer-events-none absolute right-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden
-            />
-          </div>
-        </div>
+              <input
+                type="radio"
+                name="line-filter-mode"
+                className="h-4 w-4 accent-primary"
+                checked={lineFilterMode === option.value}
+                onChange={() => onChangeLineFilterMode?.(option.value)}
+              />
+              <span>{labels[option.labelKey]}</span>
+            </label>
+          ))}
+        </fieldset>
         <QuickFilterFavorites
           filters={filters}
           favorites={favoriteList}
