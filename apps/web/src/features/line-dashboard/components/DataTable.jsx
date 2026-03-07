@@ -73,8 +73,14 @@ const LABELS = {
   updated: "Updated",
   refresh: "Refresh",
   lineFilterModeTargetUserSdwt: "기본",
-  lineFilterModeUserSdwt: "Line소속 User의 모든 SOP",
-  lineFilterModeSdwt: "Line설비의 모든 SOP",
+  lineFilterModeTargetUserSdwtDescription:
+    "현재 Line소속 분임조로 인폼예정인 모든 SOP",
+  lineFilterModeUserSdwt: "User분임조 기준",
+  lineFilterModeUserSdwtDescription:
+    "현재 Line소속 엔지니어가 보낸 모든 SOP",
+  lineFilterModeSdwt: "설비분임조 기준",
+  lineFilterModeSdwtDescription:
+    "현재 Line소속 설비에 입력된 모든 SOP",
   showing: "Showing",
   rows: "rows",
   filteredFrom: " (filtered from ",

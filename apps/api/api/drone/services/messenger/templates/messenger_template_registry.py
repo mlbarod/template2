@@ -6,18 +6,18 @@
 """Drone SOP 메신저 템플릿 레지스트리 모음."""
 from __future__ import annotations
 
-from .messenger_template_line_a import (
-    TEMPLATE_KEY as LINE_A_KEY,
-    send_excel_table_message as send_line_a_excel_table_message,
+from .messenger_template_common import (
+    TEMPLATE_KEY as COMMON_KEY,
+    send_excel_table_message as send_common_excel_table_message,
 )
-from .messenger_template_line_b import (
-    TEMPLATE_KEY as LINE_B_KEY,
-    send_excel_table_message as send_line_b_excel_table_message,
+from .messenger_template_h1 import (
+    TEMPLATE_KEY as H1_KEY,
+    send_excel_table_message as send_h1_excel_table_message,
 )
 
 EXCEL_TABLE_TEMPLATE_SENDERS = {
-    LINE_A_KEY: send_line_a_excel_table_message,
-    LINE_B_KEY: send_line_b_excel_table_message,
+    COMMON_KEY: send_common_excel_table_message,
+    H1_KEY: send_h1_excel_table_message,
 }
 
 __all__ = ["EXCEL_TABLE_TEMPLATE_SENDERS"]

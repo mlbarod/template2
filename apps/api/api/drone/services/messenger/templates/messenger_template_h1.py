@@ -1,9 +1,9 @@
 # =============================================================================
-# 모듈 설명: 라인 B용 Knox Excel Table(msgType=7) 템플릿 전송을 제공합니다.
+# 모듈 설명: H1용 Knox Excel Table(msgType=7) 템플릿 전송을 제공합니다.
 # - 주요 대상: TEMPLATE_KEY, build_excel_table_html, send_excel_table_message
-# - 불변 조건: line_b는 Excel Table 전송만 지원합니다.
+# - 불변 조건: H1은 Excel Table 전송만 지원합니다.
 # =============================================================================
-"""라인 B 메신저 템플릿 정의 모음."""
+"""H1 메신저 템플릿 정의 모음."""
 from __future__ import annotations
 
 import os
@@ -13,7 +13,9 @@ from typing import Any
 
 from api.messenger import services as messenger_services
 
-TEMPLATE_KEY = "line_b"
+from ...jira.templates.jira_template_h1 import find_layer
+
+TEMPLATE_KEY = "H1"
 
 
 def _normalize_text(value: str | None) -> str:
@@ -43,13 +45,14 @@ def _split_ctttm_and_defect_links(actions: list[dict[str, Any]]) -> tuple[list[d
 
 
 def build_excel_table_html(*, context: dict[str, str], actions: list[dict[str, Any]]) -> str:
-    """라인 B용 Excel Table HTML 문자열을 구성합니다.
+    """H1용 Excel Table HTML 문자열을 구성합니다.
 
-    Jira line_b 템플릿과 동일한 테이블/섹션 스타일을 사용합니다.
+    Jira H1 템플릿과 동일한 테이블/섹션 스타일을 사용합니다.
     """
 
     main_step = _normalize_text(context.get("main_step"))
     ppid = _normalize_text(context.get("ppid"))
+    layer = find_layer(ppid)
     eqp_cb = _normalize_text(context.get("eqp_cb"))
     lot_id = _normalize_text(context.get("lot_id"))
     knoxid = _normalize_text(context.get("knoxid"))
@@ -94,6 +97,9 @@ def build_excel_table_html(*, context: dict[str, str], actions: list[dict[str, A
         f'<td style="border:1px solid #ccc; text-align:center; padding:4px; padding-left:8px; padding-right:8px; font-size:14px; white-space:nowrap;">{escape(lot_id)}</td>'
         "</tr></tbody></table></div>"
         '<div style="margin:4px 0;"><div style="font-size:14px;">'
+        f"🧩 Layer : {escape(layer)}"
+        "</div></div>"
+        '<div style="margin:4px 0;"><div style="font-size:14px;">'
         "📄 CTTTM URL : "
         f"{ctttm_link_html}"
         "</div></div>"
@@ -124,7 +130,7 @@ def send_excel_table_message(
     ttl: int,
     config: messenger_services.KnoxMessengerConfig,
 ) -> None:
-    """라인 B 메시지를 Excel Table(msgType=7)로 전송합니다."""
+    """H1 메시지를 Excel Table(msgType=7)로 전송합니다."""
 
     html = build_excel_table_html(context=context, actions=actions)
     temp_path: str | None = None

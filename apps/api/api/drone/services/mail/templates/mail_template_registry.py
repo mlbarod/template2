@@ -7,12 +7,12 @@
 """Drone SOP 메일 템플릿 레지스트리 모음."""
 from __future__ import annotations
 
-from .mail_template_line_a import BODY_TEMPLATE as LINE_A_BODY_TEMPLATE, TEMPLATE_KEY as LINE_A_KEY
-from .mail_template_line_b import BODY_TEMPLATE as LINE_B_BODY_TEMPLATE, TEMPLATE_KEY as LINE_B_KEY
+from .mail_template_common import BODY_TEMPLATE as COMMON_BODY_TEMPLATE, TEMPLATE_KEY as COMMON_KEY
+from .mail_template_h1 import BODY_TEMPLATE as H1_BODY_TEMPLATE, TEMPLATE_KEY as H1_KEY
 
 MAIL_TEMPLATE_SOURCES = {
-    LINE_A_KEY: LINE_A_BODY_TEMPLATE,
-    LINE_B_KEY: LINE_B_BODY_TEMPLATE,
+    COMMON_KEY: COMMON_BODY_TEMPLATE,
+    H1_KEY: H1_BODY_TEMPLATE,
 }
 
 __all__ = ["MAIL_TEMPLATE_SOURCES"]

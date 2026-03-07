@@ -1047,7 +1047,7 @@ class DroneJiraKeyView(DroneAuthenticatedView):
 
         예시 요청:
         - 예시 요청: POST /api/v1/line-dashboard/jira-keys
-          요청 바디 예시: {"userSdwtProd":"SDWT_A","jiraKey":"ABC","templateKey":"line_a"}
+          요청 바디 예시: {"userSdwtProd":"SDWT_A","jiraKey":"ABC","templateKey":"common"}
 
         snake/camel 호환:
         - 요청 본문은 userSdwtProd/jiraKey/templateKey(camelCase)만 지원합니다.

@@ -1,17 +1,17 @@
 # =============================================================================
-# 모듈 설명: 라인 B용 Jira 템플릿/요약 문자열을 제공합니다.
+# 모듈 설명: common용 Jira 템플릿/요약 문자열을 제공합니다.
 # - 주요 대상: TEMPLATE_KEY, DESCRIPTION_TEMPLATE, SUMMARY_TEMPLATE
-# - 불변 조건: TEMPLATE_KEY는 "line_b"로 고정입니다.
+# - 불변 조건: TEMPLATE_KEY는 "common"로 고정입니다.
 # =============================================================================
 
-"""라인 B Jira 템플릿 정의 모음."""
+"""common Jira 템플릿 정의 모음."""
 from __future__ import annotations
 
 from typing import Any
 
-TEMPLATE_KEY = "line_b"
+TEMPLATE_KEY = "common"
 
-SUMMARY_TEMPLATE = "{sdwt_initial} {normalized_step}"
+SUMMARY_TEMPLATE = "{sdwt_initial} {normalized_step} {eqp_cb}"
 
 DESCRIPTION_TEMPLATE = """<div>
   <div style="margin:8px 0;">
@@ -73,7 +73,7 @@ DESCRIPTION_TEMPLATE = """<div>
 
 
 def _build_summary_context(row: dict[str, Any]) -> dict[str, str]:
-    """라인 B summary 템플릿에 사용할 컨텍스트를 구성합니다.
+    """common summary 템플릿에 사용할 컨텍스트를 구성합니다.
 
     인자:
         row: Drone SOP 행 dict(행 데이터).
@@ -88,20 +88,24 @@ def _build_summary_context(row: dict[str, Any]) -> dict[str, str]:
     sdwt = str(row.get("sdwt_prod") or "?").strip() or "?"
     step = str(row.get("main_step") or "??").strip() or "??"
     normalized_step = step[2:].upper() if len(step) >= 3 else step.upper()
+    eqp_id = str(row.get("eqp_id") or "-").strip() or "-"
+    chamber_ids = str(row.get("chamber_ids") or "-").strip() or "-"
     return {
         "sdwt_initial": sdwt[:1],
         "normalized_step": normalized_step,
         "main_step": step,
         "sdwt_prod": sdwt,
         "line_id": str(row.get("line_id") or "").strip(),
-        "eqp_id": str(row.get("eqp_id") or "").strip(),
+        "eqp_id": eqp_id,
+        "chamber_ids": chamber_ids,
+        "eqp_cb": f"{eqp_id}-{chamber_ids}",
         "lot_id": str(row.get("lot_id") or "").strip(),
         "ppid": str(row.get("ppid") or "").strip(),
     }
 
 
 def build_summary(row: dict[str, Any]) -> str:
-    """라인 B summary 문자열을 생성합니다.
+    """common summary 문자열을 생성합니다.
 
     인자:
         row: Drone SOP 행 dict(행 데이터).

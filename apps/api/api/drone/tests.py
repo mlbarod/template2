@@ -699,7 +699,7 @@ class DroneJiraKeyEndpointTests(TestCase):
         """Jira 키/템플릿 키 조회가 정상 응답하는지 확인합니다."""
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT",
-            jira_template_key="line_a",
+            jira_template_key="common",
             jira_key="PROJ",
         )
 
@@ -707,13 +707,13 @@ class DroneJiraKeyEndpointTests(TestCase):
         response = self.client.get(reverse("line-dashboard-jira-keys"), {"userSdwtProd": "SDWT"})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["jiraKey"], "PROJ")
-        self.assertEqual(response.json()["templateKey"], "line_a")
+        self.assertEqual(response.json()["templateKey"], "common")
 
     def test_jira_key_get_ignores_inactive_channel(self) -> None:
         """비활성 채널 설정은 조회 응답에서 제외되는지 확인합니다."""
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT",
-            jira_template_key="line_a",
+            jira_template_key="common",
             jira_key="PROJ",
             is_active=False,
         )
@@ -737,7 +737,7 @@ class DroneJiraKeyEndpointTests(TestCase):
 
     def test_jira_key_update_requires_superuser(self) -> None:
         """Jira 키 갱신은 슈퍼유저만 가능해야 합니다."""
-        payload = {"userSdwtProd": "SDWT", "jiraKey": "PROJ", "templateKey": "line_a"}
+        payload = {"userSdwtProd": "SDWT", "jiraKey": "PROJ", "templateKey": "common"}
 
         self.client.force_login(self.user)
         response = self.client.post(
@@ -757,8 +757,8 @@ class DroneJiraKeyEndpointTests(TestCase):
 
         refreshed = DroneSopUserSdwtChannel.objects.get(target_user_sdwt_prod="SDWT")
         self.assertEqual(refreshed.jira_key, "PROJ")
-        self.assertEqual(refreshed.jira_template_key, "line_a")
-        self.assertEqual(refreshed.messenger_template_key, "line_a")
+        self.assertEqual(refreshed.jira_template_key, "common")
+        self.assertEqual(refreshed.messenger_template_key, "common")
 
     def test_jira_key_post_rejects_snake_case_user_sdwt_prod(self) -> None:
         """POST 갱신은 user_sdwt_prod(snake_case) 키를 허용하지 않는지 확인합니다."""
@@ -785,7 +785,7 @@ class DroneJiraKeyEndpointTests(TestCase):
                 {
                     "userSdwtProd": "SDWT",
                     "jira_key": "PROJ2",
-                    "template_key": "line_b",
+                    "template_key": "H1",
                 }
             ),
             content_type="application/json",
@@ -797,7 +797,7 @@ class DroneJiraKeyEndpointTests(TestCase):
         """Jira 템플릿 갱신 시 기존 메신저 템플릿 키는 덮어쓰지 않는지 확인합니다."""
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT",
-            messenger_template_key="line_b",
+            messenger_template_key="H1",
         )
 
         self.client.force_login(self.superuser)
@@ -806,7 +806,7 @@ class DroneJiraKeyEndpointTests(TestCase):
             data=json.dumps(
                 {
                     "userSdwtProd": "SDWT",
-                    "templateKey": "line_a",
+                    "templateKey": "common",
                 }
             ),
             content_type="application/json",
@@ -814,8 +814,8 @@ class DroneJiraKeyEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
         refreshed = DroneSopUserSdwtChannel.objects.get(target_user_sdwt_prod="SDWT")
-        self.assertEqual(refreshed.jira_template_key, "line_a")
-        self.assertEqual(refreshed.messenger_template_key, "line_b")
+        self.assertEqual(refreshed.jira_template_key, "common")
+        self.assertEqual(refreshed.messenger_template_key, "H1")
 
     def test_jira_key_post_rejects_non_string_jira_key(self) -> None:
         """POST 갱신은 jiraKey에 문자열/Null 외 타입을 허용하지 않는지 확인합니다."""
@@ -841,7 +841,7 @@ class DroneJiraKeyEndpointTests(TestCase):
             data=json.dumps(
                 {
                     "userSdwtProd": "SDWT",
-                    "templateKey": ["line_a"],
+                    "templateKey": ["common"],
                 }
             ),
             content_type="application/json",
@@ -853,7 +853,7 @@ class DroneJiraKeyEndpointTests(TestCase):
         """비활성 채널이 갱신 요청 시 자동 재활성화되는지 확인합니다."""
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT",
-            jira_template_key="line_a",
+            jira_template_key="common",
             jira_key="OLD",
             is_active=False,
         )
@@ -907,17 +907,17 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
         )
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT1",
-            jira_template_key="line_a",
+            jira_template_key="common",
             jira_key="PROJ1",
         )
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT2",
-            jira_template_key="line_b",
+            jira_template_key="H1",
             jira_key="PROJ2",
         )
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT3",
-            jira_template_key="line_a",
+            jira_template_key="common",
         )
         _ensure_target_mapping(sdwt_prod="SDWT1", user_sdwt_prod="SDWT1")
         _ensure_target_mapping(sdwt_prod="SDWT2", user_sdwt_prod="SDWT2")
@@ -991,7 +991,7 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
         )
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT",
-            jira_template_key="line_a",
+            jira_template_key="common",
             jira_key="PROJ1",
         )
         _ensure_target_mapping(sdwt_prod="SDWT", user_sdwt_prod="SDWT")
@@ -1034,7 +1034,7 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
         )
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT1",
-            jira_template_key="line_a",
+            jira_template_key="common",
             jira_key="PROJ1",
         )
         DroneSopUserSdwtChannel.objects.create(
@@ -1094,7 +1094,7 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
         )
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="TARGET",
-            jira_template_key="line_a",
+            jira_template_key="common",
             jira_key="PROJ",
         )
 
@@ -1155,7 +1155,7 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
 
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT1",
-            jira_template_key="line_a",
+            jira_template_key="common",
             jira_key="PROJ1",
             jira_enabled=False,
         )
@@ -1216,7 +1216,7 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
 
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT1",
-            jira_template_key="line_a",
+            jira_template_key="common",
             jira_key="PROJ1",
             jira_enabled=False,
         )
@@ -1284,12 +1284,12 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
 
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT1",
-            jira_template_key="line_a",
+            jira_template_key="common",
             jira_key="PROJ1",
         )
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT2",
-            jira_template_key="line_a",
+            jira_template_key="common",
             jira_key="PROJ2",
         )
         _ensure_target_mapping(sdwt_prod="SDWT1", user_sdwt_prod="SDWT1")
@@ -1341,19 +1341,19 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
 
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT_ENABLED_1",
-            jira_template_key="line_a",
+            jira_template_key="common",
             jira_key="PROJ1",
             jira_enabled=True,
         )
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT_ENABLED_2",
-            jira_template_key="line_a",
+            jira_template_key="common",
             jira_key="PROJ2",
             jira_enabled=True,
         )
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT_DISABLED",
-            jira_template_key="line_a",
+            jira_template_key="common",
             jira_key="PROJ3",
             jira_enabled=False,
         )
@@ -1513,7 +1513,7 @@ class DroneSopInformPolicyTests(TestCase):
         """Jira 설정이 없어도 비활성 채널은 실패 대신 비활성 사유를 기록하는지 확인합니다."""
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT1",
-            jira_template_key="line_a",
+            jira_template_key="common",
             jira_key="PROJ1",
             jira_enabled=False,
         )
@@ -1568,7 +1568,7 @@ class DroneSopInformPolicyTests(TestCase):
         """메일 발신자 설정이 없어도 비활성 채널은 실패 대신 비활성 사유를 기록하는지 확인합니다."""
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT1",
-            mail_template_key="line_a",
+            mail_template_key="common",
             mail_enabled=False,
         )
 
@@ -1775,7 +1775,7 @@ class DroneSopInformPolicyTests(TestCase):
 
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT1",
-            jira_template_key="line_a",
+            jira_template_key="common",
             jira_key="PROJ1",
             jira_enabled=False,
         )
@@ -1819,7 +1819,7 @@ class DroneSopInformPolicyTests(TestCase):
 
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT1",
-            jira_template_key="line_a",
+            jira_template_key="common",
             jira_key="PROJ1",
         )
         DroneSOP.objects.create(
@@ -1868,9 +1868,9 @@ class DroneSopInformPolicyTests(TestCase):
 
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT1",
-            jira_template_key="line_a",
+            jira_template_key="common",
             jira_key="PROJ1",
-            messenger_template_key="line_a",
+            messenger_template_key="common",
             chatroom_id=12345,
         )
         sop = DroneSOP.objects.create(
@@ -1918,7 +1918,7 @@ class DroneSopInformPolicyTests(TestCase):
         """비활성화된 메신저 채널은 실패(-1) 없이 비활성 사유만 기록하는지 확인합니다."""
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT1",
-            messenger_template_key="line_a",
+            messenger_template_key="common",
             chatroom_id=12345,
             messenger_enabled=False,
         )
@@ -1956,7 +1956,7 @@ class DroneSopInformPolicyTests(TestCase):
         """비활성화된 메일 채널은 실패(-1) 없이 비활성 사유만 기록하는지 확인합니다."""
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT1",
-            mail_template_key="line_a",
+            mail_template_key="common",
             mail_enabled=False,
         )
 
@@ -2029,7 +2029,7 @@ class DroneSopInformPolicyTests(TestCase):
 
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT1",
-            messenger_template_key="line_a",
+            messenger_template_key="common",
         )
 
         sop = DroneSOP.objects.create(
@@ -2081,7 +2081,7 @@ class DroneSopInformPolicyTests(TestCase):
         )
         self.assertEqual(
             mock_messenger.call_args.kwargs.get("messenger_template_key"),
-            "line_a",
+            "common",
         )
 
         refreshed_channel = DroneSopUserSdwtChannel.objects.get(target_user_sdwt_prod="SDWT1")
@@ -2129,7 +2129,7 @@ class DroneSopInformPolicyTests(TestCase):
 
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT1",
-            messenger_template_key="line_a",
+            messenger_template_key="common",
         )
 
         sop_1 = DroneSOP.objects.create(
@@ -2206,7 +2206,7 @@ class DroneSopInformPolicyTests(TestCase):
         # -----------------------------------------------------------------------------
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT1",
-            messenger_template_key="line_a",
+            messenger_template_key="common",
             chatroom_id=12345,
         )
 
@@ -2245,7 +2245,7 @@ class DroneSopInformPolicyTests(TestCase):
         )
         self.assertEqual(
             mock_messenger.call_args.kwargs.get("messenger_template_key"),
-            "line_a",
+            "common",
         )
 
         refreshed_channel = DroneSopUserSdwtChannel.objects.get(target_user_sdwt_prod="SDWT1")
@@ -2662,7 +2662,7 @@ class DroneSopJiraHtmlDescriptionTests(TestCase):
         fields = jira_delivery._build_jira_issue_fields(
             row=row,
             project_key="DUMMY",
-            template_key="line_a",
+            template_key="common",
             config=config,
         )
         description = fields.get("description") or ""
@@ -2700,7 +2700,7 @@ class DroneSopJiraHtmlDescriptionTests(TestCase):
         fields = jira_delivery._build_jira_issue_fields(
             row=row,
             project_key="DUMMY",
-            template_key="line_a",
+            template_key="common",
             config=config,
         )
         description = fields.get("description") or ""
@@ -2734,11 +2734,11 @@ class DroneSopJiraSummaryTests(TestCase):
             "lot_id": "LOT.1",
         }
 
-        def build_line_a_summary(data: dict[str, object]) -> str:
+        def build_common_summary(data: dict[str, object]) -> str:
             sdwt = str(data.get("sdwt_prod") or "?").strip() or "?"
             return f"{data.get('line_id')}-{sdwt[:1]}"
 
-        def build_line_b_summary(data: dict[str, object]) -> str:
+        def build_H1_summary(data: dict[str, object]) -> str:
             sdwt = str(data.get("sdwt_prod") or "?").strip() or "?"
             step = str(data.get("main_step") or "??").strip() or "??"
             normalized_step = step[2:].upper() if len(step) >= 3 else step.upper()
@@ -2747,36 +2747,76 @@ class DroneSopJiraSummaryTests(TestCase):
         with patch.dict(
             jira_delivery.SUMMARY_BUILDERS,
             {
-                "line_a": build_line_a_summary,
-                "line_b": build_line_b_summary,
+                "common": build_common_summary,
+                "H1": build_H1_summary,
             },
             clear=True,
         ):
             fields_a = jira_delivery._build_jira_issue_fields(
                 row=row,
                 project_key="DUMMY",
-                template_key="line_a",
+                template_key="common",
                 config=config,
             )
             fields_b = jira_delivery._build_jira_issue_fields(
                 row=row,
                 project_key="DUMMY",
-                template_key="line_b",
+                template_key="H1",
                 config=config,
             )
 
         self.assertEqual(fields_a.get("summary"), "L1-S")
         self.assertEqual(fields_b.get("summary"), "S-003")
 
+    def test_H1_summary_uses_layer_main_step_lot_id(self) -> None:
+        """H1 summary가 layer/main_step/lot_id 규칙을 반영하는지 확인합니다."""
+        from api.drone.services.jira.templates import jira_template_h1
+
+        row = {
+            "sdwt_prod": "SDWT",
+            "main_step": "ST003",
+            "ppid": "AB001111",
+            "lot_id": "LOT.1",
+        }
+        summary = jira_template_h1.build_summary(row)
+
+        self.assertEqual(summary, "S FA ST003 LOT.1")
+
+    def test_H1_find_layer_supports_zero_padded_rule_bounds(self) -> None:
+        """H1 layer 규칙에서 선행 0 문자열 범위를 처리하는지 확인합니다."""
+        from api.drone.services.jira.templates import jira_template_h1
+
+        with patch.object(
+            jira_template_h1,
+            "_LAYER_RULES",
+            (("A", "000320", "058120", "AA"),),
+        ):
+            self.assertEqual(jira_template_h1.find_layer("AB000320"), "AA")
+            self.assertEqual(jira_template_h1.find_layer("AB058120"), "AA")
+            self.assertEqual(jira_template_h1.find_layer("AB058121"), "[BEOL 인폼 필요]")
+
+    def test_mail_template_h1_reuses_jira_layer_summary(self) -> None:
+        """mail H1 템플릿이 Jira H1의 layer 요약 함수를 재사용하는지 확인합니다."""
+        from api.drone.services.mail.templates import mail_template_h1
+
+        row = {
+            "sdwt_prod": "SDWT",
+            "main_step": "ST003",
+            "ppid": "AB000320",
+            "lot_id": "LOT.1",
+        }
+        self.assertEqual(mail_template_h1.find_layer("AB000320"), "FA")
+        self.assertEqual(mail_template_h1.build_summary(row), "S FA ST003 LOT.1")
+
 
 class DroneSopMessengerLineATemplateTests(TestCase):
-    """line_a 메신저 템플릿의 Excel Table 전송 경로를 검증합니다."""
+    """common 메신저 템플릿의 Excel Table 전송 경로를 검증합니다."""
 
-    @patch("api.drone.services.messenger.templates.messenger_template_line_a.messenger_services.send_excel_table_message_from_file")
+    @patch("api.drone.services.messenger.templates.messenger_template_common.messenger_services.send_excel_table_message_from_file")
     def test_send_excel_table_message_uses_knox_excel_sender(self, mock_send_excel: Mock) -> None:
-        """line_a 템플릿이 Excel Table API를 호출하는지 확인합니다."""
+        """common 템플릿이 Excel Table API를 호출하는지 확인합니다."""
 
-        from api.drone.services.messenger.templates import messenger_template_line_a as line_a_template
+        from api.drone.services.messenger.templates import messenger_template_common as common_template
         from api.messenger import services as messenger_services
 
         captured: dict[str, str] = {}
@@ -2795,7 +2835,7 @@ class DroneSopMessengerLineATemplateTests(TestCase):
             timeout_seconds=5,
         )
 
-        line_a_template.send_excel_table_message(
+        common_template.send_excel_table_message(
             chatroom_id=123,
             context={
                 "sop_id": "1",
@@ -2827,13 +2867,13 @@ class DroneSopMessengerLineATemplateTests(TestCase):
 
 
 class DroneSopMessengerLineBTemplateTests(TestCase):
-    """line_b 메신저 템플릿의 Excel Table 전송 경로를 검증합니다."""
+    """H1 메신저 템플릿의 Excel Table 전송 경로를 검증합니다."""
 
-    @patch("api.drone.services.messenger.templates.messenger_template_line_b.messenger_services.send_excel_table_message_from_file")
+    @patch("api.drone.services.messenger.templates.messenger_template_h1.messenger_services.send_excel_table_message_from_file")
     def test_send_excel_table_message_uses_knox_excel_sender(self, mock_send_excel: Mock) -> None:
-        """line_b 템플릿이 Excel Table API를 호출하는지 확인합니다."""
+        """H1 템플릿이 Excel Table API를 호출하는지 확인합니다."""
 
-        from api.drone.services.messenger.templates import messenger_template_line_b as line_b_template
+        from api.drone.services.messenger.templates import messenger_template_h1 as H1_template
         from api.messenger import services as messenger_services
 
         captured: dict[str, str] = {}
@@ -2852,16 +2892,16 @@ class DroneSopMessengerLineBTemplateTests(TestCase):
             timeout_seconds=5,
         )
 
-        line_b_template.send_excel_table_message(
+        H1_template.send_excel_table_message(
             chatroom_id=456,
             context={
                 "main_step": "ST009",
-                "ppid": "PPID-B",
+                "ppid": "AB000320",
                 "eqp_cb": "EQP-9",
                 "lot_id": "LOT-9",
                 "user_sdwt_prod": "SDWT-B",
                 "knoxid": "knox-b",
-                "comment_raw": "line_b 코멘트",
+                "comment_raw": "H1 코멘트",
             },
             actions=[
                 {
@@ -2877,6 +2917,7 @@ class DroneSopMessengerLineBTemplateTests(TestCase):
         mock_send_excel.assert_called_once()
         self.assertIn("<table ", captured.get("html", ""))
         self.assertIn("Step_seq", captured.get("html", ""))
+        self.assertIn("🧩 Layer : FA", captured.get("html", ""))
         self.assertIn("💿 Defect URL", captured.get("html", ""))
         self.assertIn("https://example.com/defect", captured.get("html", ""))
         self.assertFalse(os.path.exists(captured.get("html_path", "")))
@@ -2900,8 +2941,8 @@ class DroneSopMessengerApiRoutingTests(TestCase):
         )
 
     @patch("api.drone.services.messenger.messenger_api.build_drone_sop_messenger_template_inputs")
-    def test_line_a_uses_excel_table_sender(self, mock_build_inputs: Mock) -> None:
-        """line_a는 Excel Table sender를 사용하는지 확인합니다."""
+    def test_common_uses_excel_table_sender(self, mock_build_inputs: Mock) -> None:
+        """common는 Excel Table sender를 사용하는지 확인합니다."""
 
         from api.drone.services.messenger import messenger_api
 
@@ -2912,13 +2953,13 @@ class DroneSopMessengerApiRoutingTests(TestCase):
 
         with patch.dict(
             messenger_api.EXCEL_TABLE_TEMPLATE_SENDERS,
-            {"line_a": mock_sender},
+            {"common": mock_sender},
             clear=False,
         ):
             messenger_api.send_drone_sop_messenger_message(
                 row=row,
                 chatroom_id=777,
-                messenger_template_key="line_a",
+                messenger_template_key="common",
                 config=config,
             )
 
@@ -2932,8 +2973,8 @@ class DroneSopMessengerApiRoutingTests(TestCase):
         )
 
     @patch("api.drone.services.messenger.messenger_api.build_drone_sop_messenger_template_inputs")
-    def test_line_b_uses_excel_table_sender(self, mock_build_inputs: Mock) -> None:
-        """line_b도 Excel Table sender를 사용하는지 확인합니다."""
+    def test_H1_uses_excel_table_sender(self, mock_build_inputs: Mock) -> None:
+        """H1도 Excel Table sender를 사용하는지 확인합니다."""
 
         from api.drone.services.messenger import messenger_api
 
@@ -2944,13 +2985,13 @@ class DroneSopMessengerApiRoutingTests(TestCase):
 
         with patch.dict(
             messenger_api.EXCEL_TABLE_TEMPLATE_SENDERS,
-            {"line_b": mock_sender},
+            {"H1": mock_sender},
             clear=False,
         ):
             messenger_api.send_drone_sop_messenger_message(
                 row=row,
                 chatroom_id=888,
-                messenger_template_key="line_b",
+                messenger_template_key="H1",
                 config=config,
             )
 

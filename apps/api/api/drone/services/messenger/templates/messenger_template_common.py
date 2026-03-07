@@ -1,7 +1,7 @@
 # =============================================================================
-# 모듈 설명: 라인 A용 Knox Excel Table(msgType=7) 템플릿 전송을 제공합니다.
+# 모듈 설명: common용 Knox Excel Table(msgType=7) 템플릿 전송을 제공합니다.
 # - 주요 대상: TEMPLATE_KEY, build_excel_table_html, send_excel_table_message
-# - 불변 조건: line_a는 Excel Table 전송만 지원합니다.
+# - 불변 조건: common은 Excel Table 전송만 지원합니다.
 #
 # 변경사항(요청 반영):
 # - Knox msgType=7 렌더러가 <div>를 "행"처럼 잡아 높이가 커지는 문제 회피:
@@ -11,7 +11,7 @@
 # - 행 높이는 유지(세로 padding 유지), 좌우 padding만 타이트
 # - 답변 영역 없음
 # =============================================================================
-"""라인 A 메신저 템플릿 정의 모음."""
+"""common 메신저 템플릿 정의 모음."""
 from __future__ import annotations
 
 import os
@@ -21,7 +21,7 @@ from typing import Any
 
 from api.messenger import services as messenger_services
 
-TEMPLATE_KEY = "line_a"
+TEMPLATE_KEY = "common"
 
 
 def _normalize_text(value: Any) -> str:
@@ -66,7 +66,7 @@ def _split_ctttm_and_defect_links(actions: list[dict[str, Any]]) -> tuple[list[d
 
 
 def build_excel_table_html(*, context: dict[str, Any], actions: list[dict[str, Any]]) -> str:
-    """라인 A용 Excel Table HTML 문자열을 구성합니다.
+    """common용 Excel Table HTML 문자열을 구성합니다.
 
     ✅ 기존 디자인 유지
     - 메인 테이블: width 100%, min-width 400px, table-layout fixed, 컬럼 25%, header 색/캡션 유지
@@ -176,7 +176,7 @@ def send_excel_table_message(
     ttl: int = 7200,
     config: messenger_services.KnoxMessengerConfig,
 ) -> None:
-    """라인 A 메시지를 Excel Table(msgType=7)로 전송합니다."""
+    """common 메시지를 Excel Table(msgType=7)로 전송합니다."""
     html = build_excel_table_html(context=context, actions=actions)
 
     temp_path: str | None = None

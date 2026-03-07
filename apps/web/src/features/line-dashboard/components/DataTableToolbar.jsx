@@ -13,14 +13,17 @@ const LINE_FILTER_MODE_OPTIONS = [
   {
     value: LINE_FILTER_MODE_TARGET_USER_SDWT,
     labelKey: "lineFilterModeTargetUserSdwt",
+    descriptionKey: "lineFilterModeTargetUserSdwtDescription",
   },
   {
     value: LINE_FILTER_MODE_USER_SDWT,
     labelKey: "lineFilterModeUserSdwt",
+    descriptionKey: "lineFilterModeUserSdwtDescription",
   },
   {
     value: LINE_FILTER_MODE_SDWT,
     labelKey: "lineFilterModeSdwt",
+    descriptionKey: "lineFilterModeSdwtDescription",
   },
 ]
 
@@ -74,12 +77,14 @@ export function DataTableToolbar({
           >
             {LINE_FILTER_MODE_OPTIONS.map((option) => {
               const isSelected = lineFilterMode === option.value
+              const description = labels[option.descriptionKey] ?? ""
               return (
                 <label
                   key={option.value}
+                  title={description}
                   className={cn(
                     "inline-flex h-6 items-center gap-1.5 rounded px-2 text-[10px] font-medium text-foreground whitespace-nowrap",
-                    isSelected && "bg-primary/10 text-primary"
+                    isSelected && "text-primary"
                   )}
                 >
                   <input

@@ -7,25 +7,25 @@
 """Drone SOP Jira 템플릿 레지스트리 모음."""
 from __future__ import annotations
 
-from .jira_template_line_a import (
-    TEMPLATE_KEY as LINE_A_KEY,
-    DESCRIPTION_TEMPLATE as LINE_A_DESCRIPTION_TEMPLATE,
-    build_summary as build_line_a_summary,
+from .jira_template_common import (
+    TEMPLATE_KEY as COMMON_KEY,
+    DESCRIPTION_TEMPLATE as COMMON_DESCRIPTION_TEMPLATE,
+    build_summary as build_common_summary,
 )
-from .jira_template_line_b import (
-    TEMPLATE_KEY as LINE_B_KEY,
-    DESCRIPTION_TEMPLATE as LINE_B_DESCRIPTION_TEMPLATE,
-    build_summary as build_line_b_summary,
+from .jira_template_h1 import (
+    TEMPLATE_KEY as H1_KEY,
+    DESCRIPTION_TEMPLATE as H1_DESCRIPTION_TEMPLATE,
+    build_summary as build_h1_summary,
 )
 
 TEMPLATE_SOURCES = {
-    LINE_A_KEY: LINE_A_DESCRIPTION_TEMPLATE,
-    LINE_B_KEY: LINE_B_DESCRIPTION_TEMPLATE,
+    COMMON_KEY: COMMON_DESCRIPTION_TEMPLATE,
+    H1_KEY: H1_DESCRIPTION_TEMPLATE,
 }
 
 SUMMARY_BUILDERS = {
-    LINE_A_KEY: build_line_a_summary,
-    LINE_B_KEY: build_line_b_summary,
+    COMMON_KEY: build_common_summary,
+    H1_KEY: build_h1_summary,
 }
 
 __all__ = ["SUMMARY_BUILDERS", "TEMPLATE_SOURCES"]
