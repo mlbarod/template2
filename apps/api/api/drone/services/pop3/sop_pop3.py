@@ -30,11 +30,9 @@ from ..shared.notify_resolver import (
 )
 from ..shared.utils import _advisory_lock
 from .config import (
-    DEFAULT_NEEDTOSEND_RULE,
     DroneSopPop3Config,
     DroneSopPop3IngestResult,
     NeedToSendRule,
-    _as_int_bool,
 )
 from .defectmap_sidecar import post_defect_png_sidecar_if_needed
 from .utils import sanitize_url
@@ -118,25 +116,6 @@ def _strip_prefix_num(value: Optional[str]) -> Optional[int]:
     return int(numeric) if numeric.isdigit() else None
 
 
-def _compute_needtosend_default(row: dict[str, Any]) -> int:
-    """기본 needtosend 계산 로직을 적용합니다.
-
-    인자:
-        row: Drone SOP 행 dict(행 데이터).
-
-    반환:
-        needtosend 값(0/1).
-
-    부작용:
-        없음. 순수 계산입니다.
-    """
-
-    # -------------------------------------------------------------------------
-    # 1) 기본 규칙 적용
-    # -------------------------------------------------------------------------
-    return DEFAULT_NEEDTOSEND_RULE.compute(row)
-
-
 def _get_needtosend_rule_for_target(
     *,
     target_user_sdwt_prod: str,
@@ -210,12 +189,12 @@ def _compute_needtosend_by_target(
         return 0
 
     # -------------------------------------------------------------------------
-    # 2) DB 규칙 적용 (없으면 기본 규칙)
+    # 2) 활성 DB 규칙 적용 (없으면 발송 차단)
     # -------------------------------------------------------------------------
     rule = _get_needtosend_rule_for_target(target_user_sdwt_prod=normalized, cache=rule_cache)
     if rule:
         return rule.compute(row)
-    return _compute_needtosend_default(row)
+    return 0
 
 
 def _extract_html_from_email(msg: Any) -> Optional[str]:

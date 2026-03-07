@@ -15,17 +15,6 @@ from django.conf import settings
 
 from ..shared.utils import _first_defined, _parse_bool, _parse_int
 
-# =============================================================================
-# 메일 제목 필터 상수
-# =============================================================================
-DEFAULT_DRONE_INCLUDE_SUBJECTS = ("[drone_sop]",)
-
-# =============================================================================
-# 기본 needtosend 규칙
-# =============================================================================
-DEFAULT_NEEDTOSEND_RULE_COMMENT = "$SETUP_EQP"
-
-
 def _as_int_bool(value: Any) -> int:
     """불리언 값을 0/1 정수로 변환합니다.
 
@@ -80,12 +69,6 @@ class NeedToSendRule:
         return _as_int_bool(last_at == self.comment_last_at)
 
 
-DEFAULT_NEEDTOSEND_RULE = NeedToSendRule(
-    comment_last_at=DEFAULT_NEEDTOSEND_RULE_COMMENT,
-    ignore_sample_type=False,
-)
-
-
 def _load_include_subjects(raw: Any) -> tuple[str, ...]:
     """환경변수 기반 Drone SOP 메일 제목 포함 목록을 로드합니다.
 
@@ -100,11 +83,11 @@ def _load_include_subjects(raw: Any) -> tuple[str, ...]:
     """
 
     # ---------------------------------------------------------------------
-    # 1) 입력 정규화 및 기본값 처리
+    # 1) 입력 정규화
     # ---------------------------------------------------------------------
     text = str(raw or "").strip()
     if not text:
-        return DEFAULT_DRONE_INCLUDE_SUBJECTS
+        return ()
 
     # ---------------------------------------------------------------------
     # 2) 콤마 구분 문자열 파싱
@@ -115,7 +98,7 @@ def _load_include_subjects(raw: Any) -> tuple[str, ...]:
         if cleaned:
             subjects.append(cleaned)
 
-    return tuple(subjects) if subjects else DEFAULT_DRONE_INCLUDE_SUBJECTS
+    return tuple(subjects)
 
 
 @dataclass(frozen=True)
@@ -140,7 +123,7 @@ class DroneSopPop3Config:
     password: str
     use_ssl: bool = True
     timeout: int = 60
-    include_subjects: tuple[str, ...] = DEFAULT_DRONE_INCLUDE_SUBJECTS
+    include_subjects: tuple[str, ...] = ()
     dummy_mode: bool = False
     dummy_mail_messages_url: str = ""
     # 임시 부가기능(sidecar) endpoint: 비어 있으면 전송을 수행하지 않습니다.
@@ -166,13 +149,7 @@ class DroneSopPop3Config:
         password = (getattr(settings, "DRONE_SOP_POP3_PASSWORD", "") or "").strip()
         use_ssl = _parse_bool(getattr(settings, "DRONE_SOP_POP3_USE_SSL", None), True)
         timeout = _parse_int(getattr(settings, "DRONE_SOP_POP3_TIMEOUT", None), 60)
-        include_subjects_raw = _first_defined(
-            (getattr(settings, "DRONE_INCLUDE_SUBJECT_PREFIXES", None) or None),
-            (os.getenv("DRONE_INCLUDE_SUBJECT_PREFIXES") or None),
-            (getattr(settings, "DRONE_SOP_POP3_SUBJECT_CONTAINS", None) or None),
-            (os.getenv("DRONE_SOP_POP3_SUBJECT_CONTAINS") or None),
-            "[drone_sop]",
-        )
+        include_subjects_raw = os.getenv("DRONE_SOP_POP3_SUBJECT")
         include_subjects = _load_include_subjects(include_subjects_raw)
         # ---------------------------------------------------------------------
         # 2) 더미 모드 설정 로드
@@ -213,9 +190,6 @@ class DroneSopPop3Config:
 
 
 __all__ = [
-    "DEFAULT_DRONE_INCLUDE_SUBJECTS",
-    "DEFAULT_NEEDTOSEND_RULE",
-    "DEFAULT_NEEDTOSEND_RULE_COMMENT",
     "DroneSopPop3Config",
     "DroneSopPop3IngestResult",
     "NeedToSendRule",

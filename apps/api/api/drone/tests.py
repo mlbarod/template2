@@ -128,7 +128,7 @@ class DroneSopPop3ParsingTests(TestCase):
         self.assertEqual(row["line_id"], "L1")
         self.assertEqual(row["chamber_ids"], "12")
         self.assertEqual(row["knox_id"], "knox")
-        self.assertEqual(row["needtosend"], 1)
+        self.assertEqual(row["needtosend"], 0)
         self.assertEqual(row["status"], "COMPLETE")
         self.assertEqual(row["defect_url"], "https://example.com")
         self.assertEqual(row["defect_png_url"], "https://example.com/defect.png")
@@ -179,6 +179,31 @@ class DroneSopPop3ParsingTests(TestCase):
         row = build_drone_sop_row(html=html, early_inform_map={})
         assert row is not None
         self.assertEqual(row["needtosend"], 1)
+
+    def test_build_drone_sop_row_needtosend_zero_when_db_rule_inactive(self) -> None:
+        """DB 규칙이 비활성화되면 needtosend가 0인지 확인합니다."""
+        html = """
+        <data>
+          <sample_type>NORMAL</sample_type>
+          <user_sdwt_prod>prod-inactive</user_sdwt_prod>
+          <comment>hello@$inactive</comment>
+        </data>
+        """
+        _ensure_target_mapping(
+            sdwt_prod=None,
+            user_sdwt_prod="prod-inactive",
+            target_user_sdwt_prod="target-inactive",
+        )
+        DroneSopNeedToSendRule.objects.create(
+            target_user_sdwt_prod="target-inactive",
+            comment_last_at="$inactive",
+            ignore_sample_type=False,
+            is_active=False,
+        )
+
+        row = build_drone_sop_row(html=html, early_inform_map={})
+        assert row is not None
+        self.assertEqual(row["needtosend"], 0)
 
     def test_build_drone_sop_row_needtosend_zero_when_mapping_missing(self) -> None:
         """매핑이 없으면 needtosend가 0인지 확인합니다."""
@@ -2422,8 +2447,8 @@ class DroneSopPop3DummyModeDeleteTests(TestCase):
     @override_settings(
         DRONE_SOP_DUMMY_MODE=True,
         DRONE_SOP_DUMMY_MAIL_MESSAGES_URL="http://example.local/mail/messages",
-        DRONE_INCLUDE_SUBJECT_PREFIXES="[drone_sop] a,[drone_sop] b,[drone_sop] c",
     )
+    @patch.dict(os.environ, {"DRONE_SOP_POP3_SUBJECT": "[drone_sop] a,[drone_sop] b,[drone_sop] c"})
     @patch("api.drone.services.pop3.sop_pop3._delete_dummy_mail_messages")
     @patch("api.drone.services.pop3.sop_pop3._upsert_drone_sop_rows")
     @patch("api.drone.services.pop3.sop_pop3._list_dummy_mail_messages")
@@ -2465,8 +2490,8 @@ class DroneSopPop3SubjectFilterTests(TestCase):
     @override_settings(
         DRONE_SOP_DUMMY_MODE=True,
         DRONE_SOP_DUMMY_MAIL_MESSAGES_URL="http://example.local/mail/messages",
-        DRONE_INCLUDE_SUBJECT_PREFIXES="[DRONE_SOP] A,[drone_sop] c",
     )
+    @patch.dict(os.environ, {"DRONE_SOP_POP3_SUBJECT": "[DRONE_SOP] A,[drone_sop] c"})
     @patch("api.drone.services.pop3.sop_pop3._delete_dummy_mail_messages")
     @patch("api.drone.services.pop3.sop_pop3._upsert_drone_sop_rows")
     @patch("api.drone.services.pop3.sop_pop3._list_dummy_mail_messages")
@@ -2499,8 +2524,8 @@ class DroneSopPop3SubjectFilterTests(TestCase):
     @override_settings(
         DRONE_SOP_DUMMY_MODE=True,
         DRONE_SOP_DUMMY_MAIL_MESSAGES_URL="http://example.local/mail/messages",
-        DRONE_INCLUDE_SUBJECT_PREFIXES="[drone_sop]",
     )
+    @patch.dict(os.environ, {"DRONE_SOP_POP3_SUBJECT": "[drone_sop]"})
     @patch("api.drone.services.pop3.sop_pop3._delete_dummy_mail_messages")
     @patch("api.drone.services.pop3.sop_pop3._upsert_drone_sop_rows")
     @patch("api.drone.services.pop3.sop_pop3._list_dummy_mail_messages")
@@ -2529,6 +2554,37 @@ class DroneSopPop3SubjectFilterTests(TestCase):
         called_mail_ids = mock_delete.call_args.kwargs.get("mail_ids")
         self.assertEqual(called_mail_ids, [1])
 
+    @override_settings(
+        DRONE_SOP_DUMMY_MODE=True,
+        DRONE_SOP_DUMMY_MAIL_MESSAGES_URL="http://example.local/mail/messages",
+    )
+    @patch("api.drone.services.pop3.sop_pop3._delete_dummy_mail_messages")
+    @patch("api.drone.services.pop3.sop_pop3._upsert_drone_sop_rows")
+    @patch("api.drone.services.pop3.sop_pop3._list_dummy_mail_messages")
+    @patch("api.drone.services.pop3.sop_pop3.selectors.load_drone_sop_custom_end_step_map", return_value={})
+    def test_dummy_mode_skips_all_when_subject_env_missing(
+        self,
+        _mock_end_step: Mock,
+        mock_list: Mock,
+        mock_upsert: Mock,
+        mock_delete: Mock,
+    ) -> None:
+        """제목 환경변수가 없으면 기본 fallback 없이 전체 스킵하는지 확인합니다."""
+        mock_list.return_value = [
+            {"id": 1, "subject": "[drone_sop] alert-1", "body_html": "<data><lot_id>LOT-1</lot_id></data>"},
+        ]
+        mock_upsert.return_value = 1
+        mock_delete.side_effect = lambda *, url, mail_ids, timeout: len(mail_ids)
+
+        with patch.dict(os.environ, {"DRONE_SOP_POP3_SUBJECT": ""}, clear=False):
+            result = services.run_drone_sop_pop3_ingest_from_env()
+
+        self.assertEqual(result.matched_mails, 0)
+        self.assertEqual(result.upserted_rows, 0)
+        self.assertEqual(result.deleted_mails, 0)
+        mock_upsert.assert_not_called()
+        mock_delete.assert_not_called()
+
 
 class DroneSopDefectMapPostTests(TestCase):
     """defectmap POST 연동을 검증합니다."""
@@ -2536,9 +2592,9 @@ class DroneSopDefectMapPostTests(TestCase):
     @override_settings(
         DRONE_SOP_DUMMY_MODE=True,
         DRONE_SOP_DUMMY_MAIL_MESSAGES_URL="http://example.local/mail/messages",
-        DRONE_INCLUDE_SUBJECT_PREFIXES="[drone_sop]",
         DRONE_SOP_DEFECTMAP_URL="http://10.172.114.185:30912/defectmap",
     )
+    @patch.dict(os.environ, {"DRONE_SOP_POP3_SUBJECT": "[drone_sop]"})
     @patch("api.drone.services.pop3.defectmap_sidecar.requests.post")
     @patch("api.drone.services.pop3.sop_pop3._delete_dummy_mail_messages")
     @patch("api.drone.services.pop3.sop_pop3._upsert_drone_sop_rows")
@@ -2595,9 +2651,9 @@ class DroneSopDefectMapPostTests(TestCase):
     @override_settings(
         DRONE_SOP_DUMMY_MODE=True,
         DRONE_SOP_DUMMY_MAIL_MESSAGES_URL="http://example.local/mail/messages",
-        DRONE_INCLUDE_SUBJECT_PREFIXES="[drone_sop]",
         DRONE_SOP_DEFECTMAP_URL="http://10.172.114.185:30912/defectmap",
     )
+    @patch.dict(os.environ, {"DRONE_SOP_POP3_SUBJECT": "[drone_sop]"})
     @patch("api.drone.services.pop3.defectmap_sidecar.requests.post")
     @patch("api.drone.services.pop3.sop_pop3._delete_dummy_mail_messages")
     @patch("api.drone.services.pop3.sop_pop3._upsert_drone_sop_rows")
