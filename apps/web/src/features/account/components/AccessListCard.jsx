@@ -65,33 +65,34 @@ function AccessList({ items }) {
 export function AccessListCard({ data }) {
   return (
     <Card className="h-full">
-      <CardHeader className="pb-3">
+      <CardHeader className="pb-1">
         <CardTitle>메일함 접근</CardTitle>
         <CardDescription>
           user_sdwt_prod 단위로 메일함과 RAG 인덱스 접근 권한을 확인하세요.
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <div className="grid gap-2">
+      <CardContent className="grid gap-4 grid-cols-2 items-stretch">
+        <div className="flex h-full min-h-0 flex-col gap-2">
           <h3 className="text-sm font-semibold text-foreground">접근 가능 목록</h3>
-          <AccessList items={data?.accessibleUserSdwtProds} />
+          <div className="flex-1 min-h-0">
+            <AccessList items={data?.accessibleUserSdwtProds} />
+          </div>
         </div>
-
-        <Separator />
-
-        <div className="grid gap-2">
+        <div className="flex h-full min-h-0 flex-col gap-2">
           <h3 className="text-sm font-semibold text-foreground">관리 가능한 그룹</h3>
-          {data?.manageableUserSdwtProds?.length ? (
-            <div className="flex flex-wrap gap-2">
-              {data.manageableUserSdwtProds.map((item) => (
-                <Badge key={item} variant="secondary">
-                  {item}
-                </Badge>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">관리 권한이 없습니다.</p>
-          )}
+          <div className="flex-1 min-h-0 rounded-md border px-3 py-2">
+            {data?.manageableUserSdwtProds?.length ? (
+              <div className="flex flex-wrap gap-2">
+                {data.manageableUserSdwtProds.map((item) => (
+                  <Badge key={item} variant="secondary">
+                    {item}
+                  </Badge>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">관리 권한이 없습니다.</p>
+            )}
+          </div>
         </div>
       </CardContent>
     </Card>

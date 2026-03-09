@@ -419,7 +419,7 @@ export function LineSettingsPage({ lineId = "" }) {
   )
 
   return (
-    <section className="flex h-full min-h-0 flex-col gap-3">
+    <section className="flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-hidden">
       {/* 헤더 */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
@@ -463,9 +463,9 @@ export function LineSettingsPage({ lineId = "" }) {
       )}
 
       {/* 본문 */}
-      <div className="grid flex-1 min-h-0 grid-rows-[auto_1fr] gap-3">
+      <div className="grid flex-1 min-h-0 min-w-0 grid-rows-[auto_1fr] gap-3">
         {/* 상단 카드 */}
-        <div className="grid grid-cols-[2fr_2fr_2fr] gap-3">
+        <div className="grid min-w-0 grid-cols-[2fr_2fr_2fr] gap-3">
           {/* E-SOP End Step 추가 카드 */}
           <div className="rounded-lg border bg-background p-4 shadow-sm">
             <div className="flex flex-col gap-3">
@@ -650,8 +650,8 @@ export function LineSettingsPage({ lineId = "" }) {
         </div>
 
         {/* 테이블 */}
-        <div className="min-h-0 rounded-lg border bg-background overflow-hidden">
-          <div className="h-full min-h-0 overflow-auto">
+        <div className="min-h-0 min-w-0 overflow-hidden rounded-lg border bg-background">
+          <div className="h-full min-h-0 min-w-0 overflow-auto">
             <Table stickyHeader className="w-full table-fixed">
               <colgroup>
                 <col className="w-30" />

@@ -1,4 +1,4 @@
-import { useId, useState } from "react"
+import { useState } from "react"
 
 import {
   ChevronDownIcon,
@@ -13,7 +13,6 @@ import {
 import {
   flexRender,
   getCoreRowModel,
-  getFilteredRowModel,
   getPaginationRowModel,
   getSortedRowModel,
   useReactTable,
@@ -22,20 +21,12 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
 import {
   Pagination,
   PaginationContent,
   PaginationEllipsis,
   PaginationItem,
 } from "@/components/ui/pagination"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/common"
 
 import { cn } from "@/lib/utils"
@@ -172,39 +163,9 @@ function getPagination({
   return { pages, showLeftEllipsis, showRightEllipsis }
 }
 
-function RoleFilter({ column }) {
-  const id = useId()
-  const filterValue = column?.getFilterValue()
-  const value = typeof filterValue === "string" ? filterValue : "all"
-
-  return (
-    <div className="w-full space-y-2">
-      <Label htmlFor={`${id}-role`}>권한</Label>
-      <Select
-        value={value}
-        onValueChange={(nextValue) => {
-          if (!column) return
-          column.setFilterValue(nextValue === "all" ? undefined : nextValue)
-        }}
-      >
-        <SelectTrigger id={`${id}-role`} className="w-full">
-          <SelectValue placeholder="권한 선택" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">전체</SelectItem>
-          <SelectItem value="manager">관리자</SelectItem>
-          <SelectItem value="member">멤버</SelectItem>
-          <SelectItem value="viewer">뷰어</SelectItem>
-        </SelectContent>
-      </Select>
-    </div>
-  )
-}
-
 export function EmailMailboxMembersDatatable({ data }) {
   const safeData = Array.isArray(data) ? data : []
 
-  const [columnFilters, setColumnFilters] = useState([])
   const [pagination, setPagination] = useState({
     pageIndex: 0,
     pageSize: 10,
@@ -215,12 +176,9 @@ export function EmailMailboxMembersDatatable({ data }) {
     columns: COLUMNS,
     getRowId: (row) => row.id,
     state: {
-      columnFilters,
       pagination,
     },
-    onColumnFiltersChange: setColumnFilters,
     getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     enableSortingRemoval: false,
@@ -239,20 +197,9 @@ export function EmailMailboxMembersDatatable({ data }) {
     paginationItemsToDisplay: 2,
   })
 
-  const roleColumn = table.getColumn("role")
-
   return (
-    <div className="grid h-full min-h-0 grid-rows-[130px_1fr_auto]">
-      <div className="border-b">
-        <div className="flex flex-col gap-3 p-4">
-          <span className="text-lg font-semibold text-foreground">필터</span>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
-            <RoleFilter column={roleColumn} />
-          </div>
-        </div>
-      </div>
-
-      <div className="min-h-0 overflow-y-auto">
+    <div className="grid h-full min-h-0 min-w-0 grid-rows-[1fr_auto]">
+      <div className="min-h-0 min-w-0 overflow-y-auto px-4">
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (

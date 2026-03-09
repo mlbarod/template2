@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 const ROLE_LABELS = {
   admin: "Admin",
@@ -7,18 +7,12 @@ const ROLE_LABELS = {
   viewer: "Viewer",
 }
 
-function InfoRow({ label, value }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className="text-sm font-medium text-foreground">{value || "미지정"}</span>
-    </div>
-  )
-}
-
-export function AccountProfileCard({ profile }) {
+export function AccountProfileCard({ profile, affiliation, reconfirm }) {
   const roleKey = (profile?.role || "").toLowerCase()
   const roleLabel = ROLE_LABELS[roleKey] || profile?.role || "미지정"
+  const needsReconfirm = Boolean(reconfirm?.requiresReconfirm)
+  const reconfirmLabel = needsReconfirm ? "재확인 필요" : "정상"
+  const lineValue = affiliation?.currentLine || "미지정"
   const statusBadges = [
     profile?.isSuperuser ? "슈퍼유저" : null,
     profile?.isStaff ? "스태프" : null,
@@ -26,16 +20,35 @@ export function AccountProfileCard({ profile }) {
 
   return (
     <Card className="h-full">
-      <CardHeader className="pb-2">
+      <CardHeader className="pb-1">
         <CardTitle>사용자 기본 정보</CardTitle>
-        <CardDescription>로그인 사용자 기준 계정 메타 정보를 확인합니다.</CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <div className="grid gap-3 rounded-lg border p-3">
-          <InfoRow label="Username" value={profile?.username} />
-          <InfoRow label="Knox ID" value={profile?.knoxId} />
-          <InfoRow label="Role" value={roleLabel} />
-          <InfoRow label="user_sdwt_prod" value={profile?.userSdwtProd} />
+      <CardContent className="flex flex-col gap-3">
+        <div className="overflow-hidden rounded-lg border">
+          <table className="w-full table-fixed border-collapse">
+            <thead className="bg-muted/40">
+              <tr>
+                <th className="border-b px-3 py-1.5 text-center text-xs font-medium text-muted-foreground">Username</th>
+                <th className="border-b px-3 py-1.5 text-center text-xs font-medium text-muted-foreground">Knox ID</th>
+                <th className="border-b px-3 py-1.5 text-center text-xs font-medium text-muted-foreground">Role</th>
+                <th className="border-b px-3 py-1.5 text-center text-xs font-medium text-muted-foreground">user_sdwt_prod</th>
+                <th className="border-b px-3 py-1.5 text-center text-xs font-medium text-muted-foreground">Line</th>
+                <th className="border-b px-3 py-1.5 text-center text-xs font-medium text-muted-foreground">재확인 상태</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="px-3 py-1.5 text-center text-sm font-medium text-foreground">{profile?.username || "미지정"}</td>
+                <td className="px-3 py-1.5 text-center text-sm font-medium text-foreground">{profile?.knoxId || "미지정"}</td>
+                <td className="px-3 py-1.5 text-center text-sm font-medium text-foreground">{roleLabel}</td>
+                <td className="px-3 py-1.5 text-center text-sm font-medium text-foreground">{profile?.userSdwtProd || "미지정"}</td>
+                <td className="px-3 py-1.5 text-center text-sm font-medium text-foreground">{lineValue}</td>
+                <td className="px-3 py-1.5 text-center">
+                  <Badge variant={needsReconfirm ? "destructive" : "secondary"}>{reconfirmLabel}</Badge>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
         {statusBadges.length ? (
           <div className="flex flex-wrap gap-2">

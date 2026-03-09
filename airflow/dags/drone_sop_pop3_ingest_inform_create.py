@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from datetime import timedelta
 from typing import Any
 
 import requests
@@ -86,8 +85,7 @@ def run_drone_sop_inform_create(**_context):
 default_args = {
     "owner": "airflow",
     "depends_on_past": False,
-    "retries": 1,
-    "retry_delay": timedelta(minutes=5),
+    "retries": 0,
 }
 
 with DAG(
@@ -107,7 +105,7 @@ with DAG(
     create_inform = PythonOperator(
         task_id="create_inform_drone_sop",
         python_callable=run_drone_sop_inform_create,
-        trigger_rule=TriggerRule.ALL_DONE,
+        trigger_rule=TriggerRule.ALL_SUCCESS,
     )
 
     ingest_pop3 >> create_inform

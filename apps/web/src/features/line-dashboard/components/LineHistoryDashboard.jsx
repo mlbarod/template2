@@ -1375,7 +1375,7 @@ export function LineHistoryDashboard({ lineId, initialRangeDays = 30 }) {
   }
 
   return (
-    <div className="relative flex h-full flex-col gap-4">
+    <div className="relative flex h-full min-h-0 min-w-0 flex-col gap-4 overflow-hidden">
       {/* 제목 + 업데이트 시간 */}
       <div className="flex flex-col gap-1">
         <div className="flex items-baseline gap-2 text-lg font-semibold">
@@ -1631,7 +1631,7 @@ export function LineHistoryDashboard({ lineId, initialRangeDays = 30 }) {
       )}
 
       {/* 메인 차트 섹션 */}
-      <section className="flex flex-1 min-h-0 flex-col gap-6 rounded-lg border bg-background p-4">
+      <section className="flex flex-1 min-h-0 min-w-0 flex-col gap-6 overflow-y-auto rounded-lg border bg-background p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold">E-SOP Trend</h2>
@@ -1679,9 +1679,9 @@ export function LineHistoryDashboard({ lineId, initialRangeDays = 30 }) {
           </div>
         )}
 
-        <div className="grid h-full grid-cols-1 gap-6 lg:grid-cols-2 lg:auto-rows-fr">
+        <div className="grid flex-1 min-h-0 min-w-0 grid-cols-1 gap-6 lg:grid-cols-2 lg:auto-rows-fr">
           {/* 진행 건수 차트 */}
-          <div className="flex h-full min-h-0 flex-col gap-2">
+          <div className="flex h-full min-h-0 min-w-0 flex-col gap-2">
             <div className="flex items-center justify-between">
               <h3 className="text-md font-semibold uppercase tracking-wide text-muted-foreground">
                 진행 건수
@@ -1691,7 +1691,7 @@ export function LineHistoryDashboard({ lineId, initialRangeDays = 30 }) {
           </div>
 
           {/* Send Jira 차트 */}
-          <div className="flex h-full min-h-0 flex-col gap-2">
+          <div className="flex h-full min-h-0 min-w-0 flex-col gap-2">
             <div className="flex items-center justify-between">
               <h3 className="text-md font-semibold uppercase tracking-wide text-muted-foreground">
                 Jira 인폼 건수

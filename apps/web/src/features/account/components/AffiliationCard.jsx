@@ -116,14 +116,12 @@ export function AffiliationCard({
               value={effectiveFrom}
               onChange={(e) => setEffectiveFrom(e.target.value)}
             />
-            <p className="text-xs text-muted-foreground">
-              관리자 승인 후, 소속 변경됩니다.
-            </p>
           </div>
 
-          <p className="text-sm text-muted-foreground">
-            소속 변경 요청 후에는 승인이 완료되어야 메일함과 RAG 인덱스가 반영됩니다.
-          </p>
+          <div className="grid gap-1 rounded-md border bg-muted/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+            <p>관리자 승인 후 소속이 변경됩니다.</p>
+            <p>승인 완료 후 메일함과 RAG 인덱스가 반영됩니다.</p>
+          </div>
 
           {error ? (
             <p className="text-destructive text-sm">{error}</p>

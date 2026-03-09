@@ -65,7 +65,7 @@ function normalizeUser(u) {
  */
 export function NavUser({
   user,
-  onAccount = () => {},
+  onAccount,
   onVoc,
   onNotifications = () => {},
   onLogout,
@@ -98,6 +98,14 @@ export function NavUser({
       return
     }
     navigate("/voc")
+  }
+
+  const handleAccount = () => {
+    if (typeof onAccount === "function") {
+      onAccount()
+      return
+    }
+    navigate("/settings/account")
   }
 
   // 사용자 입력 정규화 (표시 가능한 값이 없으면 숨김)
@@ -175,7 +183,7 @@ export function NavUser({
 
             {/* 계정 관련 섹션 */}
             <DropdownMenuGroup>
-              <DropdownMenuItem onSelect={onAccount}>
+              <DropdownMenuItem onSelect={handleAccount}>
                 <BadgeCheck className="mr-2 size-4" aria-hidden="true" />
                 Account
               </DropdownMenuItem>

@@ -3,29 +3,8 @@ import { IconDatabase, IconRefresh } from "@tabler/icons-react"
 
 import { cn } from "@/lib/utils"
 import { Button } from "components/ui/button"
+import { LINE_FILTER_MODE_OPTIONS } from "../utils/lineFilterMode"
 import { QuickFilterFavorites } from "./QuickFilterFavorites"
-
-const LINE_FILTER_MODE_TARGET_USER_SDWT = "target_user_sdwt_prod"
-const LINE_FILTER_MODE_USER_SDWT = "user_sdwt_prod"
-const LINE_FILTER_MODE_SDWT = "sdwt_prod"
-
-const LINE_FILTER_MODE_OPTIONS = [
-  {
-    value: LINE_FILTER_MODE_TARGET_USER_SDWT,
-    labelKey: "lineFilterModeTargetUserSdwt",
-    descriptionKey: "lineFilterModeTargetUserSdwtDescription",
-  },
-  {
-    value: LINE_FILTER_MODE_USER_SDWT,
-    labelKey: "lineFilterModeUserSdwt",
-    descriptionKey: "lineFilterModeUserSdwtDescription",
-  },
-  {
-    value: LINE_FILTER_MODE_SDWT,
-    labelKey: "lineFilterModeSdwt",
-    descriptionKey: "lineFilterModeSdwtDescription",
-  },
-]
 
 /**
  * 테이블 상단의 타이틀, 즐겨찾기, 새로고침 버튼을 묶어둔 헤더입니다.
@@ -51,7 +30,7 @@ export function DataTableToolbar({
     resetSignal,
   } = favorites ?? {}
   return (
-    <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2 text-lg font-semibold">
           <IconDatabase className="size-5" />

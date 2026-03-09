@@ -226,7 +226,7 @@ export function LineDashboardOverviewPage() {
 
   if (status === "loading") {
     return (
-      <section className="space-y-4">
+      <section className="flex h-full min-h-0 min-w-0 flex-col gap-4 overflow-y-auto">
         <Card>
           <CardHeader>
             <CardTitle>Airflow DAG Overview</CardTitle>
@@ -242,7 +242,7 @@ export function LineDashboardOverviewPage() {
 
   if (status === "error" || overview?.error || error) {
     return (
-      <section className="space-y-4">
+      <section className="flex h-full min-h-0 min-w-0 flex-col gap-4 overflow-y-auto">
         <Card>
           <CardHeader>
             <CardTitle>Airflow DAG Overview</CardTitle>
@@ -265,7 +265,7 @@ export function LineDashboardOverviewPage() {
   }
 
   return (
-    <section className="grid grid-rows-[auto,1fr] min-h-0 gap-4">
+    <section className="grid h-full min-h-0 min-w-0 grid-rows-[auto,1fr] gap-4 overflow-hidden">
       {/* KPI 카드들 */}
       <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-4">
         <Card>
@@ -301,7 +301,7 @@ export function LineDashboardOverviewPage() {
       </div>
 
       {/* ✅ 하단: Card 대신 div로, Card와 "동일한 디자인" (border/radius/bg/shadow/padding) */}
-      <div className="flex min-h-0 flex-col rounded-xl border bg-card text-card-foreground shadow">
+      <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border bg-card text-card-foreground shadow">
         {/* header: CardHeader와 동일한 패딩/구조 */}
         <div className="flex flex-col gap-2 p-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -317,11 +317,11 @@ export function LineDashboardOverviewPage() {
           </p>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col px-6 pb-6">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col px-6 pb-6">
           {/* content: CardContent와 동일한 패딩 + 스크롤 영역 */}
-          <div className="min-h-0 flex-1 overflow-auto">
+          <div className="min-h-0 min-w-0 flex-1 overflow-auto">
             {/* 이 div 높이를 기준으로 filler 계산 */}
-            <div ref={tableViewportRef} className="h-full min-h-0">
+            <div ref={tableViewportRef} className="h-full min-h-0 min-w-0">
               <Table stickyHeader>
                 <TableHeader>
                   <TableRow className="h-12">

@@ -1,14 +1,5 @@
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-
-function InfoRow({ label, value }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className="text-sm font-medium text-foreground">{value || "미지정"}</span>
-    </div>
-  )
-}
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 export function AffiliationStatusCard({ affiliation, reconfirm }) {
   const needsReconfirm = Boolean(reconfirm?.requiresReconfirm)
@@ -16,15 +7,33 @@ export function AffiliationStatusCard({ affiliation, reconfirm }) {
 
   return (
     <Card className="h-full">
-      <CardHeader className="pb-2">
+      <CardHeader className="pb-1">
         <CardTitle>현재 소속</CardTitle>
-        <CardDescription>현재 적용 중인 소속 정보를 확인합니다.</CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <div className="grid gap-3 rounded-lg border p-3">
-          <InfoRow label="Department" value={affiliation?.currentDepartment} />
-          <InfoRow label="Line" value={affiliation?.currentLine} />
-          <InfoRow label="user_sdwt_prod" value={affiliation?.currentUserSdwtProd} />
+      <CardContent className="flex flex-col gap-3">
+        <div className="overflow-hidden rounded-lg border">
+          <table className="w-full table-fixed border-collapse">
+            <thead className="bg-muted/40">
+              <tr>
+                <th className="border-b px-3 py-1.5 text-left text-xs font-medium text-muted-foreground">Department</th>
+                <th className="border-b px-3 py-1.5 text-left text-xs font-medium text-muted-foreground">Line</th>
+                <th className="border-b px-3 py-1.5 text-left text-xs font-medium text-muted-foreground">user_sdwt_prod</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="px-3 py-1.5 text-sm font-medium text-foreground">
+                  {affiliation?.currentDepartment || "미지정"}
+                </td>
+                <td className="px-3 py-1.5 text-sm font-medium text-foreground">
+                  {affiliation?.currentLine || "미지정"}
+                </td>
+                <td className="px-3 py-1.5 text-sm font-medium text-foreground">
+                  {affiliation?.currentUserSdwtProd || "미지정"}
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
         <div className="flex flex-col gap-2">

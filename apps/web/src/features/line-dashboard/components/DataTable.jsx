@@ -406,7 +406,7 @@ export function DataTable({ lineId }) {
       </div>
       {/* 테이블 */}
       <div
-        className="flex-1 min-h-0 overflow-y-auto rounded-lg border bg-background"
+        className="flex-1 min-h-0 min-w-0 overflow-y-auto rounded-lg border bg-background"
         aria-busy={isRefreshing}
       >
         <Table

@@ -8,7 +8,6 @@ import { useAuth } from "@/lib/auth"
 import { AccountProfileCard } from "../components/AccountProfileCard"
 import { AffiliationCard } from "../components/AffiliationCard"
 import { AffiliationHistoryCard } from "../components/AffiliationHistoryCard"
-import { AffiliationStatusCard } from "../components/AffiliationStatusCard"
 import { ManageableGroupsCard } from "../components/ManageableGroupsCard"
 import { useAccountOverview, useAffiliation, useUpdateAffiliation } from "../hooks/useAccountData"
 
@@ -125,6 +124,7 @@ export default function AccountPage() {
   const manageableGroups = overviewData?.manageableGroups?.groups || []
   const latestRequest =
     history.find((item) => item.status === "PENDING") || history[0] || null
+  const pendingRequests = history.filter((item) => item.status === "PENDING").length
 
   const handleAffiliationSubmit = async (payload, onComplete) => {
     setSubmitMessage("")
@@ -139,12 +139,19 @@ export default function AccountPage() {
   }
 
   return (
-    <div className="flex min-h-0 flex-col gap-4">
+    <div className="flex min-h-0 min-w-0 flex-col gap-4">
       <div className="flex flex-col gap-2">
         <h2 className="text-2xl font-semibold text-foreground">{pageTitle}</h2>
         <p className="text-sm text-muted-foreground">
           계정 소속, 접근 권한, 승인 히스토리를 한 번에 확인합니다.
         </p>
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <Badge variant="secondary">현재 소속: {affiliation?.currentUserSdwtProd || "미지정"}</Badge>
+          <Badge variant="outline">요청 이력 {history.length}건</Badge>
+          <Badge variant={pendingRequests > 0 ? "destructive" : "secondary"}>
+            대기 {pendingRequests}건
+          </Badge>
+        </div>
       </div>
 
       {overviewError ? (
@@ -154,37 +161,58 @@ export default function AccountPage() {
           </p>
         </div>
       ) : overviewLoading ? (
-        <div className="grid min-h-0 grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="grid min-h-0 min-w-0 grid-cols-1 gap-4">
+          <section className="grid min-h-0 min-w-0 grid-cols-1 gap-4 md:grid-cols-12 md:auto-rows-fr">
+            <Skeleton className="h-64 w-full md:col-span-8" />
+            <Skeleton className="h-64 w-full md:col-span-4" />
+          </section>
+          <section className="grid min-h-0 min-w-0 grid-cols-1 gap-4 md:grid-cols-12">
+            <Skeleton className="h-80 w-full md:col-span-7" />
+            <Skeleton className="h-80 w-full md:col-span-5" />
+          </section>
           <Skeleton className="h-96 w-full" />
-          <Skeleton className="h-96 w-full" />
-          <Skeleton className="h-96 w-full" />
-          <Skeleton className="h-96 w-full" />
-          <Skeleton className="h-96 w-full md:col-span-2" />
         </div>
       ) : (
-        <div className="grid min-h-0 grid-cols-1 gap-4 md:grid-cols-2">
-          <AccountProfileCard profile={profile} />
-          <AffiliationStatusCard affiliation={affiliation} reconfirm={reconfirm} />
-          {affiliationLoading ? (
-            <Skeleton className="h-96 w-full" />
-          ) : affiliationError ? (
-            <div className="rounded-lg border bg-card p-4">
-              <p className="text-destructive text-sm">
-                {affiliationError?.message || "소속 정보를 불러오지 못했습니다."}
-              </p>
+        <div className="grid min-h-0 min-w-0 grid-cols-1 gap-4">
+          <section className="grid min-h-0 min-w-0 grid-cols-1 gap-4 md:grid-cols-12 md:auto-rows-fr">
+            <div className="min-h-0 min-w-0 md:col-span-6">
+              <AccountProfileCard
+                profile={profile}
+                affiliation={affiliation}
+                reconfirm={reconfirm}
+              />
             </div>
-          ) : (
-            <AffiliationCard
-              data={affiliationData}
-              onSubmit={handleAffiliationSubmit}
-              isSubmitting={updateAffiliationMutation.isPending}
-              error={submitError}
-              successMessage={submitMessage}
-            />
-          )}
-          <AffiliationRequestStatusCard latestRequest={latestRequest} />
-          <ManageableGroupsCard groups={manageableGroups} />
-          <div className="md:col-span-2">
+            <div className="min-h-0 min-w-0 md:col-span-6">
+              <AffiliationRequestStatusCard latestRequest={latestRequest} />
+            </div>
+          </section>
+
+          <section className="grid min-h-0 min-w-0 grid-cols-1 gap-4 md:grid-cols-12">
+            <div className="min-h-0 min-w-0 md:col-span-7">
+              {affiliationLoading ? (
+                <Skeleton className="h-80 w-full" />
+              ) : affiliationError ? (
+                <div className="rounded-lg border bg-card p-4">
+                  <p className="text-destructive text-sm">
+                    {affiliationError?.message || "소속 정보를 불러오지 못했습니다."}
+                  </p>
+                </div>
+              ) : (
+                <AffiliationCard
+                  data={affiliationData}
+                  onSubmit={handleAffiliationSubmit}
+                  isSubmitting={updateAffiliationMutation.isPending}
+                  error={submitError}
+                  successMessage={submitMessage}
+                />
+              )}
+            </div>
+            <div className="min-h-0 min-w-0 md:col-span-5">
+              <ManageableGroupsCard groups={manageableGroups} />
+            </div>
+          </section>
+
+          <div className="min-h-0 min-w-0">
             <AffiliationHistoryCard history={history} />
           </div>
         </div>

@@ -15,21 +15,10 @@ import {
   createRecentHoursRange,
   normalizeRecentHoursRange,
 } from "../utils/dataTableQuickFilters"
-
-const LINE_FILTER_MODE_TARGET_USER_SDWT = "target_user_sdwt_prod"
-const LINE_FILTER_MODE_USER_SDWT = "user_sdwt_prod"
-const LINE_FILTER_MODE_SDWT = "sdwt_prod"
-const LINE_FILTER_MODES = new Set([
-  LINE_FILTER_MODE_TARGET_USER_SDWT,
-  LINE_FILTER_MODE_USER_SDWT,
-  LINE_FILTER_MODE_SDWT,
-])
-
-function normalizeLineFilterMode(value) {
-  if (typeof value !== "string") return LINE_FILTER_MODE_TARGET_USER_SDWT
-  const normalized = value.trim()
-  return LINE_FILTER_MODES.has(normalized) ? normalized : LINE_FILTER_MODE_TARGET_USER_SDWT
-}
+import {
+  DEFAULT_LINE_FILTER_MODE,
+  normalizeLineFilterMode,
+} from "../utils/lineFilterMode"
 
 /**
  * 테이블 데이터(컬럼/행/날짜 범위) 로딩을 담당하는 훅입니다.
@@ -42,7 +31,7 @@ export function useTableQuery({ lineId }) {
   const [selectedTable, setSelectedTable] = useState(DEFAULT_TABLE)
   const [fromDate, setFromDate] = useState(() => getDefaultFromValue())
   const [toDate, setToDate] = useState(() => getDefaultToValue())
-  const [lineFilterMode, setLineFilterModeState] = useState(LINE_FILTER_MODE_TARGET_USER_SDWT)
+  const [lineFilterMode, setLineFilterModeState] = useState(DEFAULT_LINE_FILTER_MODE)
 
   const [recentHoursRange, setRecentHoursRangeState] = useState(() => createRecentHoursRange())
   const [hydrationKey, setHydrationKey] = useState(0)
