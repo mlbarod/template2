@@ -144,7 +144,7 @@ def _build_summary_context(row: dict[str, Any]) -> dict[str, str]:
     normalized_step = step[2:].upper() if len(step) >= 3 else step.upper()
     return {
         "sdwt_initial": sdwt[:1],
-        "layer": find_layer(ppid),
+        "layer": find_layer(step),
         "normalized_step": normalized_step,
         "main_step": step,
         "sdwt_prod": sdwt,

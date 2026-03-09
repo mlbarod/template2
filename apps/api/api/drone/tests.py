@@ -2830,13 +2830,13 @@ class DroneSopJiraSummaryTests(TestCase):
 
         row = {
             "sdwt_prod": "SDWT",
-            "main_step": "ST003",
-            "ppid": "AB001111",
+            "main_step": "A-000320",
+            "ppid": "N000000",
             "lot_id": "LOT.1",
         }
         summary = jira_template_h1.build_summary(row)
 
-        self.assertEqual(summary, "S FA ST003 LOT.1")
+        self.assertEqual(summary, "S FA A-000320 LOT.1")
 
     def test_H1_find_layer_supports_zero_padded_rule_bounds(self) -> None:
         """H1 layer 규칙에서 선행 0 문자열 범위를 처리하는지 확인합니다."""
@@ -2857,12 +2857,12 @@ class DroneSopJiraSummaryTests(TestCase):
 
         row = {
             "sdwt_prod": "SDWT",
-            "main_step": "ST003",
-            "ppid": "AB000320",
+            "main_step": "A-000320",
+            "ppid": "N000000",
             "lot_id": "LOT.1",
         }
         self.assertEqual(mail_template_h1.find_layer("AB000320"), "FA")
-        self.assertEqual(mail_template_h1.build_summary(row), "S FA ST003 LOT.1")
+        self.assertEqual(mail_template_h1.build_summary(row), "S FA A-000320 LOT.1")
 
 
 class DroneSopMessengerLineATemplateTests(TestCase):
@@ -2951,7 +2951,7 @@ class DroneSopMessengerLineBTemplateTests(TestCase):
         H1_template.send_excel_table_message(
             chatroom_id=456,
             context={
-                "main_step": "ST009",
+                "main_step": "A-000320",
                 "ppid": "AB000320",
                 "eqp_cb": "EQP-9",
                 "lot_id": "LOT-9",

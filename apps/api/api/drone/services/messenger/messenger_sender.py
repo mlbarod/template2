@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..jira.templates.jira_template_h1 import find_layer as find_h1_layer
 from ..shared.inform_context import build_inform_context
 
 
@@ -47,13 +46,6 @@ def _build_actions(context: dict[str, Any]) -> list[dict[str, Any]]:
     return actions
 
 
-def _build_layer_from_row(row: dict[str, Any]) -> str:
-    """H1 레이어 값을 Jira와 동일한 규칙으로 계산합니다."""
-
-    ppid = str(row.get("ppid") or "").strip()
-    return find_h1_layer(ppid)
-
-
 def _build_context(row: dict[str, Any]) -> dict[str, Any]:
     """Drone SOP 메시지 컨텍스트를 구성합니다."""
 
@@ -67,7 +59,6 @@ def _build_context(row: dict[str, Any]) -> dict[str, Any]:
             "sop_id": row.get("id"),
             "sdwt_prod": row.get("sdwt_prod"),
             "user_sdwt_prod": target_user_sdwt_prod,
-            "layer": _build_layer_from_row(row),
         }
     )
     return context
@@ -93,7 +84,6 @@ def build_drone_sop_messenger_template_inputs(*, row: dict[str, Any]) -> tuple[d
         "user_sdwt_prod": _normalize_value(context.get("user_sdwt_prod")),
         "main_step": _normalize_value(context.get("main_step")),
         "ppid": _normalize_value(context.get("ppid")),
-        "layer": _normalize_value(context.get("layer")),
         "eqp_cb": _normalize_value(context.get("eqp_cb")),
         "lot_id": _normalize_value(context.get("lot_id")),
         "knoxid": _normalize_value(context.get("knoxid")),

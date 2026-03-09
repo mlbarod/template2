@@ -72,9 +72,7 @@ def build_excel_table_html(*, context: dict[str, Any], actions: list[dict[str, A
 
     main_step = _normalize_text(context.get("main_step"))
     ppid = _normalize_text(context.get("ppid"))
-    layer = _normalize_text(context.get("layer"))
-    if layer == "-":
-        layer = find_layer(ppid)
+    layer = find_layer(main_step)
     eqp_cb = _normalize_text(context.get("eqp_cb"))
     lot_id = _normalize_text(context.get("lot_id"))
     knoxid = _normalize_text(context.get("knoxid"))
