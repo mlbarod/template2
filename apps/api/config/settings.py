@@ -185,7 +185,18 @@ DATABASES = {
         "PORT": env("DJANGO_DB_PORT") or env("DB_PORT") or "5432",
         # 연결 재사용(초): 운영 60~300 권장
         "CONN_MAX_AGE": env_int("DJANGO_DB_CONN_MAX_AGE", 60) or 0
-    }
+    },
+    # 타임라인 전용 DB (별도 PostgreSQL)
+    "timeline": {
+        "ENGINE": env("TIMELINE_DB_ENGINE") or "django.db.backends.postgresql",
+        "NAME": env("TIMELINE_DB_NAME", "timeline"),
+        "USER": env("TIMELINE_DB_USER", "airflow"),
+        "PASSWORD": env("TIMELINE_DB_PASSWORD", "airflow"),
+        "HOST": env("TIMELINE_DB_HOST", "10.172.117.91"),
+        "PORT": env("TIMELINE_DB_PORT", "8010"),
+        # 연결 재사용(초): 운영 60~300 권장
+        "CONN_MAX_AGE": env_int("TIMELINE_DB_CONN_MAX_AGE", 60) or 0
+    },
 }
 
 

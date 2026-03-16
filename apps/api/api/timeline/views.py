@@ -124,9 +124,11 @@ class TimelineEquipmentsView(APIView):
         - 없음
 
         오류:
-        - 400: lineId, sdwtId, prcGroup 누락
+        - 400: lineId 누락
 
         예시 요청:
+        - 예시 요청: GET /api/v1/timeline/equipments?lineId=LINE-A
+        - 예시 요청: GET /api/v1/timeline/equipments?lineId=LINE-A&sdwtId=SD-10
         - 예시 요청: GET /api/v1/timeline/equipments?lineId=LINE-A&sdwtId=SD-10&prcGroup=ETCH
 
         snake/camel 호환:
@@ -136,10 +138,8 @@ class TimelineEquipmentsView(APIView):
         sdwt_id = selectors.normalize_id(request.GET.get("sdwtId"))
         prc_group = selectors.normalize_id(request.GET.get("prcGroup"))
 
-        if not line_id or not sdwt_id or not prc_group:
-            return JsonResponse(
-                {"error": "lineId, sdwtId, and prcGroup are required"}, status=400
-            )
+        if not line_id:
+            return JsonResponse({"error": "lineId is required"}, status=400)
 
         return JsonResponse(
             selectors.list_equipments(line_id=line_id, sdwt_id=sdwt_id, prc_group=prc_group),

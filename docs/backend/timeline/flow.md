@@ -1,11 +1,11 @@
 # Timeline 백엔드 문서
 
 ## 개요
-- 프론트 타임라인 기능을 위한 더미 데이터 API입니다.
-- DB 없이 in-memory 샘플 데이터를 반환합니다.
+- 프론트 타임라인 기능을 위한 DB 조회 API입니다.
+- 별도 PostgreSQL DB에서 데이터를 조회합니다.
 
 ## 책임 범위
-- 라인/SDWT/공정/설비/로그 더미 데이터 제공
+- 라인/SDWT/공정/설비/로그 데이터 제공
 
 ## 엔드포인트
 - `GET /api/v1/timeline/lines`
@@ -22,7 +22,7 @@
 - `GET /api/v1/timeline/logs/jira?eqpId=...`
 
 ## 핵심 구성 요소
-- in-memory map 기반 더미 데이터
+- 타임라인 전용 DB 조회
 
 ## 주요 규칙/정책
 - lineId/sdwtId/prcGroup는 대문자로 정규화합니다.
@@ -45,7 +45,13 @@
 3. 전체 로그는 eventTime 기준 정렬.
 
 ## 설정/환경변수
-- 없음
+- `TIMELINE_DB_ENGINE`
+- `TIMELINE_DB_NAME`
+- `TIMELINE_DB_USER`
+- `TIMELINE_DB_PASSWORD`
+- `TIMELINE_DB_HOST`
+- `TIMELINE_DB_PORT`
+- `TIMELINE_DB_CONN_MAX_AGE`
 
 ## 시퀀스 다이어그램
 
@@ -54,7 +60,7 @@
 sequenceDiagram
     actor User
     participant API as Timeline API
-    participant Data as In-memory Data
+    participant Data as Timeline DB
 
     User->>API: GET /timeline/logs?eqpId=EQP-ALPHA
     API->>Data: lookup logs

@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from typing import Any, Sequence
 
 from django.db import transaction
+from django.db.models import Case, DateTimeField, F, Value, When
+from django.utils import timezone
 
 from api.messenger import services as messenger_services
 
@@ -181,7 +183,15 @@ def _mark_channel_success(
     if not normalized_ids:
         return
 
-    updates: dict[str, Any] = {send_field: 1}
+    now = timezone.now()
+    updates: dict[str, Any] = {
+        send_field: 1,
+        "informed_at": Case(
+            When(informed_at__isnull=True, then=Value(now)),
+            default=F("informed_at"),
+            output_field=DateTimeField(),
+        ),
+    }
     reason_field = REASON_FIELD_BY_SEND_FIELD.get(send_field)
     if reason_field:
         updates[reason_field] = None

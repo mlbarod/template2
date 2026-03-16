@@ -2076,6 +2076,49 @@ class DroneSopInformPolicyTests(TestCase):
         self.assertEqual(refreshed.send_jira, 0)
         self.assertIsNone(refreshed.jira_reason)
         self.assertEqual(refreshed.send_messenger, 1)
+        self.assertIsNotNone(refreshed.informed_at)
+
+    @override_settings(
+        DRONE_JIRA_BASE_URL="http://example.local/jira",
+        DRONE_MAIL_SENDER="sender@example.com",
+    )
+    @patch("api.drone.services.mail.mail_sender.send_drone_sop_mail")
+    def test_inform_sets_informed_at_when_mail_succeeds(self, mock_mail: Mock) -> None:
+        """메일 전송 성공 시 informed_at이 설정되는지 확인합니다."""
+        User = get_user_model()
+        user = User.objects.create_user(sabun="S84001", password="test-password")
+        user.user_sdwt_prod = "SDWT1"
+        user.email = "user84001@example.com"
+        user.save(update_fields=["user_sdwt_prod", "email"])
+
+        DroneSopUserSdwtChannel.objects.create(
+            target_user_sdwt_prod="SDWT1",
+            mail_template_key="common",
+        )
+
+        sop = DroneSOP.objects.create(
+            line_id="L1",
+            sdwt_prod="SDWT1",
+            user_sdwt_prod="SDWT1",
+            eqp_id="EQP1",
+            chamber_ids="1",
+            lot_id="LOT.1",
+            main_step="MS",
+            status="COMPLETE",
+            needtosend=1,
+            send_jira=1,
+            send_messenger=1,
+            send_mail=0,
+            metro_current_step="ST001",
+        )
+
+        result = services.run_drone_sop_pipeline_from_env()
+        self.assertEqual(result.candidates, 1)
+        mock_mail.assert_called_once()
+
+        refreshed = DroneSOP.objects.get(id=sop.id)
+        self.assertEqual(refreshed.send_mail, 1)
+        self.assertIsNotNone(refreshed.informed_at)
 
     @override_settings(
         DRONE_JIRA_BASE_URL="http://example.local/jira",

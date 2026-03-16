@@ -194,4 +194,5 @@ Detailed execution workflows are delegated to `.codex/skills/*`.
 - Keep modifications strictly within requested scope.
 - Preserve public surfaces unless explicitly requested.
 - Avoid unrelated refactors.
+- Do not output full file contents in responses; provide concise diffs or minimal relevant snippets only. Full-file output requires an explicit user request.
 - For detailed output format/path completeness rules, use `safe-file-edit-output` skill.

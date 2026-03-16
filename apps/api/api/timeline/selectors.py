@@ -1,354 +1,77 @@
 # =============================================================================
-# 모듈 설명: timeline 더미 데이터 셀렉터를 제공합니다.
+# 모듈 설명: timeline DB 데이터 셀렉터를 제공합니다.
 # - 주요 함수: list_lines, list_sdwt_for_line, get_merged_logs 등
-# - 불변 조건: 더미 데이터만 반환하며 DB 조회는 없습니다.
+# - 불변 조건: timeline 전용 DB에서 조회합니다.
 # =============================================================================
 
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
+from datetime import datetime, timedelta
+from typing import Dict, List, Sequence
+
+from django.db import connections
+
+TIMELINE_DB_ALIAS = "timeline"
+TIMELINE_DB_ENGINE = "django.db.backends.postgresql"
+TIMELINE_DB_NAME = "timeline"
+TIMELINE_DB_USER = "airflow"
+TIMELINE_DB_PASSWORD = "airflow"
+TIMELINE_DB_HOST = "10.172.117.91"
+TIMELINE_DB_PORT = "8010"
+TIMELINE_DB_CONN_MAX_AGE = 60
+
 
 # =============================================================================
-# 상수: 더미 라인/설비/로그 데이터
+# 내부 헬퍼
 # =============================================================================
 
-LINE_LIST: List[Dict[str, str]] = [
-    {"id": "LINE-A", "name": "Line A"},
-    {"id": "LINE-B", "name": "Line B"},
-]
 
-SDWT_MAP: Dict[str, List[Dict[str, str]]] = {
-    "LINE-A": [
-        {"id": "SD-10", "name": "SDWT-10"},
-    ],
-    "LINE-B": [
-        {"id": "SD-20", "name": "SDWT-20"},
-    ],
-}
+def _safe_text(value: object) -> str:
+    """None 값을 안전하게 문자열로 정리합니다."""
 
-PRC_GROUPS: Dict[Tuple[str, str], List[Dict[str, str]]] = {
-    ("LINE-A", "SD-10"): [
-        {"id": "ETCH", "name": "PRC Group - Etch"},
-        {"id": "CVD", "name": "PRC Group - CVD"},
-    ],
-    ("LINE-B", "SD-20"): [
-        {"id": "TEST", "name": "PRC Group - Test"},
-    ],
-}
+    return "" if value is None else str(value)
 
-EQUIPMENTS: Dict[Tuple[str, str, str], List[Dict[str, str]]] = {
-    ("LINE-A", "SD-10", "ETCH"): [
-        {"id": "EQP-ALPHA", "name": "ALPHA-ETCH-01"},
-        {"id": "EQP-BRAVO", "name": "BRAVO-ETCH-02"},
-    ],
-    ("LINE-A", "SD-10", "CVD"): [
-        {"id": "EQP-CVD-01", "name": "CVD-LINEA-01"},
-    ],
-    ("LINE-B", "SD-20", "TEST"): [
-        {"id": "EQP-TEST-01", "name": "TEST-HANDLER-01"},
-    ],
-}
 
-EQUIPMENT_INFO: Dict[str, Dict[str, str]] = {
-    "EQP-ALPHA": {
-        "id": "EQP-ALPHA",
-        "name": "ALPHA-ETCH-01",
-        "lineId": "LINE-A",
-        "sdwtId": "SD-10",
-        "prcGroup": "ETCH",
-    },
-    "EQP-BRAVO": {
-        "id": "EQP-BRAVO",
-        "name": "BRAVO-ETCH-02",
-        "lineId": "LINE-A",
-        "sdwtId": "SD-10",
-        "prcGroup": "ETCH",
-    },
-    "EQP-CVD-01": {
-        "id": "EQP-CVD-01",
-        "name": "CVD-LINEA-01",
-        "lineId": "LINE-A",
-        "sdwtId": "SD-10",
-        "prcGroup": "CVD",
-    },
-    "EQP-TEST-01": {
-        "id": "EQP-TEST-01",
-        "name": "TEST-HANDLER-01",
-        "lineId": "LINE-B",
-        "sdwtId": "SD-20",
-        "prcGroup": "TEST",
-    },
-}
+def _get_timeline_connection():
+    """타임라인 DB 연결 설정을 갱신하고 연결 객체를 반환합니다."""
 
-LOGS: Dict[str, Dict[str, List[Dict[str, object]]]] = {
-    "EQP-ALPHA": {
-        "eqp": [
-            {
-                "id": "EQP-ALPHA-001",
-                "logType": "EQP",
-                "eventType": "RUN",
-                "eventTime": "2024-07-15T00:30:00Z",
-                "endTime": "2024-07-15T02:30:00Z",
-                "operator": "system",
-                "comment": "Shift warm-up",
-                "lineId": "LINE-A",
-                "eqpId": "EQP-ALPHA",
-            },
-            {
-                "id": "EQP-ALPHA-002",
-                "logType": "EQP",
-                "eventType": "DOWN",
-                "eventTime": "2024-07-15T02:30:00Z",
-                "endTime": "2024-07-15T03:30:00Z",
-                "operator": "ops1",
-                "comment": "Vacuum low",
-                "lineId": "LINE-A",
-                "eqpId": "EQP-ALPHA",
-            },
-            {
-                "id": "EQP-ALPHA-003",
-                "logType": "EQP",
-                "eventType": "PM",
-                "eventTime": "2024-07-15T03:30:00Z",
-                "endTime": "2024-07-15T04:30:00Z",
-                "operator": "maintenance",
-                "comment": "Chamber clean",
-                "lineId": "LINE-A",
-                "eqpId": "EQP-ALPHA",
-            },
-            {
-                "id": "EQP-ALPHA-004",
-                "logType": "EQP",
-                "eventType": "IDLE",
-                "eventTime": "2024-07-15T04:30:00Z",
-                "endTime": "2024-07-15T05:30:00Z",
-                "operator": "ops1",
-                "comment": "Waiting for lot",
-                "lineId": "LINE-A",
-                "eqpId": "EQP-ALPHA",
-            },
-            {
-                "id": "EQP-ALPHA-005",
-                "logType": "EQP",
-                "eventType": "RUN",
-                "eventTime": "2024-07-15T05:30:00Z",
-                "endTime": "2024-07-15T08:30:00Z",
-                "operator": "system",
-                "comment": "Lot processing",
-                "lineId": "LINE-A",
-                "eqpId": "EQP-ALPHA",
-            },
-        ],
-        "tip": [
-            {
-                "id": "TIP-ALPHA-001",
-                "logType": "TIP",
-                "eventType": "OPEN",
-                "eventTime": "2024-07-15T01:00:00Z",
-                "operator": "kim",
-                "level": "MAJOR",
-                "comment": "Opened chamber for clean",
-                "url": "https://example.local/tip/TIP-ALPHA-001",
-                "lineId": "LINE-A",
-                "eqpId": "EQP-ALPHA",
-                "process": "ETCH",
-                "step": "STRIP",
-                "ppid": "ALP-STRIP-01",
-            },
-            {
-                "id": "TIP-ALPHA-002",
-                "logType": "TIP",
-                "eventType": "CLOSE",
-                "eventTime": "2024-07-15T02:15:00Z",
-                "operator": "kim",
-                "level": "INFO",
-                "comment": "Close after wipe down",
-                "url": "https://example.local/tip/TIP-ALPHA-002",
-                "lineId": "LINE-A",
-                "eqpId": "EQP-ALPHA",
-                "process": "ETCH",
-                "step": "STRIP",
-                "ppid": "ALP-STRIP-01",
-            },
-            {
-                "id": "TIP-ALPHA-003",
-                "logType": "TIP",
-                "eventType": "OPEN",
-                "eventTime": "2024-07-15T06:00:00Z",
-                "operator": "lee",
-                "level": "INFO",
-                "comment": "Recipe load for pilot lot",
-                "url": "https://example.local/tip/TIP-ALPHA-003",
-                "lineId": "LINE-A",
-                "eqpId": "EQP-ALPHA",
-                "process": "ETCH",
-                "step": "MAIN",
-                "ppid": "ALP-ETCH-05",
-            },
-            {
-                "id": "TIP-ALPHA-004",
-                "logType": "TIP",
-                "eventType": "CLOSE",
-                "eventTime": "2024-07-15T07:45:00Z",
-                "operator": "lee",
-                "level": "MINOR",
-                "comment": "Recipe completed",
-                "url": "https://example.local/tip/TIP-ALPHA-004",
-                "lineId": "LINE-A",
-                "eqpId": "EQP-ALPHA",
-                "process": "ETCH",
-                "step": "MAIN",
-                "ppid": "ALP-ETCH-05",
-            },
-        ],
-        "ctttm": [
-            {
-                "id": "CTTTM-ALPHA-001",
-                "logType": "CTTTM",
-                "eventType": "CBM",
-                "eventTime": "2024-07-15T03:45:00Z",
-                "operator": "kim",
-                "recipe": "ALP-ETCH-05",
-                "comment": "Cycle time trending high",
-                "duration": 12.5,
-                "lineId": "LINE-A",
-                "eqpId": "EQP-ALPHA",
-            },
-            {
-                "id": "CTTTM-ALPHA-002",
-                "logType": "CTTTM",
-                "eventType": "NSP",
-                "eventTime": "2024-07-15T07:15:00Z",
-                "operator": "lee",
-                "recipe": "ALP-ETCH-05",
-                "comment": "Exceeded target time",
-                "duration": 18.2,
-                "lineId": "LINE-A",
-                "eqpId": "EQP-ALPHA",
-            },
-        ],
-        "racb": [
-            {
-                "id": "RACB-ALPHA-001",
-                "logType": "RACB",
-                "eventType": "WARN",
-                "eventTime": "2024-07-15T04:05:00Z",
-                "operator": "monitor",
-                "comment": "Carrier slowed near load port",
-                "url": "https://example.local/racb/RACB-ALPHA-001",
-                "lineId": "LINE-A",
-                "eqpId": "EQP-ALPHA",
-            },
-            {
-                "id": "RACB-ALPHA-002",
-                "logType": "RACB",
-                "eventType": "ALARM",
-                "eventTime": "2024-07-15T08:05:00Z",
-                "operator": "monitor",
-                "comment": "Carrier collision",
-                "url": "https://example.local/racb/RACB-ALPHA-002",
-                "lineId": "LINE-A",
-                "eqpId": "EQP-ALPHA",
-            },
-        ],
-        "jira": [
-            {
-                "id": "JIRA-ALPHA-001",
-                "logType": "JIRA",
-                "eventType": "CREATE",
-                "eventTime": "2024-07-15T05:30:00Z",
-                "operator": "ops1",
-                "comment": "Opened investigation ticket",
-                "url": "https://jira.local/browse/OPS-100",
-                "lineId": "LINE-A",
-                "eqpId": "EQP-ALPHA",
-            }
-        ],
-        "event": [],
-    },
-    "EQP-BRAVO": {
-        "eqp": [
-            {
-                "id": "EQP-BRAVO-001",
-                "logType": "EQP",
-                "eventType": "RUN",
-                "eventTime": "2024-07-15T00:45:00Z",
-                "endTime": "2024-07-15T02:15:00Z",
-                "operator": "system",
-                "comment": "Lot processing",
-                "lineId": "LINE-A",
-                "eqpId": "EQP-BRAVO",
-            },
-            {
-                "id": "EQP-BRAVO-002",
-                "logType": "EQP",
-                "eventType": "DOWN",
-                "eventTime": "2024-07-15T02:15:00Z",
-                "endTime": "2024-07-15T03:45:00Z",
-                "operator": "ops2",
-                "comment": "Pressure alarm",
-                "lineId": "LINE-A",
-                "eqpId": "EQP-BRAVO",
-            },
-        ],
-        "tip": [],
-        "ctttm": [],
-        "racb": [],
-        "jira": [],
-        "event": [],
-    },
-    "EQP-CVD-01": {
-        "eqp": [
-            {
-                "id": "EQP-CVD-01-001",
-                "logType": "EQP",
-                "eventType": "RUN",
-                "eventTime": "2024-07-15T01:10:00Z",
-                "endTime": "2024-07-15T03:10:00Z",
-                "operator": "system",
-                "comment": "Recipe CVD-LINEA-01",
-                "lineId": "LINE-A",
-                "eqpId": "EQP-CVD-01",
-            },
-            {
-                "id": "EQP-CVD-01-002",
-                "logType": "EQP",
-                "eventType": "PM",
-                "eventTime": "2024-07-15T04:10:00Z",
-                "endTime": "2024-07-15T05:30:00Z",
-                "operator": "maintenance",
-                "comment": "Chamber clean",
-                "lineId": "LINE-A",
-                "eqpId": "EQP-CVD-01",
-            },
-        ],
-        "tip": [],
-        "ctttm": [],
-        "racb": [],
-        "jira": [],
-        "event": [],
-    },
-    "EQP-TEST-01": {
-        "eqp": [
-            {
-                "id": "EQP-TEST-01-001",
-                "logType": "EQP",
-                "eventType": "RUN",
-                "eventTime": "2024-07-15T02:00:00Z",
-                "endTime": "2024-07-15T04:00:00Z",
-                "operator": "system",
-                "comment": "Handler cycle",
-                "lineId": "LINE-B",
-                "eqpId": "EQP-TEST-01",
-            }
-        ],
-        "tip": [],
-        "ctttm": [],
-        "racb": [],
-        "jira": [],
-        "event": [],
-    },
-}
+    desired = {
+        "ENGINE": TIMELINE_DB_ENGINE,
+        "NAME": TIMELINE_DB_NAME,
+        "USER": TIMELINE_DB_USER,
+        "PASSWORD": TIMELINE_DB_PASSWORD,
+        "HOST": TIMELINE_DB_HOST,
+        "PORT": TIMELINE_DB_PORT,
+        "CONN_MAX_AGE": TIMELINE_DB_CONN_MAX_AGE,
+    }
+    connection = connections[TIMELINE_DB_ALIAS]
+    if any(connection.settings_dict.get(key) != value for key, value in desired.items()):
+        connection.close()
+        connection.settings_dict.update(desired)
+    return connection
+
+
+def _fetch_all(query: str, params: Sequence[object] | None = None) -> List[Dict[str, object]]:
+    """타임라인 DB에서 조회 결과를 dict 리스트로 반환합니다."""
+
+    with _get_timeline_connection().cursor() as cursor:
+        cursor.execute(query, params or [])
+        columns = [col[0] for col in (cursor.description or [])]
+        rows = cursor.fetchall()
+
+    return [dict(zip(columns, row)) for row in rows]
+
+
+def _fetch_one(query: str, params: Sequence[object] | None = None) -> Dict[str, object] | None:
+    """단일 행 조회를 반환합니다(없으면 None)."""
+
+    rows = _fetch_all(query, params)
+    return rows[0] if rows else None
+
+
+# =============================================================================
+# 공개 함수
+# =============================================================================
 
 
 def normalize_id(value: str | None) -> str:
@@ -370,25 +93,6 @@ def normalize_id(value: str | None) -> str:
     return (value or "").strip().upper()
 
 
-def _clone_items(items: List[Dict[str, object]]) -> List[Dict[str, object]]:
-    """더미 항목 리스트를 얕은 복사해 반환합니다.
-
-    입력:
-    - items: 원본 항목 리스트
-
-    반환:
-    - List[Dict[str, object]]: 복사된 항목 리스트
-
-    부작용:
-    - 없음(원본 보호)
-
-    오류:
-    - 없음
-    """
-
-    return [dict(item) for item in items]
-
-
 def list_lines() -> List[Dict[str, str]]:
     """라인 목록을 반환합니다.
 
@@ -399,13 +103,32 @@ def list_lines() -> List[Dict[str, str]]:
     - List[Dict[str, str]]: 라인 목록
 
     부작용:
-    - 없음(더미 데이터)
+    - 없음(DB 조회)
 
     오류:
-    - 없음
+    - DB 연결 실패 시 예외
     """
 
-    return _clone_items(LINE_LIST)
+    rows = _fetch_all(
+        """
+        select
+            line_id as id,
+            name as name
+        from line_list
+        order by name
+        """
+    )
+    results: List[Dict[str, str]] = []
+    for row in rows:
+        if row.get("id") is None:
+            continue
+        results.append(
+            {
+                "id": _safe_text(row.get("id")),
+                "name": _safe_text(row.get("name")),
+            }
+        )
+    return results
 
 
 def list_sdwt_for_line(*, line_id: str) -> List[Dict[str, str]]:
@@ -418,14 +141,37 @@ def list_sdwt_for_line(*, line_id: str) -> List[Dict[str, str]]:
     - List[Dict[str, str]]: SDWT 목록
 
     부작용:
-    - 없음(더미 데이터)
+    - 없음(DB 조회)
 
     오류:
-    - 없음
+    - DB 연결 실패 시 예외
     """
 
     line_key = normalize_id(line_id)
-    return _clone_items(SDWT_MAP.get(line_key, []))
+    rows = _fetch_all(
+        """
+        select distinct
+            sdwt_prod as id
+        from sdwt_eqp
+        where line_id = %s
+          and sdwt_prod is not null
+        order by sdwt_prod
+        """,
+        [line_key],
+    )
+
+    results: List[Dict[str, str]] = []
+    for row in rows:
+        if row.get("id") is None:
+            continue
+        results.append(
+            {
+                "id": _safe_text(row.get("id")),
+                "lineId": line_key,
+                "name": _safe_text(row.get("id")),
+            }
+        )
+    return results
 
 
 def list_prc_groups(*, line_id: str, sdwt_id: str) -> List[Dict[str, str]]:
@@ -439,15 +185,38 @@ def list_prc_groups(*, line_id: str, sdwt_id: str) -> List[Dict[str, str]]:
     - List[Dict[str, str]]: PRC 그룹 목록
 
     부작용:
-    - 없음(더미 데이터)
+    - 없음(DB 조회)
 
     오류:
-    - 없음
+    - DB 연결 실패 시 예외
     """
 
     line_key = normalize_id(line_id)
     sdwt_key = normalize_id(sdwt_id)
-    return _clone_items(PRC_GROUPS.get((line_key, sdwt_key), []))
+    rows = _fetch_all(
+        """
+        select distinct
+            prc_group as id
+        from sdwt_eqp
+        where line_id = %s
+          and sdwt_prod = %s
+          and prc_group is not null
+        order by prc_group
+        """,
+        [line_key, sdwt_key],
+    )
+
+    results: List[Dict[str, str]] = []
+    for row in rows:
+        if row.get("id") is None:
+            continue
+        results.append(
+            {
+                "id": _safe_text(row.get("id")),
+                "name": _safe_text(row.get("id")),
+            }
+        )
+    return results
 
 
 def list_equipments(*, line_id: str, sdwt_id: str, prc_group: str) -> List[Dict[str, str]]:
@@ -462,16 +231,52 @@ def list_equipments(*, line_id: str, sdwt_id: str, prc_group: str) -> List[Dict[
     - List[Dict[str, str]]: 설비 목록
 
     부작용:
-    - 없음(더미 데이터)
+    - 없음(DB 조회)
 
     오류:
-    - 없음
+    - DB 연결 실패 시 예외
     """
 
     line_key = normalize_id(line_id)
     sdwt_key = normalize_id(sdwt_id)
     prc_key = normalize_id(prc_group)
-    return _clone_items(EQUIPMENTS.get((line_key, sdwt_key, prc_key), []))
+    sql = """
+        select distinct
+            eqp_cb as id,
+            line_id as line_id,
+            sdwt_prod as sdwt_prod,
+            prc_group as prc_group
+        from sdwt_eqp
+        where line_id = %s
+          and eqp_cb is not null
+    """
+    params: List[object] = [line_key]
+
+    if sdwt_key:
+        sql += " and sdwt_prod = %s"
+        params.append(sdwt_key)
+
+    if prc_key:
+        sql += " and prc_group = %s"
+        params.append(prc_key)
+
+    sql += " order by eqp_cb"
+    rows = _fetch_all(sql, params)
+
+    results: List[Dict[str, str]] = []
+    for row in rows:
+        if row.get("id") is None:
+            continue
+        results.append(
+            {
+                "id": _safe_text(row.get("id")),
+                "lineId": _safe_text(row.get("line_id")),
+                "sdwtId": _safe_text(row.get("sdwt_prod")),
+                "prcGroup": _safe_text(row.get("prc_group")),
+                "name": _safe_text(row.get("id")),
+            }
+        )
+    return results
 
 
 def get_equipment_info(*, eqp_id: str) -> Dict[str, str] | None:
@@ -484,17 +289,220 @@ def get_equipment_info(*, eqp_id: str) -> Dict[str, str] | None:
     - Dict[str, str] | None: 설비 메타데이터(없으면 None)
 
     부작용:
-    - 없음(더미 데이터)
+    - 없음(DB 조회)
 
     오류:
-    - 없음
+    - DB 연결 실패 시 예외
     """
 
     eqp_key = normalize_id(eqp_id)
-    info = EQUIPMENT_INFO.get(eqp_key)
-    if not info:
+    row = _fetch_one(
+        """
+        select distinct
+            eqp_cb as id,
+            line_id as line_id,
+            sdwt_prod as sdwt_prod,
+            prc_group as prc_group
+        from sdwt_eqp
+        where eqp_cb = %s
+        limit 1
+        """,
+        [eqp_key],
+    )
+
+    if not row:
         return None
-    return dict(info)
+
+    return {
+        "id": _safe_text(row.get("id")),
+        "lineId": _safe_text(row.get("line_id")),
+        "sdwtId": _safe_text(row.get("sdwt_prod")),
+        "prcGroup": _safe_text(row.get("prc_group")),
+    }
+
+
+def _fetch_eqp_logs(*, eqp_id: str) -> List[Dict[str, object]]:
+    query_date = datetime.strftime(datetime.now() - timedelta(days=90), "%Y-%m-%d")
+    rows = _fetch_all(
+        """
+        select
+            concat('EQP-', row_number() over (order by event_time)) as id,
+            eqp_cb as eqp_cb,
+            'EQP' as log_type,
+            event_type as event_type,
+            event_time as event_time,
+            operator as operator,
+            comment as comment
+        from eqp_status_hist
+        where event_time > %s
+          and eqp_cb = %s
+        order by event_time
+        """,
+        [query_date, eqp_id],
+    )
+
+    return [
+        {
+            "id": row.get("id"),
+            "eqpId": row.get("eqp_cb"),
+            "logType": row.get("log_type"),
+            "eventType": row.get("event_type"),
+            "eventTime": row.get("event_time"),
+            "operator": row.get("operator"),
+            "comment": row.get("comment"),
+        }
+        for row in rows
+    ]
+
+
+def _fetch_tip_logs(*, eqp_id: str) -> List[Dict[str, object]]:
+    rows = _fetch_all(
+        """
+        select
+            tip_log_id as id,
+            event_type as event_type,
+            event_time as event_time,
+            operator as operator,
+            level as level,
+            comment as comment,
+            url as url,
+            line_id as line_id,
+            eqp_id as eqp_id,
+            process as process,
+            step as step,
+            ppid as ppid
+        from gpm_tip_hist
+        where eqp_id = %s
+        order by event_time
+        """,
+        [eqp_id],
+    )
+
+    return [
+        {
+            "id": row.get("id"),
+            "logType": "TIP",
+            "eventType": row.get("event_type"),
+            "eventTime": row.get("event_time"),
+            "operator": row.get("operator"),
+            "level": row.get("level"),
+            "comment": row.get("comment"),
+            "url": row.get("url"),
+            "lineId": row.get("line_id"),
+            "eqpId": row.get("eqp_id"),
+            "process": row.get("process"),
+            "step": row.get("step"),
+            "ppid": row.get("ppid"),
+        }
+        for row in rows
+    ]
+
+
+def _fetch_ctttm_logs(*, eqp_id: str) -> List[Dict[str, object]]:
+    rows = _fetch_all(
+        """
+        select
+            ctttm_log_id as id,
+            event_type as event_type,
+            event_time as event_time,
+            operator as operator,
+            recipe as recipe,
+            comment as comment,
+            duration as duration,
+            line_id as line_id,
+            eqp_id as eqp_id
+        from ctttm_workorder_list
+        where eqp_id = %s
+        order by event_time
+        """,
+        [eqp_id],
+    )
+
+    return [
+        {
+            "id": row.get("id"),
+            "logType": "CTTTM",
+            "eventType": row.get("event_type"),
+            "eventTime": row.get("event_time"),
+            "operator": row.get("operator"),
+            "recipe": row.get("recipe"),
+            "comment": row.get("comment"),
+            "duration": row.get("duration"),
+            "lineId": row.get("line_id"),
+            "eqpId": row.get("eqp_id"),
+        }
+        for row in rows
+    ]
+
+
+def _fetch_racb_logs(*, eqp_id: str) -> List[Dict[str, object]]:
+    rows = _fetch_all(
+        """
+        select
+            racb_log_id as id,
+            event_type as event_type,
+            event_time as event_time,
+            operator as operator,
+            comment as comment,
+            line_id as line_id,
+            eqp_id as eqp_id
+        from racb_hist
+        where eqp_id = %s
+        order by event_time
+        """,
+        [eqp_id],
+    )
+
+    return [
+        {
+            "id": row.get("id"),
+            "logType": "RACB",
+            "eventType": row.get("event_type"),
+            "eventTime": row.get("event_time"),
+            "operator": row.get("operator"),
+            "comment": row.get("comment"),
+            "lineId": row.get("line_id"),
+            "eqpId": row.get("eqp_id"),
+        }
+        for row in rows
+    ]
+
+
+def _fetch_jira_logs(*, eqp_id: str) -> List[Dict[str, object]]:
+    rows = _fetch_all(
+        """
+        select
+            jira_log_id as id,
+            event_type as event_type,
+            event_time as event_time,
+            operator as operator,
+            status as status,
+            comment as comment,
+            jira_key as jira_key,
+            line_id as line_id,
+            eqp_id as eqp_id
+        from ein_ecn
+        where eqp_id = %s
+        order by event_time
+        """,
+        [eqp_id],
+    )
+
+    return [
+        {
+            "id": row.get("id"),
+            "logType": "JIRA",
+            "eventType": row.get("event_type"),
+            "eventTime": row.get("event_time"),
+            "operator": row.get("operator"),
+            "status": row.get("status"),
+            "comment": row.get("comment"),
+            "jiraKey": row.get("jira_key"),
+            "lineId": row.get("line_id"),
+            "eqpId": row.get("eqp_id"),
+        }
+        for row in rows
+    ]
 
 
 def get_logs_for_equipment(*, eqp_id: str) -> Dict[str, List[Dict[str, object]]]:
@@ -507,15 +515,21 @@ def get_logs_for_equipment(*, eqp_id: str) -> Dict[str, List[Dict[str, object]]]
     - Dict[str, List[Dict[str, object]]]: 타입별 로그 묶음
 
     부작용:
-    - 없음(더미 데이터)
+    - 없음(DB 조회)
 
     오류:
-    - 없음
+    - DB 연결 실패 시 예외
     """
 
     eqp_key = normalize_id(eqp_id)
-    logs = LOGS.get(eqp_key, {})
-    return {key: _clone_items(values) for key, values in logs.items()}
+    return {
+        "eqp": _fetch_eqp_logs(eqp_id=eqp_key),
+        "tip": _fetch_tip_logs(eqp_id=eqp_key),
+        "ctttm": _fetch_ctttm_logs(eqp_id=eqp_key),
+        "racb": _fetch_racb_logs(eqp_id=eqp_key),
+        "jira": _fetch_jira_logs(eqp_id=eqp_key),
+        "event": [],
+    }
 
 
 def get_logs_by_type(*, eqp_id: str, log_key: str) -> List[Dict[str, object]]:
@@ -529,15 +543,27 @@ def get_logs_by_type(*, eqp_id: str, log_key: str) -> List[Dict[str, object]]:
     - List[Dict[str, object]]: 타입별 로그 목록
 
     부작용:
-    - 없음(더미 데이터)
+    - 없음(DB 조회)
 
     오류:
-    - 없음
+    - DB 연결 실패 시 예외
     """
 
     eqp_key = normalize_id(eqp_id)
     type_key = (log_key or "").strip().lower()
-    return _clone_items(LOGS.get(eqp_key, {}).get(type_key, []))
+
+    if type_key == "eqp":
+        return _fetch_eqp_logs(eqp_id=eqp_key)
+    if type_key == "tip":
+        return _fetch_tip_logs(eqp_id=eqp_key)
+    if type_key == "ctttm":
+        return _fetch_ctttm_logs(eqp_id=eqp_key)
+    if type_key == "racb":
+        return _fetch_racb_logs(eqp_id=eqp_key)
+    if type_key == "jira":
+        return _fetch_jira_logs(eqp_id=eqp_key)
+
+    return []
 
 
 def get_merged_logs(*, eqp_id: str) -> List[Dict[str, object]]:
@@ -550,17 +576,16 @@ def get_merged_logs(*, eqp_id: str) -> List[Dict[str, object]]:
     - List[Dict[str, object]]: eventTime 기준 정렬된 로그 목록
 
     부작용:
-    - 없음(더미 데이터)
+    - 없음(DB 조회)
 
     오류:
-    - 없음
+    - DB 연결 실패 시 예외
     """
 
     eqp_key = normalize_id(eqp_id)
-    eqp_logs = LOGS.get(eqp_key, {})
     merged: List[Dict[str, object]] = []
     for key in ("eqp", "tip", "ctttm", "racb", "jira", "event"):
-        merged.extend(_clone_items(eqp_logs.get(key, [])))
+        merged.extend(get_logs_by_type(eqp_id=eqp_key, log_key=key))
 
     merged.sort(key=lambda log: str(log.get("eventTime") or ""))
     return merged
@@ -569,6 +594,7 @@ def get_merged_logs(*, eqp_id: str) -> List[Dict[str, object]]:
 __all__ = [
     "get_equipment_info",
     "get_logs_by_type",
+    "get_logs_for_equipment",
     "get_merged_logs",
     "list_equipments",
     "list_lines",
