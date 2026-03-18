@@ -14,19 +14,27 @@
   --timeline-tooltip-text: var(--popover-foreground);
 
   /* Palette 기반 컬러 선택 */
-  /* Active/Run */
+  /* 가동/런 */
   --timeline-palette-active: hsl(246, 100%, 50%);
-  /* Accent/Open */
+  /* 강조/오픈 */
   --timeline-palette-accent: hsl(123, 78%, 62%);
-  /* Maintenance/Idle */
+  /* 유지보수/유휴 */
   --timeline-palette-maintenance: hsl(84 65% 60%);
-  /* Warning/PM */
+  /* 경고/PM */
   --timeline-palette-caution: hsl(35 92% 61%);
-  /* Highlight */
+  /* 강조 하이라이트 */
   --timeline-palette-highlight: hsl(14 88% 58%);
-  /* Neutral */
+  /* 정보 */
+  --timeline-palette-info: hsl(198 82% 56%);
+  /* 성공 */
+  --timeline-palette-success: hsl(152 62% 48%);
+  /* 보라 */
+  --timeline-palette-violet: hsl(268 72% 60%);
+  /* 청록 */
+  --timeline-palette-teal: hsl(186 62% 52%);
+  /* 중립 */
   --timeline-palette-neutral: hsl(220 9% 72%);
-  /* Critical */
+  /* 치명 */
   --timeline-palette-critical: hsl(358 72% 52%);
 
 
@@ -36,6 +44,10 @@
     --timeline-palette-maintenance: hsl(88 60% 64%);
     --timeline-palette-caution: hsl(35 92% 66%);
     --timeline-palette-highlight: hsl(20 90% 64%);
+    --timeline-palette-info: hsl(198 90% 68%);
+    --timeline-palette-success: hsl(152 60% 58%);
+    --timeline-palette-violet: hsl(268 80% 72%);
+    --timeline-palette-teal: hsl(186 70% 62%);
     --timeline-palette-neutral: hsl(220 10% 58%);
     --timeline-palette-critical: hsl(358 70% 60%);
   }
@@ -51,9 +63,9 @@
   --timeline-tip-close: var(--timeline-palette-critical);
   --timeline-racb-alarm: var(--timeline-palette-critical);
   --timeline-racb-warn: var(--timeline-palette-caution);
-  --timeline-ctttm-cbm: var(--timeline-palette-active);
-  --timeline-ctttm-nsp: var(--timeline-palette-highlight);
-  --timeline-jira-issued: var(--timeline-palette-accent);
+  --timeline-ctttm-cbm: var(--timeline-palette-info);
+  --timeline-ctttm-nsp: var(--timeline-palette-violet);
+  --timeline-jira-issued: var(--timeline-palette-teal);
   --timeline-jira-closed: color-mix(in hsl, var(--timeline-palette-neutral) 78%, transparent);
   --timeline-foreground-strong: var(--primary-foreground);
 }

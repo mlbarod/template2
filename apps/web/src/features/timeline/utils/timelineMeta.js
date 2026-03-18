@@ -14,8 +14,14 @@ export const groupConfig = {
   },
   TIP: {
     stateClasses: {
-      OPEN: "timeline-color-tip-open",
-      CLOSE: "timeline-color-tip-close",
+      L1_CNT: "timeline-color-tip-open",
+      L2_CNT: "timeline-color-tip-open",
+      L3_CNT: "timeline-color-tip-open",
+      DOING: "timeline-color-tip-open",
+
+      L1_TIP: "timeline-color-tip-close",
+      L1_TIP: "timeline-color-tip-close",
+      L1_TIP: "timeline-color-tip-close",
     },
   },
   RACB: {

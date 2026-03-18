@@ -491,11 +491,22 @@ def _build_drone_sop_pending_filter() -> Q:
     )
 
 
+def _build_drone_sop_any_informed_filter() -> Q:
+    """고정 3채널 중 하나라도 전송 완료(send=1)인 필터를 구성합니다."""
+
+    return Q(send_jira=1) | Q(send_messenger=1) | Q(send_mail=1)
+
+
 def _drone_sop_pipeline_candidates_queryset() -> QuerySet[DroneSOP]:
     """고정 3채널 기준 DroneSOP 후보 QuerySet을 구성합니다."""
 
     send_pending = _build_drone_sop_pending_filter()
-    return DroneSOP.objects.filter(send_pending).filter(_drone_sop_eligible_filter())
+    already_informed = _build_drone_sop_any_informed_filter()
+    return (
+        DroneSOP.objects.filter(send_pending)
+        .exclude(already_informed)
+        .filter(_drone_sop_eligible_filter())
+    )
 
 
 def _list_candidate_rows(

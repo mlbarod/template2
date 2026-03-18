@@ -217,8 +217,8 @@ def list_prc_groups(*, line_id: str, sdwt_id: str) -> List[Dict[str, str]]:
         select distinct
             prc_group as id
         from sdwt_eqp
-        where line_id = %s
-          and sdwt_prod = %s
+        where upper(line_id) = %s
+          and upper(sdwt_prod) = %s
           and prc_group is not null
         order by prc_group
         """,
@@ -266,17 +266,17 @@ def list_equipments(*, line_id: str, sdwt_id: str, prc_group: str) -> List[Dict[
             sdwt_prod as sdwt_prod,
             prc_group as prc_group
         from sdwt_eqp
-        where line_id = %s
+        where upper(line_id) = %s
           and eqp_cb is not null
     """
     params: List[object] = [line_key]
 
     if sdwt_key:
-        sql += " and sdwt_prod = %s"
+        sql += " and upper(sdwt_prod) = %s"
         params.append(sdwt_key)
 
     if prc_key:
-        sql += " and prc_group = %s"
+        sql += " and upper(prc_group) = %s"
         params.append(prc_key)
 
     sql += " order by eqp_cb"
@@ -378,39 +378,6 @@ def _fetch_tip_logs(*, eqp_id: str) -> List[Dict[str, object]]:
     query_date = _period_date()
     rows = _fetch_all(
         """
-        with base as (
-            select distinct
-                case
-                    when tip_chamber_id is null then eqp_id
-                    when tip_chamber_id like '%-%' or tip_chamber_id like '%MAIN%' then eqp_id
-                    else concat(eqp_id, '-', tip_chamber_id)
-                end as eqp_cb,
-                case
-                    when concat(coalesce(tip_type, ''), '/', coalesce(tip_chg_type, ''), '/', coalesce(tip_level, ''))
-                        = 'PREVENT/TIP_OCCUR/LEVEL1' then 'L1_TIP'
-                    when concat(coalesce(tip_type, ''), '/', coalesce(tip_chg_type, ''), '/', coalesce(tip_level, ''))
-                        = 'PREVENT/TIP_RELEASE/LEVEL1' then 'L1_CNT'
-                    when concat(coalesce(tip_type, ''), '/', coalesce(tip_chg_type, ''), '/', coalesce(tip_level, ''))
-                        = 'DOING/TIP_RELEASE/LEVEL1' then 'DOING'
-                    when concat(coalesce(tip_type, ''), '/', coalesce(tip_chg_type, ''), '/', coalesce(tip_level, ''))
-                        = 'PREVENT/TIP_OCCUR/LEVEL2' then 'L2_TIP'
-                    when concat(coalesce(tip_type, ''), '/', coalesce(tip_chg_type, ''), '/', coalesce(tip_level, ''))
-                        = 'PREVENT/TIP_RELEASE/LEVEL2' then 'L2_CNT'
-                    when concat(coalesce(tip_type, ''), '/', coalesce(tip_chg_type, ''), '/', coalesce(tip_level, ''))
-                        = 'PREVENT/TIP_OCCUR/LEVEL3' then 'L3_TIP'
-                    when concat(coalesce(tip_type, ''), '/', coalesce(tip_chg_type, ''), '/', coalesce(tip_level, ''))
-                        = 'PREVENT/TIP_RELEASE/LEVEL3' then 'L3_CNT'
-                    else 'unknown'
-                end as event_type,
-                gpm_update_date,
-                register_name,
-                tip_comment,
-                line_id,
-                process_id,
-                step_seq,
-                ppid
-            from gpm_tip_hist
-        )
         select
             concat('TIP-', row_number() over (order by gpm_update_date)) as id,
             eqp_cb as eqp_cb,
@@ -423,7 +390,7 @@ def _fetch_tip_logs(*, eqp_id: str) -> List[Dict[str, object]]:
             process_id as process,
             step_seq as step,
             ppid as ppid
-        from base
+        from gpm_tip_hist
         where gpm_update_date > %s
           and eqp_cb = %s
         order by gpm_update_date
@@ -480,10 +447,10 @@ def _fetch_ctttm_logs(*, eqp_id: str) -> List[Dict[str, object]]:
         summary_rows = _fetch_all(
             """
             select
-                wono as id,
+                workorder_id as id,
                 llm_summary_body as summary
             from llm_ctttm
-            where wono = any(%s)
+            where workorder_id = any(%s)
             """,
             [workorder_ids],
         )
@@ -514,19 +481,19 @@ def _fetch_racb_logs(*, eqp_id: str) -> List[Dict[str, object]]:
     rows = _fetch_all(
         """
         select
-            racb_log_id as id,
-            event_type as event_type,
-            event_time as event_time,
-            operator as operator,
-            comment as comment,
+            CONCAT(line_id, '-', eqp_cb, '-' , create_date, '-', 'update_date' ) as id,
+            detail_type as event_type,
+            create_date as event_time,
+            user_name as operator,
+            title as comment,
             line_id as line_id,
-            eqp_id as eqp_id
+            eqp_cb as eqp_cb
         from racb_hist
-        where eqp_id = %s
-          and event_time > %s
-        order by event_time
+        where eqp_cb = %s
+          and create_date > %s
+        order by create_date
         """,
-        [eqp_id, period],
+        [eqp_cb, period],
     )
 
     return [

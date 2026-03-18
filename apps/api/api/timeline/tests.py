@@ -33,10 +33,26 @@ class TimelineEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(isinstance(response.json(), list))
 
+    def test_timeline_prc_groups_is_case_insensitive(self) -> None:
+        response = self.client.get(
+            reverse("timeline-prc-groups"),
+            {"lineId": "line-a", "sdwtId": "sd-10"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(isinstance(response.json(), list))
+
     def test_timeline_equipments_returns_results(self) -> None:
         response = self.client.get(
             reverse("timeline-equipments"),
             {"lineId": "LINE-A", "sdwtId": "SD-10", "prcGroup": "ETCH"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(isinstance(response.json(), list))
+
+    def test_timeline_equipments_is_case_insensitive(self) -> None:
+        response = self.client.get(
+            reverse("timeline-equipments"),
+            {"lineId": "line-a", "sdwtId": "sd-10", "prcGroup": "etch"},
         )
         self.assertEqual(response.status_code, 200)
         self.assertTrue(isinstance(response.json(), list))

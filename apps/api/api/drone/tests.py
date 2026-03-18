@@ -1640,6 +1640,49 @@ class DroneSopInformPolicyTests(TestCase):
         self.assertEqual(refreshed.mail_reason, "target_missing")
         self.assertEqual(refreshed.instant_inform, 1)
 
+    @override_settings(
+        DRONE_JIRA_BASE_URL="http://example.local/jira",
+        DRONE_MAIL_SENDER="sender@example.com",
+    )
+    @patch.dict(
+        os.environ,
+        {
+            "KNOX_MESSENGER_API_BASE_URL": "http://example.local/messenger/",
+            "KNOX_MESSENGER_AUTHORIZATION": "dummy-auth",
+            "KNOX_MESSENGER_SYSTEM_ID": "dummy-system",
+        },
+    )
+    @patch("api.drone.services.inform.sop_inform.send_drone_sop_messenger_message")
+    @patch("api.drone.services.inform.sop_inform.send_drone_sop_mail")
+    def test_inform_skips_rows_when_any_channel_already_sent(
+        self,
+        mock_mail: Mock,
+        mock_messenger: Mock,
+    ) -> None:
+        """한 채널이라도 전송 완료면 SOP 전체를 후보에서 제외하는지 확인합니다."""
+        DroneSopUserSdwtChannel.objects.create(
+            target_user_sdwt_prod="SDWT1",
+            messenger_template_key="common",
+            mail_template_key="common",
+            chatroom_id=12345,
+        )
+        _create_drone_sop(
+            sdwt_prod="SDWT1",
+            user_sdwt_prod="SDWT1",
+            send_jira=1,
+            send_messenger=0,
+            send_mail=0,
+            instant_inform=1,
+            metro_current_step="ST001",
+        )
+
+        result = services.run_drone_sop_pipeline_from_env()
+        self.assertEqual(result.candidates, 0)
+        self.assertTrue(result.skipped)
+        self.assertEqual(result.skip_reason, "no_candidates")
+        mock_messenger.assert_not_called()
+        mock_mail.assert_not_called()
+
     def test_inform_persists_target_for_non_jira_pending_channel(self) -> None:
         """Jira 미대상 행도 target_user_sdwt_prod가 저장되는지 확인합니다."""
         sop = _create_drone_sop(
@@ -1647,7 +1690,7 @@ class DroneSopInformPolicyTests(TestCase):
             user_sdwt_prod="SDWT1",
             send_jira=-1,
             send_messenger=0,
-            send_mail=1,
+            send_mail=-1,
             instant_inform=1,
             metro_current_step="ST001",
         )
@@ -1665,8 +1708,8 @@ class DroneSopInformPolicyTests(TestCase):
         sop = _create_drone_sop(
             sdwt_prod="SDWT1",
             user_sdwt_prod="SDWT1",
-            send_messenger=1,
-            send_mail=1,
+            send_messenger=-1,
+            send_mail=-1,
             instant_inform=1,
             metro_current_step="ST001",
         )
@@ -1678,8 +1721,8 @@ class DroneSopInformPolicyTests(TestCase):
         self.assertEqual(refreshed.send_jira, -1)
         self.assertEqual(refreshed.jira_reason, "config_missing")
         self.assertEqual(refreshed.instant_inform, 1)
-        self.assertEqual(refreshed.send_messenger, 1)
-        self.assertEqual(refreshed.send_mail, 1)
+        self.assertEqual(refreshed.send_messenger, -1)
+        self.assertEqual(refreshed.send_mail, -1)
 
     @override_settings(
         DRONE_JIRA_BASE_URL="",
@@ -1697,8 +1740,8 @@ class DroneSopInformPolicyTests(TestCase):
         sop = _create_drone_sop(
             sdwt_prod="SDWT1",
             user_sdwt_prod="SDWT1",
-            send_messenger=1,
-            send_mail=1,
+            send_messenger=-1,
+            send_mail=-1,
             instant_inform=1,
             metro_current_step="ST001",
         )
@@ -1721,8 +1764,8 @@ class DroneSopInformPolicyTests(TestCase):
         sop = _create_drone_sop(
             sdwt_prod="SDWT1",
             user_sdwt_prod="SDWT1",
-            send_jira=1,
-            send_messenger=1,
+            send_jira=-1,
+            send_messenger=-1,
             send_mail=0,
             metro_current_step="ST001",
         )
@@ -1733,8 +1776,8 @@ class DroneSopInformPolicyTests(TestCase):
         refreshed = DroneSOP.objects.get(id=sop.id)
         self.assertEqual(refreshed.send_mail, -1)
         self.assertEqual(refreshed.mail_reason, "config_missing")
-        self.assertEqual(refreshed.send_jira, 1)
-        self.assertEqual(refreshed.send_messenger, 1)
+        self.assertEqual(refreshed.send_jira, -1)
+        self.assertEqual(refreshed.send_messenger, -1)
 
     @override_settings(
         DRONE_JIRA_BASE_URL="http://example.local/jira",
@@ -1758,8 +1801,8 @@ class DroneSopInformPolicyTests(TestCase):
             main_step="MS",
             status="COMPLETE",
             needtosend=1,
-            send_jira=1,
-            send_messenger=1,
+            send_jira=-1,
+            send_messenger=-1,
             send_mail=0,
             metro_current_step="ST001",
         )
@@ -1795,9 +1838,9 @@ class DroneSopInformPolicyTests(TestCase):
             main_step="MS",
             status="COMPLETE",
             needtosend=1,
-            send_jira=1,
+            send_jira=-1,
             send_messenger=0,
-            send_mail=1,
+            send_mail=-1,
             metro_current_step="ST001",
         )
 
@@ -1807,8 +1850,8 @@ class DroneSopInformPolicyTests(TestCase):
         refreshed = DroneSOP.objects.get(id=sop.id)
         self.assertEqual(refreshed.send_messenger, -1)
         self.assertEqual(refreshed.messenger_reason, "channel_config_missing")
-        self.assertEqual(refreshed.send_jira, 1)
-        self.assertEqual(refreshed.send_mail, 1)
+        self.assertEqual(refreshed.send_jira, -1)
+        self.assertEqual(refreshed.send_mail, -1)
 
     @override_settings(
         DRONE_JIRA_BASE_URL="http://example.local/jira",
@@ -1835,9 +1878,9 @@ class DroneSopInformPolicyTests(TestCase):
             main_step="MS",
             status="COMPLETE",
             needtosend=1,
-            send_jira=1,
+            send_jira=-1,
             send_messenger=0,
-            send_mail=1,
+            send_mail=-1,
             metro_current_step="ST001",
         )
         DroneSopUserSdwtChannel.objects.create(
@@ -1878,9 +1921,9 @@ class DroneSopInformPolicyTests(TestCase):
             main_step="MS",
             status="COMPLETE",
             needtosend=1,
-            send_jira=1,
+            send_jira=-1,
             send_messenger=0,
-            send_mail=1,
+            send_mail=-1,
             metro_current_step="ST001",
         )
         DroneSopUserSdwtChannel.objects.create(
@@ -1921,9 +1964,9 @@ class DroneSopInformPolicyTests(TestCase):
             main_step="MS",
             status="COMPLETE",
             needtosend=1,
-            send_jira=1,
+            send_jira=-1,
             send_messenger=0,
-            send_mail=1,
+            send_mail=-1,
             metro_current_step="ST001",
         )
         DroneSopUserSdwtChannel.objects.create(
@@ -1967,8 +2010,8 @@ class DroneSopInformPolicyTests(TestCase):
             status="COMPLETE",
             needtosend=1,
             send_jira=0,
-            send_messenger=1,
-            send_mail=1,
+            send_messenger=-1,
+            send_mail=-1,
             metro_current_step="ST001",
         )
 
@@ -2009,8 +2052,8 @@ class DroneSopInformPolicyTests(TestCase):
             status="COMPLETE",
             needtosend=1,
             send_jira=0,
-            send_messenger=1,
-            send_mail=1,
+            send_messenger=-1,
+            send_mail=-1,
             metro_current_step="ST001",
         )
 
@@ -2061,7 +2104,7 @@ class DroneSopInformPolicyTests(TestCase):
             needtosend=1,
             send_jira=0,
             send_messenger=0,
-            send_mail=1,
+            send_mail=-1,
             metro_current_step="ST001",
         )
 
@@ -2106,8 +2149,8 @@ class DroneSopInformPolicyTests(TestCase):
             main_step="MS",
             status="COMPLETE",
             needtosend=1,
-            send_jira=1,
-            send_messenger=1,
+            send_jira=-1,
+            send_messenger=-1,
             send_mail=0,
             metro_current_step="ST001",
         )
@@ -2152,9 +2195,9 @@ class DroneSopInformPolicyTests(TestCase):
             main_step="MS",
             status="COMPLETE",
             needtosend=1,
-            send_jira=1,
+            send_jira=-1,
             send_messenger=0,
-            send_mail=1,
+            send_mail=-1,
             metro_current_step="ST001",
         )
 
@@ -2189,8 +2232,8 @@ class DroneSopInformPolicyTests(TestCase):
             main_step="MS",
             status="COMPLETE",
             needtosend=1,
-            send_jira=1,
-            send_messenger=1,
+            send_jira=-1,
+            send_messenger=-1,
             send_mail=0,
             metro_current_step="ST001",
         )
@@ -2261,9 +2304,9 @@ class DroneSopInformPolicyTests(TestCase):
             main_step="MS",
             status="COMPLETE",
             needtosend=1,
-            send_jira=1,
+            send_jira=-1,
             send_messenger=0,
-            send_mail=1,
+            send_mail=-1,
             metro_current_step="ST001",
         )
 
@@ -2361,9 +2404,9 @@ class DroneSopInformPolicyTests(TestCase):
             main_step="MS",
             status="COMPLETE",
             needtosend=1,
-            send_jira=1,
+            send_jira=-1,
             send_messenger=0,
-            send_mail=1,
+            send_mail=-1,
             metro_current_step="ST001",
         )
         sop_2 = DroneSOP.objects.create(
@@ -2376,9 +2419,9 @@ class DroneSopInformPolicyTests(TestCase):
             main_step="MS",
             status="COMPLETE",
             needtosend=1,
-            send_jira=1,
+            send_jira=-1,
             send_messenger=0,
-            send_mail=1,
+            send_mail=-1,
             metro_current_step="ST001",
         )
 
@@ -2439,9 +2482,9 @@ class DroneSopInformPolicyTests(TestCase):
             main_step="MS",
             status="COMPLETE",
             needtosend=1,
-            send_jira=1,
+            send_jira=-1,
             send_messenger=0,
-            send_mail=1,
+            send_mail=-1,
             metro_current_step="ST001",
         )
 

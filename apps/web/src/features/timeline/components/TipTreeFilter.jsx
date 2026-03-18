@@ -154,7 +154,7 @@ export default function TipTreeFilter({
 
     if (isAllSelected && !checked) {
       newIsAllSelected = false;
-      getAllPpidKeys().forEach((key) => newSelectedPpids.add(key));
+      getAllPpidKeys(tree).forEach((key) => newSelectedPpids.add(key));
     }
 
     // 노드 타입에 따라 처리
@@ -221,7 +221,7 @@ export default function TipTreeFilter({
     }
 
     // 모든 ppid가 선택되었는지 확인
-    if (newSelectedPpids.size === getAllPpidKeys().length) {
+    if (newSelectedPpids.size === getAllPpidKeys(tree).length) {
       newIsAllSelected = true;
       newSelectedPpids.clear();
       newExcludePwq = false;
