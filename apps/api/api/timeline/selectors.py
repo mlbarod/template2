@@ -482,18 +482,18 @@ def _fetch_racb_logs(*, eqp_id: str) -> List[Dict[str, object]]:
         """
         select
             CONCAT(line_id, '-', eqp_cb, '-' , create_date, '-', 'update_date' ) as id,
-            detail_type as event_type,
+            racb_type_cd as event_type,
             create_date as event_time,
             user_name as operator,
             title as comment,
             line_id as line_id,
             eqp_cb as eqp_cb
-        from racb_hist
+        from racb_list
         where eqp_cb = %s
           and create_date > %s
         order by create_date
         """,
-        [eqp_cb, period],
+        [eqp_id, period],
     )
 
     return [

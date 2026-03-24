@@ -3,12 +3,12 @@ import { LinkIcon } from "@heroicons/react/24/outline";
 import { useTimelineSelectionStore } from "../store/useTimelineSelectionStore";
 
 const columnWidths = {
-  time: 112,
-  logType: 80,
-  changeType: 160,
-  operator: 70,
-  duration: 70,
-  url: 70,
+  time: 120,
+  logType: 100,
+  changeType: 180,
+  operator: 100,
+  duration: 120,
+  url: 80,
 };
 
 function TableHeader() {
@@ -62,16 +62,16 @@ function FilterCheckboxes({ typeFilters, handleFilter }) {
       {Object.entries(typeFilters).map(([type, checked]) => (
         <label key={type} className="flex items-center gap-1 text-xs font-bold">
           <input
-          type="checkbox"
-          name={type}
-          checked={checked}
-          onChange={handleFilter}
-          className="rounded border border-border"
-        />
-        {type.replace("_LOG", "")}
-      </label>
-    ))}
-  </div>
+            type="checkbox"
+            name={type}
+            checked={checked}
+            onChange={handleFilter}
+            className="rounded border border-border"
+          />
+          {type.replace("_LOG", "")}
+        </label>
+      ))}
+    </div>
   );
 }
 
