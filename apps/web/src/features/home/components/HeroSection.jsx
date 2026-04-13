@@ -127,9 +127,6 @@ const HeroSection = () => {
                     muted
                     playsInline
                   />
-                  <div className='pointer-events-none absolute inset-0 flex items-center justify-center'>
-                    <LogoVector className='h-50 w-50 text-white' />
-                  </div>
                 </div>
               </div>
               <div className='flex w-full max-w-20 justify-between max-md:hidden'>

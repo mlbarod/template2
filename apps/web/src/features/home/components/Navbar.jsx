@@ -109,7 +109,7 @@ const HomeNavbar = ({ navigationItems }) => {
     >
       <div className="flex flex-1 items-center gap-4">
         <HomeNavLink href="/" className="flex items-center gap-3">
-          <Logo className="size-8" />
+          <Logo className="size-6 w-8" />
           <span className="hidden text-xl font-semibold sm:block">Etch AX Portal</span>
         </HomeNavLink>
       </div>
