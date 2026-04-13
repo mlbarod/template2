@@ -37,7 +37,7 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.views import APIView
 
-from api.common.services import parse_json_body
+from api.common.services import extract_first_error_message, parse_json_body
 
 from .selectors import (
     get_app_by_id,
@@ -49,10 +49,10 @@ from .selectors import (
     get_liked_comment_ids_for_user,
 )
 from .serializers import (
+    AppStoreAppCreateSerializer,
     apply_cover_index,
     can_manage_app,
     can_manage_comment,
-    default_contact,
     sanitize_screenshot_urls,
     serialize_app,
     serialize_comment,
@@ -206,56 +206,38 @@ class AppStoreAppsView(APIView):
             return JsonResponse({"error": "Invalid JSON body"}, status=400)
 
         # -----------------------------------------------------------------------------
-        # 3) 입력 정규화
+        # 3) 입력 검증/정규화
         # -----------------------------------------------------------------------------
-        name = str(payload.get("name") or "").strip()
-        category = str(payload.get("category") or "").strip()[:MAX_CATEGORY_LENGTH]
-        description = str(payload.get("description") or "").strip()
-        url = str(payload.get("url") or "").strip()
-        manual_url = str(payload.get("manualUrl") or payload.get("manual_url") or "").strip()
-        manual_url = manual_url or None
-        screenshot_urls = sanitize_screenshot_urls(payload.get("screenshotUrls") or payload.get("screenshot_urls"))
-        screenshot_urls = apply_cover_index(
-            screenshot_urls,
-            payload.get("coverScreenshotIndex") or payload.get("cover_screenshot_index"),
+        serializer = AppStoreAppCreateSerializer(
+            data=payload,
+            context={
+                "user": request.user,
+                "max_category_length": MAX_CATEGORY_LENGTH,
+                "max_contact_length": MAX_CONTACT_LENGTH,
+            },
         )
-        screenshot_url = str(payload.get("screenshotUrl") or payload.get("screenshot_url") or "").strip()
-        contact_name = str(payload.get("contactName") or "").strip()[:MAX_CONTACT_LENGTH]
-        contact_knoxid = str(payload.get("contactKnoxid") or "").strip()[:MAX_CONTACT_LENGTH]
+        if not serializer.is_valid():
+            return JsonResponse(
+                {"error": extract_first_error_message(serializer.errors)},
+                status=400,
+            )
+        validated = serializer.validated_data
 
         # -----------------------------------------------------------------------------
-        # 4) 필수값 검증
-        # -----------------------------------------------------------------------------
-        if not name:
-            return JsonResponse({"error": "name is required"}, status=400)
-        if not category:
-            return JsonResponse({"error": "category is required"}, status=400)
-        if not url:
-            return JsonResponse({"error": "url is required"}, status=400)
-
-        # -----------------------------------------------------------------------------
-        # 5) 연락처 기본값 채우기
-        # -----------------------------------------------------------------------------
-        if not contact_name or not contact_knoxid:
-            default_name, default_knoxid = default_contact(request.user)
-            contact_name = contact_name or default_name
-            contact_knoxid = contact_knoxid or default_knoxid
-
-        # -----------------------------------------------------------------------------
-        # 6) 생성 및 응답
+        # 4) 생성 및 응답
         # -----------------------------------------------------------------------------
         try:
             app = create_app(
                 owner=request.user,
-                name=name,
-                category=category,
-                description=description,
-                url=url,
-                manual_url=manual_url,
-                screenshot_urls=screenshot_urls,
-                screenshot_url=screenshot_url,
-                contact_name=contact_name,
-                contact_knoxid=contact_knoxid,
+                name=validated["name"],
+                category=validated["category"],
+                description=validated["description"],
+                url=validated["url"],
+                manual_url=validated["manual_url"],
+                screenshot_urls=validated["screenshot_urls"],
+                screenshot_url=validated["screenshot_url"],
+                contact_name=validated["contact_name"],
+                contact_knoxid=validated["contact_knoxid"],
             )
             liked_ids = get_liked_app_ids_for_user(user=request.user)
             return JsonResponse(

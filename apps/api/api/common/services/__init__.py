@@ -28,8 +28,10 @@ from .middleware import ActivityLoggingMiddleware, KnoxIdRequiredMiddleware
 from .normalization import normalize_text
 from .request_helpers import (
     ensure_airflow_token,
+    extract_first_error_message,
     extract_bearer_token,
     parse_json_body,
+    parse_json_body_or_error_when_present,
     resolve_frontend_target,
 )
 from .storage import (
@@ -51,12 +53,14 @@ __all__ = [
     "ensure_airflow_token",
     "ensure_minio_bucket",
     "execute",
+    "extract_first_error_message",
     "extract_bearer_token",
     "get_cursor",
     "get_minio_client",
     "merge_activity_metadata",
     "normalize_text",
     "parse_json_body",
+    "parse_json_body_or_error_when_present",
     "resolve_frontend_target",
     "run_query",
     "set_activity_new_state",

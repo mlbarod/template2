@@ -152,9 +152,20 @@ const HomeNavbar = ({ navigationItems }) => {
                     <li>
                       {navItem.items?.map((item) => (
                         <NavigationMenuLink key={item.title} asChild>
-                          <HomeNavLink href={item.href} className="block px-3 py-1.5">
-                            {item.title}
-                          </HomeNavLink>
+                          {item.external ? (
+                            <a
+                              href={item.href}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block px-3 py-1.5"
+                            >
+                              {item.title}
+                            </a>
+                          ) : (
+                            <HomeNavLink href={item.href} className="block px-3 py-1.5">
+                              {item.title}
+                            </HomeNavLink>
+                          )}
                         </NavigationMenuLink>
                       ))}
                     </li>
@@ -172,14 +183,15 @@ const HomeNavbar = ({ navigationItems }) => {
         </Button>
         <ThemeToggle />
         <ThemeColorSelector />
-        <NotificationDropdown
+        {/* 알림 영역 */}
+        {/* <NotificationDropdown
           trigger={
             <Button variant="ghost" size="icon" className="relative">
               <BellIcon />
               <span className="bg-destructive absolute right-2.5 top-2 size-2 rounded-full" />
             </Button>
           }
-        />
+        /> */}
         <ProfileDropdown
           trigger={
             <Button variant="ghost" className="h-full p-0">

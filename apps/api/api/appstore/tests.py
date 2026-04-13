@@ -486,6 +486,24 @@ class AppstoreEndpointTests(TestCase):
         )
         self.assertEqual(create_response.status_code, 201)
 
+    def test_appstore_create_returns_string_error_for_serializer_validation_failure(self) -> None:
+        """앱 생성 검증 실패 시 문자열 error 계약을 유지하는지 확인합니다."""
+        # -----------------------------------------------------------------------------
+        # 1) 필수 name 누락 요청
+        # -----------------------------------------------------------------------------
+        response = self.client.post(
+            reverse("appstore-apps"),
+            data='{"name":"   ","category":"Tools","url":"https://new.app"}',
+            content_type="application/json",
+        )
+
+        # -----------------------------------------------------------------------------
+        # 2) 문자열 error 응답 검증
+        # -----------------------------------------------------------------------------
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["error"], "name is required")
+
     def test_appstore_detail_update_delete_and_view_like(self) -> None:
         """상세 조회/수정/삭제 및 좋아요/조회수 API를 검증합니다."""
         # -----------------------------------------------------------------------------

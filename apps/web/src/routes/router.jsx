@@ -8,7 +8,7 @@ import { authRoutes } from "@/features/auth"
 import { RouteErrorPage, errorRoutes } from "@/features/errors"
 import { GlobalNavbarShell, homeRoutes } from "@/features/home"
 import { lineDashboardRoutes } from "@/features/line-dashboard"
-import { modelsRoutes } from "@/features/models"
+import { teamstaffRoutes } from "@/features/teamstaff"
 import { timelineRoutes } from "@/features/timeline"
 import { vocRoutes } from "@/features/voc"
 import { assistantRoutes } from "@/features/assistant"
@@ -16,7 +16,7 @@ import { emailsRoutes } from "@/features/emails"
 import { accountRoutes } from "@/features/account"
 
 const protectedFeatureRoutes = [
-  ...modelsRoutes,
+  ...teamstaffRoutes,
   ...lineDashboardRoutes,
   ...appstoreRoutes,
   ...emailsRoutes,

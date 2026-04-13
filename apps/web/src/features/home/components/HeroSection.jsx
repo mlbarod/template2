@@ -7,7 +7,7 @@ import {
   Cloud,
   Cpu,
   Puzzle,
-  Flame,
+  ThumbsUp,
   HeartHandshake,
 } from 'lucide-react'
 
@@ -36,27 +36,28 @@ const HeroSection = () => {
   const spanRef7 = useRef(null)
   const spanRef8 = useRef(null)
   const resolvedTheme = theme === 'system' ? systemTheme : theme
-  const videoSrc = resolvedTheme === 'dark' ? '/assets/video2.mp4' : '/assets/video.mp4'
+  const videoSrc = resolvedTheme === 'dark' ? 'assets/video2.mp4' : 'assets/video.mp4'
 
   return (
     <section className='w-full overflow-hidden py-12 sm:py-8 lg:py-8'>
       <div
-        className='mx-auto flex max-w-7xl flex-col items-center gap-8 px-4 sm:gap-16 sm:px-6 lg:gap-18 lg:px-8'>
+        className='mx-auto flex max-w-7xl flex-col items-center gap-8 px-4 sm:gap-16 sm:px-6 lg:gap-12 lg:px-8'>
         {/* Hero Content */}
         <div className='flex flex-col items-center gap-5 text-center'>
           <Badge variant='outline' className='text-sm font-normal'>
-            Our Solution
+            메모리Etch기술팀
           </Badge>
 
-          <h1 className="text-2xl font-semibold sm:text-3xl lg:text-5xl lg:font-bold">
-            <span className="shimmer-text">Connect</span> Your Data &{" "}
-            <span className="shimmer-text">Boost</span> Productivity
+          <h1 className="text-2xl font-semibold sm:text-3xl lg:text-6xl lg:font-bold">
+            <span>Etch </span>
+            <span className="shimmer-text">AI Transformation </span>
+            <span> Portal</span>
           </h1>
 
 
-          <p className='text-muted-foreground max-w-4xl text-xl'>
-            흩어져 있던 데이터를 하나로 연결하고, 반복적인 업무를 자동화해 AI로 업무 부담을 줄여보세요.{' '}
-            <br className='max-lg:hidden' /> 더 적은 노력으로 더 빠르고 스마트한 Workflow을 만들어드립니다.
+          <p className='text-muted-foreground max-w-4xl text-md'>
+            데이터 연결과 업무 자동화를 통해{' '}
+            <br className='max-lg:hidden' /> AI 기반의 빠르고 스마트한 Workflow을 제공합니다.
           </p>
 
         </div>
@@ -84,10 +85,10 @@ const HeroSection = () => {
                     <span className='text-sm'>다름의인정</span>
                   </div>
 
-                  {/* Again열정 */}
+                  {/* Value Up */}
                   <div className="flex flex-col items-center gap-1">
-                    <Flame className="w-6 h-6" style={{ color: "var(--primary)" }} />
-                    <span className='text-sm'>Again열정</span>
+                    <ThumbsUp className="w-6 h-6" style={{ color: "var(--primary)" }} />
+                    <span className='text-sm'>Value Up</span>
                   </div>
 
                 </div>

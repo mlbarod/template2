@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from rest_framework import serializers
+
 
 def _user_display_name(user) -> str:
     """사용자 표시 이름(username/이름/email)을 계산합니다.
@@ -419,8 +421,150 @@ def serialize_app(
     return payload
 
 
+class AppStoreAppCreateSerializer(serializers.Serializer):
+    """AppStore 앱 생성 요청을 검증합니다."""
+
+    name = serializers.CharField(
+        allow_blank=True,
+        trim_whitespace=True,
+        error_messages={"required": "name is required"},
+    )
+    category = serializers.CharField(
+        allow_blank=True,
+        trim_whitespace=True,
+        error_messages={"required": "category is required"},
+    )
+    description = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
+    url = serializers.CharField(
+        allow_blank=True,
+        trim_whitespace=True,
+        error_messages={"required": "url is required"},
+    )
+    manual_url = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
+    screenshot_urls = serializers.ListField(child=serializers.CharField(), required=False)
+    cover_screenshot_index = serializers.IntegerField(required=False, allow_null=True)
+    screenshot_url = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
+    contact_name = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
+    contact_knoxid = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
+
+    def to_internal_value(self, data: Any) -> Dict[str, Any]:
+        """카멜/스네이크 케이스 입력을 내부 필드로 정규화합니다."""
+
+        if not isinstance(data, dict):
+            raise serializers.ValidationError("Invalid JSON body")
+
+        def _pick(camel_key: str, snake_key: str) -> Any:
+            if camel_key in data:
+                return data.get(camel_key)
+            if snake_key in data:
+                return data.get(snake_key)
+            return None
+
+        normalized: Dict[str, Any] = {}
+        if "name" in data:
+            normalized["name"] = data.get("name") or ""
+        if "category" in data:
+            normalized["category"] = data.get("category") or ""
+        if "description" in data:
+            description_value = data.get("description")
+            if description_value is not None:
+                normalized["description"] = description_value
+        if "url" in data:
+            normalized["url"] = data.get("url") or ""
+
+        manual_url_value = _pick("manualUrl", "manual_url")
+        if manual_url_value is not None:
+            normalized["manual_url"] = manual_url_value
+
+        screenshot_urls_value = _pick("screenshotUrls", "screenshot_urls")
+        if screenshot_urls_value is not None and not isinstance(screenshot_urls_value, list):
+            screenshot_urls_value = []
+        if screenshot_urls_value is not None:
+            normalized["screenshot_urls"] = screenshot_urls_value
+
+        cover_index_value = _pick("coverScreenshotIndex", "cover_screenshot_index")
+        if cover_index_value == "":
+            cover_index_value = None
+        if cover_index_value is not None:
+            normalized["cover_screenshot_index"] = cover_index_value
+
+        screenshot_url_value = _pick("screenshotUrl", "screenshot_url")
+        if screenshot_url_value is not None:
+            normalized["screenshot_url"] = screenshot_url_value
+
+        contact_name_value = _pick("contactName", "contact_name")
+        if contact_name_value is not None:
+            normalized["contact_name"] = contact_name_value
+
+        contact_knoxid_value = _pick("contactKnoxid", "contact_knoxid")
+        if contact_knoxid_value is not None:
+            normalized["contact_knoxid"] = contact_knoxid_value
+
+        return super().to_internal_value(normalized)
+
+    def validate(self, attrs: Dict[str, Any]) -> Dict[str, Any]:
+        """입력 정규화/기본값 보정을 수행합니다."""
+
+        name = (attrs.get("name") or "").strip()
+        if not name:
+            raise serializers.ValidationError({"name": ["name is required"]})
+
+        category = (attrs.get("category") or "").strip()
+        if not category:
+            raise serializers.ValidationError({"category": ["category is required"]})
+
+        url = (attrs.get("url") or "").strip()
+        if not url:
+            raise serializers.ValidationError({"url": ["url is required"]})
+
+        description = (attrs.get("description") or "").strip()
+        manual_url = (attrs.get("manual_url") or "").strip() or None
+        screenshot_url = (attrs.get("screenshot_url") or "").strip()
+
+        max_category_length = int(self.context.get("max_category_length") or 0)
+        max_contact_length = int(self.context.get("max_contact_length") or 0)
+
+        if max_category_length > 0:
+            category = category[:max_category_length]
+
+        contact_name = (attrs.get("contact_name") or "").strip()
+        contact_knoxid = (attrs.get("contact_knoxid") or "").strip()
+        if max_contact_length > 0:
+            contact_name = contact_name[:max_contact_length]
+            contact_knoxid = contact_knoxid[:max_contact_length]
+
+        if not contact_name or not contact_knoxid:
+            user = self.context.get("user")
+            if user:
+                default_name, default_knoxid = default_contact(user)
+                contact_name = contact_name or default_name
+                contact_knoxid = contact_knoxid or default_knoxid
+
+        screenshot_urls = sanitize_screenshot_urls(attrs.get("screenshot_urls"))
+        screenshot_urls = apply_cover_index(
+            screenshot_urls,
+            attrs.get("cover_screenshot_index"),
+        )
+
+        attrs.update(
+            {
+                "name": name,
+                "category": category,
+                "description": description,
+                "url": url,
+                "manual_url": manual_url,
+                "screenshot_urls": screenshot_urls,
+                "screenshot_url": screenshot_url,
+                "contact_name": contact_name,
+                "contact_knoxid": contact_knoxid,
+            }
+        )
+        return attrs
+
+
 __all__ = [
     "apply_cover_index",
+    "AppStoreAppCreateSerializer",
     "can_manage_app",
     "can_manage_comment",
     "default_contact",

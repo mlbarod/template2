@@ -14,7 +14,7 @@ const HomePage = ({ heroActions = DEFAULT_HERO_ACTIONS }) => {
     <>
       <HeroSection actions={heroActions} />
       <PopularServicesSection />
-      <Team teamMembers={teamMembers} />
+      {/* <Team teamMembers={teamMembers} /> */}
       <AppIntegrationMarquee apps={marqueeApps} />
     </>
   )

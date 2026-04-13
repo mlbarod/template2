@@ -57,7 +57,11 @@ from api.common.services.activity_logging import (
     set_activity_previous_state,
     set_activity_summary,
 )
-from api.common.services.request_helpers import ensure_airflow_token, parse_json_body
+from api.common.services.request_helpers import (
+    ensure_airflow_token,
+    parse_json_body,
+    parse_json_body_or_error_when_present,
+)
 
 from . import selectors, services
 from .serializers import serialize_early_inform_entry
@@ -128,27 +132,10 @@ def _parse_json_body_or_error(request: HttpRequest) -> tuple[dict[str, Any], Jso
     return payload, None
 
 
-def _parse_json_body_or_empty(request: HttpRequest) -> dict[str, Any]:
-    """JSON 바디를 파싱하고 실패 시 빈 dict를 반환합니다.
-
-    인자:
-        request: Django HttpRequest 객체.
-
-    반환:
-        payload dict(실패 시 빈 dict).
-
-    부작용:
-        없음. 순수 파싱입니다.
-    """
-
-    payload = parse_json_body(request)
-    return payload if isinstance(payload, dict) else {}
-
-
 def _parse_limit_param(
     request: HttpRequest,
     *,
-    payload: dict[str, Any] | None = None,
+    payload: dict[str, Any],
 ) -> tuple[int | None, JsonResponse | None]:
     """limit 파라미터를 파싱합니다.
 
@@ -166,8 +153,7 @@ def _parse_limit_param(
         없음. 순수 파싱입니다.
     """
 
-    resolved_payload = payload if payload is not None else _parse_json_body_or_empty(request)
-    raw_limit = resolved_payload.get("limit")
+    raw_limit = payload.get("limit")
     if raw_limit is None:
         raw_limit = request.GET.get("limit")
 
@@ -1382,7 +1368,9 @@ class DroneSopInstantInformView(DroneAuthenticatedView):
         # -----------------------------------------------------------------------------
         # 2) JSON 파싱 및 comment 검증
         # -----------------------------------------------------------------------------
-        payload = _parse_json_body_or_empty(request)
+        payload, payload_error = parse_json_body_or_error_when_present(request)
+        if payload_error is not None:
+            return payload_error
         comment, comment_error = _parse_optional_comment(payload)
         if comment_error is not None:
             return comment_error
@@ -1475,7 +1463,9 @@ class DroneSopRetryChannelView(DroneAuthenticatedView):
         # -----------------------------------------------------------------------------
         # 2) JSON 파싱 및 channel 검증
         # -----------------------------------------------------------------------------
-        payload = _parse_json_body_or_empty(request)
+        payload, payload_error = _parse_json_body_or_error(request)
+        if payload_error is not None:
+            return payload_error
         channel, channel_error = _parse_required_channel(payload)
         if channel_error is not None:
             return channel_error
@@ -1633,7 +1623,9 @@ class DroneSopPipelineTriggerView(DroneAirflowTriggerView):
         # -----------------------------------------------------------------------------
         # 2) limit 파라미터 파싱
         # -----------------------------------------------------------------------------
-        payload = _parse_json_body_or_empty(request)
+        payload, payload_error = parse_json_body_or_error_when_present(request)
+        if payload_error is not None:
+            return payload_error
         limit, limit_error = _parse_limit_param(request, payload=payload)
         if limit_error is not None:
             return limit_error

@@ -14,8 +14,9 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.views import APIView
 
-from api.common.services import parse_json_body
+from api.common.services import extract_first_error_message, parse_json_body
 
+from .serializers import AssistantChatRequestSerializer
 from .services import (
     AssistantConfigError,
     AssistantRequestError,
@@ -146,9 +147,13 @@ class AssistantChatView(APIView):
         if payload is None:
             return JsonResponse({"error": "Invalid JSON body"}, status=400)
 
-        prompt = payload.get("prompt")
-        if not isinstance(prompt, str) or not prompt.strip():
-            return JsonResponse({"error": "prompt is required"}, status=400)
+        serializer = AssistantChatRequestSerializer(data=payload)
+        if not serializer.is_valid():
+            return JsonResponse(
+                {"error": extract_first_error_message(serializer.errors)},
+                status=400,
+            )
+        validated_payload = serializer.validated_data
 
         # -----------------------------------------------------------------------------
         # 2) 인증 및 사용자 식별자 검증
@@ -164,19 +169,17 @@ class AssistantChatView(APIView):
         # -----------------------------------------------------------------------------
         # 3) room_id/권한 그룹/인덱스 파싱
         # -----------------------------------------------------------------------------
-        room_id_raw = payload.get("roomId") or payload.get("room_id")
-        room_id = normalize_room_id(room_id_raw)
-
-        prompt_clean = prompt.strip()
+        room_id = normalize_room_id(validated_payload.get("room_id"))
+        prompt_clean = validated_payload["prompt"]
         try:
-            permission_groups = resolve_permission_groups(payload, request.user)
+            permission_groups = resolve_permission_groups(validated_payload, request.user)
         except ValueError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
         except AssistantRequestError as exc:
             return JsonResponse({"error": str(exc)}, status=403)
 
         try:
-            rag_index_names = resolve_rag_index_names(payload)
+            rag_index_names = resolve_rag_index_names(validated_payload)
         except ValueError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
 
@@ -184,7 +187,7 @@ class AssistantChatView(APIView):
         # 4) 히스토리 정규화 및 캐시 병합
         # -----------------------------------------------------------------------------
         incoming_history = normalize_history(
-            payload.get("history"),
+            validated_payload.get("history"),
             limit=conversation_memory.max_messages,
         )
         stored_history = conversation_memory.load(user_key, room_id)

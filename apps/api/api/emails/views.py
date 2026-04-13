@@ -17,7 +17,11 @@ from django.views.decorators.csrf import csrf_exempt
 from rest_framework.exceptions import NotFound
 from rest_framework.views import APIView
 
-from api.common.services import ensure_airflow_token, parse_json_body
+from api.common.services import (
+    ensure_airflow_token,
+    parse_json_body,
+    parse_json_body_or_error_when_present,
+)
 
 from .permissions import (
     email_is_unassigned,
@@ -1046,7 +1050,9 @@ class EmailOutboxProcessTriggerView(APIView):
         # -----------------------------------------------------------------------------
         # 2) limit 파라미터 파싱
         # -----------------------------------------------------------------------------
-        payload = parse_json_body(request) or {}
+        payload, payload_error = parse_json_body_or_error_when_present(request)
+        if payload_error is not None:
+            return payload_error
         raw_limit = payload.get("limit")
         if raw_limit is None:
             raw_limit = request.GET.get("limit")

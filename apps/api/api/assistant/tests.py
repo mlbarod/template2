@@ -495,6 +495,27 @@ class AssistantChatViewTests(TestCase):
         self.assertEqual(payload["reply"], "안녕")
         self.assertIn("meta", payload)
 
+    def test_chat_view_returns_string_error_for_serializer_validation_failure(self) -> None:
+        """serializer 검증 실패 시 문자열 error 계약을 유지하는지 확인합니다."""
+        # -------------------------------------------------------------------------
+        # 1) 빈 prompt 요청 구성
+        # -------------------------------------------------------------------------
+        request = self.factory.post(
+            "/api/v1/assistant/chat",
+            data=json.dumps({"prompt": "   "}),
+            content_type="application/json",
+        )
+        request.user = self.user
+
+        # -------------------------------------------------------------------------
+        # 2) 뷰 호출 및 응답 검증
+        # -------------------------------------------------------------------------
+        response = AssistantChatView().post(request)
+        self.assertEqual(response.status_code, 400)
+
+        payload = json.loads(response.content.decode("utf-8"))
+        self.assertEqual(payload["error"], "prompt is required")
+
     def test_chat_view_returns_503_when_assistant_config_error(self) -> None:
         """설정 오류 발생 시 503을 반환하는지 확인합니다."""
         # -------------------------------------------------------------------------

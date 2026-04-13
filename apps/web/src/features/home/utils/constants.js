@@ -9,9 +9,9 @@ export const navigationItems = [
     title: 'Apps',
     icon: LayoutGridIcon,
     items: [
+      { title: 'Appstore', href: '/appstore' },
       { title: 'ESOP Dashboard', href: '/esop_dashboard' },
-      { title: 'Timeline(개발중)', href: '/timeline' },
-      { title: 'Appstore(개발중)', href: '/appstore' },
+      { title: 'Timeline', href: '/timeline' },
       { title: '메일함', href: '/emails/inbox' },
     ]
   },
@@ -19,16 +19,16 @@ export const navigationItems = [
     title: 'About Us',
     icon: BookOpenIcon,
     items: [
-      { title: 'Team', href: '#' }
+      { title: 'Team', href: '/teamstaff' },
+      { title: 'Etch MOSAIC', href: 'https://mosaic.sec.samsung.net/collaboration/workspace/6514141', external: true },
+      { title: 'Etch Confluence', href: 'https://confluence.samsungds.net/spaces/ETCH/overview', external: true },
     ]
   },
   {
     title: 'Contacts',
     icon: MessageSquareIcon,
     items: [
-      { title: 'VOC', href: '/voc' },
-      { title: 'Etch Confluence', href: '#' },
-
+      { title: 'VoE', href: '/voc' },
     ]
   }
 ]
