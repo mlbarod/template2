@@ -75,6 +75,14 @@ export async function fetchEmailMailboxes() {
   return handleJsonResponse(response)
 }
 
+export async function fetchEmailMailboxSummary() {
+  const response = await fetch(buildBackendUrl(`${BASE_PATH}/mailboxes/summary/`), {
+    credentials: "include",
+  })
+
+  return handleJsonResponse(response)
+}
+
 export async function fetchEmailMailboxMembers(userSdwtProd) {
   const trimmed = typeof userSdwtProd === "string" ? userSdwtProd.trim() : ""
   const response = await fetch(

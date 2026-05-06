@@ -30,7 +30,7 @@ from django.shortcuts import redirect
 from django.views.decorators.csrf import csrf_exempt
 
 import api.auth.selectors as auth_selectors
-import api.account.services as account_services
+import api.account.selectors as account_selectors
 from api.common.services import resolve_frontend_target
 from .oidc_utils import (
     ADFS_AUTH_URL,       # ADFS 인증 엔드포인트(…/adfs/oauth2/authorize)
@@ -352,11 +352,12 @@ def _apply_user_updates(*, user: Any, candidate_updates: Dict[str, Optional[str]
     # -----------------------------------------------------------------------------
     # 1) 변경 후보 순회 및 필드 갱신
     # -----------------------------------------------------------------------------
+    concrete_field_names = {field.name for field in user._meta.concrete_fields}
     update_fields: List[str] = []
     for field_name, value in candidate_updates.items():
         if not value:
             continue
-        if not hasattr(user, field_name):
+        if field_name not in concrete_field_names:
             continue
         if getattr(user, field_name) == value:
             continue
@@ -374,22 +375,19 @@ def _upsert_user_from_claims(
     info: Dict[str, Optional[str]],
     sabun: str,
     knox_id: str,
-    timezone_name: str,
 ) -> tuple[Any, bool]:
-    """클레임 정보 기반으로 사용자를 생성/갱신하고 접근 권한을 보장합니다.
+    """클레임 정보 기반으로 사용자를 생성/갱신합니다.
 
     입력:
     - info: 클레임에서 추출한 사용자 정보
     - sabun: 사번 문자열
     - knox_id: 로그인 ID 문자열
-    - timezone_name: 시간대 이름
 
     반환:
     - tuple[Any, bool]: (사용자 객체, 생성 여부)
 
     부작용:
     - 사용자 생성/갱신
-    - 소속 자동 승인/접근 권한 보장
 
     오류:
     - IntegrityError: 사용자 생성 경합 발생 시 재시도 후에도 실패
@@ -400,7 +398,12 @@ def _upsert_user_from_claims(
     normalized_sabun = str(sabun)
     normalized_knox_id = str(knox_id)
     UserModel = get_user_model()
-    defaults = {key: value for key, value in info.items() if key != "sabun"}
+    concrete_field_names = {field.name for field in UserModel._meta.concrete_fields}
+    defaults = {
+        key: value
+        for key, value in info.items()
+        if key != "sabun" and key in concrete_field_names
+    }
     defaults["knox_id"] = normalized_knox_id
 
     # -----------------------------------------------------------------------------
@@ -427,18 +430,8 @@ def _upsert_user_from_claims(
         if created or update_fields:
             user.save(update_fields=update_fields or None)
 
-        # -----------------------------------------------------------------------------
-        # 4) 소속 자동 승인/접근 권한 보장
-        # -----------------------------------------------------------------------------
-        if created:
-            account_services.auto_approve_affiliation_from_snapshot(
-                user=user,
-                timezone_name=timezone_name,
-            )
-        account_services.ensure_self_access(user, role="member")
-
     # -----------------------------------------------------------------------------
-    # 5) 결과 반환
+    # 4) 결과 반환
     # -----------------------------------------------------------------------------
     return user, created
 
@@ -570,7 +563,6 @@ def auth_callback(request: HttpRequest) -> HttpResponse:
 
     부작용:
     - 사용자 생성/갱신 및 세션 로그인
-    - 현재 소속 접근 권한 행 보장
 
     오류:
     - 400: 잘못된 메서드, 설정 비활성화, 파라미터 누락
@@ -649,7 +641,7 @@ def auth_callback(request: HttpRequest) -> HttpResponse:
     # -----------------------------------------------------------------------------
     # 8) 사용자 정보 추출 및 필수 필드 확인
     # -----------------------------------------------------------------------------
-    # loginid / sabun / department / email 기반 사용자 정보 추출
+    # loginid / sabun / email 기반 사용자 정보 추출
     info = _extract_user_info_from_claims(decoded)
     sabun = info.get("sabun")
     knox_id = info.get("knox_id")
@@ -661,13 +653,12 @@ def auth_callback(request: HttpRequest) -> HttpResponse:
         return _redirect_with_error(target, "missing_loginid")
 
     # -----------------------------------------------------------------------------
-    # 9) 사용자 생성/갱신 및 소속 접근 권한 보장
+    # 9) 사용자 생성/갱신
     # -----------------------------------------------------------------------------
     user, _created = _upsert_user_from_claims(
         info=info,
         sabun=str(sabun),
         knox_id=str(knox_id),
-        timezone_name=str(getattr(settings, "TIME_ZONE", "UTC") or "UTC"),
     )
 
     # -----------------------------------------------------------------------------
@@ -688,7 +679,7 @@ def auth_me(request: HttpRequest) -> JsonResponse:
     - JsonResponse: 사용자 정보 또는 에러
 
     부작용:
-    - 현재 소속 접근 권한 행 보장
+    - 없음
 
     오류:
     - 401: 미인증 사용자
@@ -712,11 +703,12 @@ def auth_me(request: HttpRequest) -> JsonResponse:
     # 2) 사용자 정보 준비
     # -----------------------------------------------------------------------------
     user = request.user
-    account_services.ensure_self_access(user, role="member")
     username = user.username if isinstance(getattr(user, "username", None), str) else ""
-    pending_change = account_services.get_pending_user_sdwt_prod_change(user=user)
+    pending_change = account_selectors.get_pending_user_sdwt_prod_change(user=user)
     pending_user_sdwt_prod = pending_change.to_user_sdwt_prod if pending_change else None
     has_pending_affiliation = pending_change is not None
+    current_values = account_selectors.get_current_affiliation_values(user=user)
+    department = current_values.get("department") or getattr(user, "department", None)
     # -----------------------------------------------------------------------------
     # 3) 응답 페이로드 구성
     # -----------------------------------------------------------------------------
@@ -729,9 +721,9 @@ def auth_me(request: HttpRequest) -> JsonResponse:
         "is_superuser": bool(getattr(user, "is_superuser", False)),
         "is_staff": bool(getattr(user, "is_staff", False)),
         "roles": [],  # 필요 시 롤/권한 매핑 로직 추가
-        "department": getattr(user, "department", None),
-        "line": getattr(user, "line", None),
-        "user_sdwt_prod": getattr(user, "user_sdwt_prod", None),
+        "department": department,
+        "line": current_values.get("line"),
+        "user_sdwt_prod": current_values.get("user_sdwt_prod"),
         "pending_user_sdwt_prod": pending_user_sdwt_prod,
         "has_pending_affiliation": has_pending_affiliation,
     }

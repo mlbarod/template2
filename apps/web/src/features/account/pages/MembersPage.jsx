@@ -25,9 +25,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useAuth } from "@/lib/auth"
 
 import {
+  useAffiliationMembers,
   useAffiliationDecision,
   useAffiliationRequests,
-  useMailboxMembers,
 } from "../hooks/useAccountData"
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50]
@@ -52,7 +52,7 @@ export default function MembersPage() {
     data: membersData,
     isPending: membersPending,
     error: membersError,
-  } = useMailboxMembers({ userSdwtProd })
+  } = useAffiliationMembers({ userSdwtProd })
 
   const {
     data: requestsData,

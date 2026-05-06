@@ -18,15 +18,15 @@ from django.contrib import messages
 from django.contrib.admin.widgets import AdminSplitDateTime
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.contrib.auth.forms import BaseUserCreationForm, SetUnusablePasswordMixin, UserChangeForm, UsernameField
-from django.http import HttpResponse
 from django.utils import timezone
 
 from api.account import services
-from api.account.selectors import get_current_user_sdwt_prod_change
+from api.account.selectors import get_current_affiliation_values, get_current_user_sdwt_prod_change
 from api.account.models import (
     Affiliation,
     ExternalAffiliationSnapshot,
     User,
+    UserCurrentAffiliation,
     UserProfile,
     UserSdwtProdAccess,
     UserSdwtProdChange,
@@ -201,34 +201,43 @@ class AccountUserAdmin(DjangoUserAdmin):
 
     form = AccountUserChangeForm
     add_form = AccountUserCreationForm
-    actions = (
-        "claim_unassigned_emails",
-        "sync_user_lines_from_affiliation",
-        "sync_all_user_lines_from_affiliation",
-        "sync_all_user_lines_from_affiliation_dry_run",
-    )
+    actions = ()
     ordering = ("knox_id",)
     list_display = (
         "knox_id",
         "email",
-        "department",
-        "line",
-        "user_sdwt_prod",
-        "requires_affiliation_reconfirm",
+        "current_department",
+        "current_line",
+        "current_user_sdwt_prod",
+        "current_requires_reconfirm",
         "is_staff",
         "is_superuser",
         "is_active",
     )
-    list_filter = ("is_staff", "is_superuser", "is_active", "line", "requires_affiliation_reconfirm")
+    list_filter = (
+        "is_staff",
+        "is_superuser",
+        "is_active",
+        "current_affiliation__affiliation__line",
+        "current_affiliation__requires_reconfirm",
+    )
     search_fields = (
         "knox_id",
         "email",
+        "department",
         "username",
         "first_name",
         "last_name",
-        "department",
-        "line",
-        "user_sdwt_prod",
+        "current_affiliation__affiliation__department",
+        "current_affiliation__affiliation__line",
+        "current_affiliation__affiliation__user_sdwt_prod",
+    )
+    readonly_fields = (
+        "current_department",
+        "current_line",
+        "current_user_sdwt_prod",
+        "current_requires_reconfirm",
+        "current_affiliation_confirmed_at",
     )
 
     fieldsets = (
@@ -254,10 +263,11 @@ class AccountUserAdmin(DjangoUserAdmin):
                 "fields": (
                     "deptid",
                     "department",
-                    "line",
-                    "user_sdwt_prod",
-                    "requires_affiliation_reconfirm",
-                    "affiliation_confirmed_at",
+                    "current_department",
+                    "current_line",
+                    "current_user_sdwt_prod",
+                    "current_requires_reconfirm",
+                    "current_affiliation_confirmed_at",
                     "user_sdwt_prod_effective_from",
                     "grd_name",
                     "grdname_en",
@@ -287,225 +297,38 @@ class AccountUserAdmin(DjangoUserAdmin):
         ),
     )
 
-    @admin.action(
-        description=(
-            "UNASSIGNED(미분류) 메일을 사용자 현재 메일함으로 가져오기 "
-            "(RAG 베스트에포트, 누락=요청했지만 DB에 없는 ID)"
-        )
+    @admin.display(
+        ordering="current_affiliation__affiliation__department",
+        description="현재 department",
     )
-    def claim_unassigned_emails(self, request, queryset):  # 타입 검사 생략: type: ignore[override]
-        """미분류 메일을 사용자 메일함으로 이동하고 RAG 등록을 시도합니다.
+    def current_department(self, obj):
+        return get_current_affiliation_values(user=obj).get("department") or ""
 
-        입력:
-        - 요청: Django HttpRequest
-        - queryset: 선택된 사용자 QuerySet
+    @admin.display(ordering="current_affiliation__affiliation__line", description="현재 line")
+    def current_line(self, obj):
+        return get_current_affiliation_values(user=obj).get("line") or ""
 
-        반환:
-        - 없음
+    @admin.display(
+        ordering="current_affiliation__affiliation__user_sdwt_prod",
+        description="현재 user_sdwt_prod",
+    )
+    def current_user_sdwt_prod(self, obj):
+        return get_current_affiliation_values(user=obj).get("user_sdwt_prod") or ""
 
-        부작용:
-        - 이메일 이동 및 RAG 등록 시도
-        - 관리자 메시지 출력
+    @admin.display(
+        boolean=True,
+        ordering="current_affiliation__requires_reconfirm",
+        description="재확인 필요",
+    )
+    def current_requires_reconfirm(self, obj):
+        return bool(get_current_affiliation_values(user=obj).get("requires_reconfirm"))
 
-        오류:
-        - 없음(개별 실패는 메시지로 집계)
-        """
-        # -----------------------------------------------------------------------------
-        # 1) 결과 카운터 초기화
-        # -----------------------------------------------------------------------------
-        total_moved = 0
-        total_rag_registered = 0
-        total_rag_failed = 0
-        total_rag_missing = 0
-        failures: list[str] = []
-
-        # -----------------------------------------------------------------------------
-        # 2) 사용자별 처리
-        # -----------------------------------------------------------------------------
-        for user in queryset.iterator():
-            try:
-                result = services.claim_unassigned_emails_for_user(user=user)
-            except Exception as exc:
-                failures.append(f"{getattr(user, 'knox_id', None) or getattr(user, 'pk', user)}: {exc}")
-                continue
-
-            total_moved += result.get("moved", 0)
-            total_rag_registered += result.get("ragRegistered", 0)
-            total_rag_failed += result.get("ragFailed", 0)
-            total_rag_missing += result.get("ragMissing", 0)
-
-        # -----------------------------------------------------------------------------
-        # 3) 처리 결과 메시지 출력
-        # -----------------------------------------------------------------------------
-        if failures:
-            details = " | ".join(failures[:5])
-            if len(failures) > 5:
-                details = f"{details} | (+{len(failures) - 5} more)"
-            self.message_user(
-                request,
-                f"가져온 메일: {total_moved}개. RAG 등록 성공={total_rag_registered}, "
-                f"실패={total_rag_failed}, 누락={total_rag_missing} (요청했지만 DB에 없는 ID). "
-                f"실패: {details}",
-                level=messages.WARNING,
-            )
-            return None
-
-        self.message_user(
-            request,
-            f"가져온 메일: {total_moved}개. RAG 등록 성공={total_rag_registered}, "
-            f"실패={total_rag_failed}, 누락={total_rag_missing} (요청했지만 DB에 없는 ID).",
-            level=messages.SUCCESS,
-        )
-        return None
-
-    @admin.action(description="선택 사용자 line 동기화 (user_sdwt_prod 기준, 기존 line은 유지)")
-    def sync_user_lines_from_affiliation(self, request, queryset):  # 타입 검사 생략: type: ignore[override]
-        """선택한 사용자에 대해 소속 line 값을 동기화합니다.
-
-        입력:
-        - 요청: Django HttpRequest
-        - queryset: 선택된 사용자 QuerySet
-
-        반환:
-        - HttpResponse: 상세 로그 파일 응답
-
-        부작용:
-        - User.line 업데이트
-
-        오류:
-        - 없음
-        """
-
-        # -----------------------------------------------------------------------------
-        # 1) 권한 확인(슈퍼유저 전용)
-        # -----------------------------------------------------------------------------
-        if not getattr(request, "user", None) or not request.user.is_superuser:
-            self.message_user(request, "슈퍼유저만 실행할 수 있습니다.", level=messages.ERROR)
-            return None
-
-        # -----------------------------------------------------------------------------
-        # 2) 서비스 호출
-        # -----------------------------------------------------------------------------
-        result = services.sync_user_lines_from_affiliations(users=queryset.iterator())
-
-        # -----------------------------------------------------------------------------
-        # 3) 로그 파일 응답 생성
-        # -----------------------------------------------------------------------------
-        summary_lines = [
-            f"총 대상: {result.get('total', 0)}",
-            f"업데이트: {result.get('updated', 0)}",
-            f"스킵(기존 line 존재): {result.get('skipped_has_line', 0)}",
-            f"스킵(user_sdwt_prod 없음): {result.get('skipped_no_user_sdwt_prod', 0)}",
-            f"스킵(소속 line 없음): {result.get('skipped_no_affiliation_line', 0)}",
-        ]
-        logs = result.get("logs") or []
-        content = "\n".join(summary_lines + ["", "상세 로그:"] + list(logs))
-
-        filename = f"user_line_sync_{timezone.now().strftime('%Y%m%d_%H%M%S')}.txt"
-        response = HttpResponse(content, content_type="text/plain; charset=utf-8")
-        response["Content-Disposition"] = f'attachment; filename="{filename}"'
-        return response
-
-    @admin.action(description="전체 사용자 line 동기화 (user_sdwt_prod 기준, 기존 line은 유지)")
-    def sync_all_user_lines_from_affiliation(self, request, queryset):  # 타입 검사 생략: type: ignore[override]
-        """전체 사용자에 대해 소속 line 값을 동기화합니다.
-
-        입력:
-        - 요청: Django HttpRequest
-        - queryset: 선택된 사용자 QuerySet(사용하지 않음)
-
-        반환:
-        - HttpResponse: 상세 로그 파일 응답
-
-        부작용:
-        - User.line 업데이트
-
-        오류:
-        - 없음
-        """
-
-        # -----------------------------------------------------------------------------
-        # 1) 권한 확인(슈퍼유저 전용)
-        # -----------------------------------------------------------------------------
-        if not getattr(request, "user", None) or not request.user.is_superuser:
-            self.message_user(request, "슈퍼유저만 실행할 수 있습니다.", level=messages.ERROR)
-            return None
-
-        # -----------------------------------------------------------------------------
-        # 2) 서비스 호출(전체 사용자)
-        # -----------------------------------------------------------------------------
-        result = services.sync_user_lines_from_affiliations(users=User.objects.all().iterator())
-
-        # -----------------------------------------------------------------------------
-        # 3) 로그 파일 응답 생성
-        # -----------------------------------------------------------------------------
-        summary_lines = [
-            "대상: 전체 사용자",
-            f"총 대상: {result.get('total', 0)}",
-            f"업데이트: {result.get('updated', 0)}",
-            f"스킵(기존 line 존재): {result.get('skipped_has_line', 0)}",
-            f"스킵(user_sdwt_prod 없음): {result.get('skipped_no_user_sdwt_prod', 0)}",
-            f"스킵(소속 line 없음): {result.get('skipped_no_affiliation_line', 0)}",
-        ]
-        logs = result.get("logs") or []
-        content = "\n".join(summary_lines + ["", "상세 로그:"] + list(logs))
-
-        filename = f"user_line_sync_all_{timezone.now().strftime('%Y%m%d_%H%M%S')}.txt"
-        response = HttpResponse(content, content_type="text/plain; charset=utf-8")
-        response["Content-Disposition"] = f'attachment; filename="{filename}"'
-        return response
-
-    @admin.action(description="전체 사용자 line 동기화 Dry-Run (업데이트 없음)")
-    def sync_all_user_lines_from_affiliation_dry_run(self, request, queryset):  # 타입 검사 생략: type: ignore[override]
-        """전체 사용자 line 동기화를 dry-run으로 수행합니다.
-
-        입력:
-        - 요청: Django HttpRequest
-        - queryset: 선택된 사용자 QuerySet(사용하지 않음)
-
-        반환:
-        - HttpResponse: 상세 로그 파일 응답
-
-        부작용:
-        - 없음(dry-run)
-
-        오류:
-        - 없음
-        """
-
-        # -----------------------------------------------------------------------------
-        # 1) 권한 확인(슈퍼유저 전용)
-        # -----------------------------------------------------------------------------
-        if not getattr(request, "user", None) or not request.user.is_superuser:
-            self.message_user(request, "슈퍼유저만 실행할 수 있습니다.", level=messages.ERROR)
-            return None
-
-        # -----------------------------------------------------------------------------
-        # 2) 서비스 호출(전체 사용자, dry-run)
-        # -----------------------------------------------------------------------------
-        result = services.sync_user_lines_from_affiliations(
-            users=User.objects.all().iterator(),
-            dry_run=True,
-        )
-
-        # -----------------------------------------------------------------------------
-        # 3) 로그 파일 응답 생성
-        # -----------------------------------------------------------------------------
-        summary_lines = [
-            "대상: 전체 사용자 (Dry-Run)",
-            f"총 대상: {result.get('total', 0)}",
-            f"업데이트 예정: {result.get('updated', 0)}",
-            f"스킵(기존 line 존재): {result.get('skipped_has_line', 0)}",
-            f"스킵(user_sdwt_prod 없음): {result.get('skipped_no_user_sdwt_prod', 0)}",
-            f"스킵(소속 line 없음): {result.get('skipped_no_affiliation_line', 0)}",
-        ]
-        logs = result.get("logs") or []
-        content = "\n".join(summary_lines + ["", "상세 로그:"] + list(logs))
-
-        filename = f"user_line_sync_all_dry_{timezone.now().strftime('%Y%m%d_%H%M%S')}.txt"
-        response = HttpResponse(content, content_type="text/plain; charset=utf-8")
-        response["Content-Disposition"] = f'attachment; filename="{filename}"'
-        return response
+    @admin.display(
+        ordering="current_affiliation__confirmed_at",
+        description="소속 확인 시각",
+    )
+    def current_affiliation_confirmed_at(self, obj):
+        return get_current_affiliation_values(user=obj).get("confirmed_at")
 
     def save_model(self, request, obj, form, change):  # 타입 검사 생략: type: ignore[override]
         """관리자 저장 시 user_sdwt_prod 변경 시각을 동기화합니다.
@@ -547,7 +370,7 @@ class AccountUserAdmin(DjangoUserAdmin):
         # -----------------------------------------------------------------------------
         # 4) 현재 user_sdwt_prod 유효성 확인
         # -----------------------------------------------------------------------------
-        current_user_sdwt_prod = (getattr(obj, "user_sdwt_prod", None) or "").strip()
+        current_user_sdwt_prod = (get_current_affiliation_values(user=obj).get("user_sdwt_prod") or "").strip()
         if (
             not current_user_sdwt_prod
             or current_user_sdwt_prod.casefold() == UNASSIGNED_USER_SDWT_PROD.casefold()
@@ -607,25 +430,72 @@ class AffiliationAdmin(admin.ModelAdmin):
     ordering = ("department", "line", "user_sdwt_prod")
 
 
+@admin.register(UserCurrentAffiliation)
+class UserCurrentAffiliationAdmin(admin.ModelAdmin):
+    """UserCurrentAffiliation 관리 화면 설정입니다."""
+
+    list_display = (
+        "user_knox_id",
+        "department",
+        "line",
+        "user_sdwt_prod",
+        "source",
+        "requires_reconfirm",
+        "confirmed_at",
+    )
+    list_filter = ("source", "requires_reconfirm", "affiliation__line")
+    search_fields = (
+        "user__knox_id",
+        "user__email",
+        "affiliation__department",
+        "affiliation__line",
+        "affiliation__user_sdwt_prod",
+    )
+    autocomplete_fields = ("user", "affiliation")
+    ordering = ("user__knox_id",)
+
+    @admin.display(ordering="user__knox_id", description="사용자 knox_id")
+    def user_knox_id(self, obj):
+        return getattr(obj.user, "knox_id", None) or ""
+
+    @admin.display(ordering="affiliation__department", description="department")
+    def department(self, obj):
+        return getattr(obj.affiliation, "department", "") or ""
+
+    @admin.display(ordering="affiliation__line", description="line")
+    def line(self, obj):
+        return getattr(obj.affiliation, "line", "") or ""
+
+    @admin.display(ordering="affiliation__user_sdwt_prod", description="user_sdwt_prod")
+    def user_sdwt_prod(self, obj):
+        return getattr(obj.affiliation, "user_sdwt_prod", "") or ""
+
+
 @admin.register(UserSdwtProdAccess)
 class UserSdwtProdAccessAdmin(admin.ModelAdmin):
     """UserSdwtProdAccess 관리 화면 설정입니다."""
 
-    list_display = ("user_knox_id", "user_sdwt_prod", "role", "granted_by_knox_id", "created_at")
-    list_filter = ("role", "user_sdwt_prod")
+    list_display = ("user_knox_id", "affiliation_user_sdwt_prod", "role", "granted_by_knox_id", "created_at")
+    list_filter = ("role", "affiliation__user_sdwt_prod")
     search_fields = (
         "user__knox_id",
         "user__email",
-        "user_sdwt_prod",
+        "affiliation__department",
+        "affiliation__line",
+        "affiliation__user_sdwt_prod",
         "granted_by__knox_id",
         "granted_by__email",
     )
-    autocomplete_fields = ("user", "granted_by")
+    autocomplete_fields = ("user", "affiliation", "granted_by")
     ordering = ("-created_at", "-id")
 
     @admin.display(ordering="user__knox_id", description="사용자 knox_id")
     def user_knox_id(self, obj):
         return getattr(obj.user, "knox_id", None) or ""
+
+    @admin.display(ordering="affiliation__user_sdwt_prod", description="user_sdwt_prod")
+    def affiliation_user_sdwt_prod(self, obj):
+        return getattr(obj.affiliation, "user_sdwt_prod", "") or ""
 
     @admin.display(ordering="granted_by__knox_id", description="부여자 knox_id")
     def granted_by_knox_id(self, obj):

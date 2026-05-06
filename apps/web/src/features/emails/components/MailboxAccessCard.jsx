@@ -21,15 +21,15 @@ const ROLE_VARIANTS = {
   manager: "default",
 }
 
-function resolveRole(value) {
-  return ROLE_LABELS[value] ? value : "viewer"
-}
-
 const SOURCE_LABELS = {
   self: "내 소속",
   grant: "부여됨",
   privileged: "관리자 전체",
   unknown: "기타",
+}
+
+function resolveRole(value) {
+  return ROLE_LABELS[value] ? value : "viewer"
 }
 
 function formatDate(value) {

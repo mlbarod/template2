@@ -145,8 +145,8 @@ def replace_drone_sop_channel_recipients(
 ) -> dict[str, object]:
     """Drone SOP target/channel 수신인 목록을 사용자 id 스냅샷으로 교체합니다.
 
-    target_user_sdwt_prod는 운영상 라인별 고유값으로 관리되지만,
-    커스텀 target을 허용하기 위해 account_affiliation 존재 여부는 검증하지 않습니다.
+    target_user_sdwt_prod는 account_affiliation에 없어도 되지만,
+    line_id는 기존 account_affiliation 라인 안에서만 허용합니다.
 
     입력:
     - line_id: target 소유 라인

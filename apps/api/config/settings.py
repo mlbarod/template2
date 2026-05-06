@@ -114,7 +114,6 @@ INSTALLED_APPS = [
     "api.emails",
     "api.health",
     "api.management",
-    "api.messenger",
     "api.rag",
     "api.timeline",
     "api.voc",

@@ -15,7 +15,7 @@ import tempfile
 from html import escape
 from typing import Any
 
-from api.messenger import services as messenger_services
+import api.common.services as messenger_services
 
 from ...jira.templates.jira_template_h1 import find_layer
 

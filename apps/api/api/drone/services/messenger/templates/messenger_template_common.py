@@ -19,7 +19,7 @@ import tempfile
 from html import escape
 from typing import Any
 
-from api.messenger import services as messenger_services
+import api.common.services as messenger_services
 
 TEMPLATE_KEY = "common"
 

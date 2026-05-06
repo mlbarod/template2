@@ -1,9 +1,9 @@
 # =============================================================================
-# 모듈: Knox 메신저 API 단일 유틸
+# 모듈: 공용 Knox 메신저 API 어댑터
 # 주요 기능: 디바이스 등록, key/iv 발급, 암복호화, 채팅/메시지 전송
 # 주요 가정: KNOX_MESSENGER_* 설정이 환경에 주입되어 있습니다.
 # =============================================================================
-"""Knox 메신저 API 유틸리티."""
+"""Knox 메신저 API 공용 어댑터입니다."""
 
 from __future__ import annotations
 
@@ -89,9 +89,6 @@ class _KnoxContext:
     timeout_seconds: int
 
 
-# =============================================================================
-# 암호화 (AES-CBC + PKCS7 + Base64)
-# =============================================================================
 def knox_encrypt(key: bytes, iv: bytes, plaintext: str) -> bytes:
     """Knox 요청 본문을 암호화합니다."""
 
@@ -115,9 +112,6 @@ def knox_decrypt(key: bytes, iv: bytes, ciphertext: str | bytes) -> str:
     return plaintext.decode("utf-8")
 
 
-# =============================================================================
-# 내부 유틸
-# =============================================================================
 def _normalize_base_url(base_url: str) -> str:
     return base_url.rstrip("/") + "/"
 
@@ -183,7 +177,6 @@ def _prepare_knox_context(config: KnoxMessengerConfig) -> _KnoxContext:
 
 
 def _post_encrypted(context: _KnoxContext, path: str, payload: dict[str, Any]) -> requests.Response:
-    # body = base64(AES-CBC(PKCS7(json)))
     body = knox_encrypt(context.key, context.iv, json.dumps(payload)).decode("utf-8")
 
     response = requests.post(
@@ -197,10 +190,9 @@ def _post_encrypted(context: _KnoxContext, path: str, payload: dict[str, Any]) -
     return response
 
 
-# =============================================================================
-# singleId 변환
-# =============================================================================
 def create_request_parameters(target_ids: Iterable[str]) -> dict[str, list[dict[str, str]]]:
+    """Knox singleId 조회 요청 파라미터를 생성합니다."""
+
     return {"singleIdList": [{"singleId": str(single_id)} for single_id in target_ids]}
 
 
@@ -209,6 +201,8 @@ def search_user_ids_by_single_ids(
     single_ids: Sequence[str],
     config: KnoxMessengerConfig | None = None,
 ) -> list[dict[str, Any]]:
+    """singleId 목록으로 Knox userID 검색 결과를 조회합니다."""
+
     resolved = config or KnoxMessengerConfig.from_env()
     headers = _register_device(resolved)
     base_url = _normalize_base_url(resolved.base_url)
@@ -231,6 +225,8 @@ def resolve_user_ids_by_single_ids(
     single_ids: Sequence[str],
     config: KnoxMessengerConfig | None = None,
 ) -> list[str]:
+    """singleId 목록을 Knox userID 목록으로 변환합니다."""
+
     results = search_user_ids_by_single_ids(single_ids=single_ids, config=config)
 
     normalized_single_ids = [
@@ -247,9 +243,6 @@ def resolve_user_ids_by_single_ids(
     return resolved_user_ids
 
 
-# =============================================================================
-# 메시지/채팅룸
-# =============================================================================
 def create_chatroom(
     *,
     user_ids: Sequence[str],
@@ -257,6 +250,8 @@ def create_chatroom(
     chat_type: int = 1,
     config: KnoxMessengerConfig | None = None,
 ) -> int:
+    """Knox 메신저 채팅방을 생성합니다."""
+
     resolved = config or KnoxMessengerConfig.from_env()
     context = _prepare_knox_context(resolved)
 
@@ -279,6 +274,8 @@ def send_chat_message(
     ttl: int = _DEFAULT_MESSAGE_TTL,
     config: KnoxMessengerConfig | None = None,
 ) -> None:
+    """Knox 메신저 채팅 메시지를 전송합니다."""
+
     resolved = config or KnoxMessengerConfig.from_env()
     context = _prepare_knox_context(resolved)
 
@@ -317,9 +314,6 @@ def change_chatroom_title(
     _post_encrypted(context, "message/api/v2.0/message/changeChatroomMetaRequest", payload)
 
 
-# =============================================================================
-# msgType=7 (Excel Table)
-# =============================================================================
 def _read_text_file(path: str, encoding: str = "utf-8") -> str:
     if not os.path.exists(path):
         raise KnoxMessengerError(f"HTML file not found: {path}")
@@ -387,3 +381,18 @@ def send_excel_table_message_from_file(
         print("\n[html length(chars)]", len(html), " / [compressed length(chars)]", len(compressed))
 
     _post_encrypted(context, "message/api/v2.0/message/chatRequest", payload)
+
+
+__all__ = [
+    "KnoxMessengerConfig",
+    "KnoxMessengerError",
+    "change_chatroom_title",
+    "create_chatroom",
+    "create_request_parameters",
+    "knox_decrypt",
+    "knox_encrypt",
+    "resolve_user_ids_by_single_ids",
+    "search_user_ids_by_single_ids",
+    "send_chat_message",
+    "send_excel_table_message_from_file",
+]

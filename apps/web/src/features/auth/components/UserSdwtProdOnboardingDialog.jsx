@@ -26,6 +26,10 @@ function optionKey(opt) {
   return `${opt.department}||${opt.line}||${opt.user_sdwt_prod}`
 }
 
+function sameText(left, right) {
+  return String(left || "").trim().toLowerCase() === String(right || "").trim().toLowerCase()
+}
+
 async function fetchAffiliationOverview() {
   const endpoint = buildBackendUrl("/api/v1/account/affiliation")
   const result = await fetchJson(endpoint, { cache: "no-store" })
@@ -75,14 +79,31 @@ export function UserSdwtProdOnboardingDialog({ user, onCompleted }) {
 
   const allOptions = affiliationQuery.data?.affiliationOptions || []
   const userDepartment = user?.department
-  const departmentOptions = userDepartment
-    ? allOptions.filter((opt) => opt.department === userDepartment)
-    : []
-  const options = departmentOptions.length ? departmentOptions : allOptions
-  const snapshotUserSdwtProd = affiliationQuery.data?.snapshotUserSdwtProd
-  const snapshotOption = snapshotUserSdwtProd
-    ? options.find((opt) => opt.user_sdwt_prod === snapshotUserSdwtProd)
+  const options = [...allOptions].sort((left, right) => {
+    const leftMatches = userDepartment && sameText(left.department, userDepartment)
+    const rightMatches = userDepartment && sameText(right.department, userDepartment)
+    if (leftMatches === rightMatches) return 0
+    return leftMatches ? -1 : 1
+  })
+  const departmentOption = userDepartment
+    ? options.find((opt) => sameText(opt.department, userDepartment))
     : null
+  const snapshotDepartment = affiliationQuery.data?.snapshotDepartment
+  const snapshotUserSdwtProd = affiliationQuery.data?.snapshotUserSdwtProd
+  const snapshotExactOption = snapshotUserSdwtProd
+    ? options.find(
+      (opt) =>
+        sameText(opt.user_sdwt_prod, snapshotUserSdwtProd) &&
+        (!snapshotDepartment || sameText(opt.department, snapshotDepartment)),
+    )
+    : null
+  const snapshotFallbackOption = snapshotUserSdwtProd
+    ? options.find((opt) => sameText(opt.user_sdwt_prod, snapshotUserSdwtProd))
+    : null
+  const snapshotDepartmentOption = snapshotDepartment
+    ? options.find((opt) => sameText(opt.department, snapshotDepartment))
+    : null
+  const snapshotOption = snapshotExactOption || snapshotFallbackOption || snapshotDepartmentOption
   const selected = options.find((opt) => optionKey(opt) === selectedKey)
 
   useEffect(() => {
@@ -91,7 +112,14 @@ export function UserSdwtProdOnboardingDialog({ user, onCompleted }) {
       setSelectedKey(optionKey(snapshotOption))
       return
     }
-    if (!user?.department || !user?.line || !user?.user_sdwt_prod) return
+    if (departmentOption) {
+      setSelectedKey(optionKey(departmentOption))
+      return
+    }
+    if (!user?.department || !user?.line || !user?.user_sdwt_prod) {
+      setSelectedKey(optionKey(options[0]))
+      return
+    }
     const current = options.find(
       (opt) =>
         opt.department === user.department &&
@@ -101,7 +129,7 @@ export function UserSdwtProdOnboardingDialog({ user, onCompleted }) {
     if (current) {
       setSelectedKey(optionKey(current))
     }
-  }, [options, selectedKey, snapshotOption, user?.department, user?.line, user?.user_sdwt_prod])
+  }, [departmentOption, options, selectedKey, snapshotOption, user?.department, user?.line, user?.user_sdwt_prod])
 
   const handleSubmit = async (event) => {
     event.preventDefault()

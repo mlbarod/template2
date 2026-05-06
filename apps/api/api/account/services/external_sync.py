@@ -15,18 +15,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Iterable
 
-from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
 
-from ..models import Affiliation, ExternalAffiliationSnapshot
+from ..models import ExternalAffiliationSnapshot, UserCurrentAffiliation
 from .. import selectors
-from .access import ensure_self_access
-from .utils import (
-    _build_user_sdwt_display_map,
-    _normalize_user_sdwt_lookup_key,
-    _same_user_sdwt_prod,
-)
+from .utils import _same_user_sdwt_prod
 
 
 def sync_external_affiliations(
@@ -43,8 +37,7 @@ def sync_external_affiliations(
 
     부작용:
     - ExternalAffiliationSnapshot 업서트
-    - 사용자 requires_affiliation_reconfirm 갱신
-    - Affiliation 누락분 생성(라인 공백 처리)
+    - 현재 앱 소속의 requires_reconfirm 갱신
 
     오류:
     - 없음
@@ -60,7 +53,6 @@ def sync_external_affiliations(
     flagged = 0
 
     record_list = [record for record in records if isinstance(record, dict)]
-    affiliation_candidates: dict[str, str] = {}
     predicted_by_knox: dict[str, str] = {}
     to_create: list[ExternalAffiliationSnapshot] = []
     to_update: list[ExternalAffiliationSnapshot] = []
@@ -96,7 +88,6 @@ def sync_external_affiliations(
             source_updated_at = now
 
         predicted_by_knox[knox_id] = predicted
-        affiliation_candidates[predicted] = department
 
         snapshot = existing.get(knox_id)
         if snapshot is None:
@@ -152,19 +143,25 @@ def sync_external_affiliations(
         users_by_knox = selectors.get_users_by_knox_ids(knox_ids=changed_knox_ids)
         user_ids = [user.id for user in users_by_knox.values() if user]
         pending_user_ids = selectors.get_pending_user_sdwt_prod_changes_by_user_ids(user_ids=user_ids)
-        flagged_users = []
+        flagged_affiliations = []
 
         for knox_id in changed_knox_ids:
             user = users_by_knox.get(knox_id)
             if user is None:
                 continue
 
-            ensure_self_access(user, role="member")
-
             if user.id in pending_user_ids:
                 continue
 
-            current_user_sdwt = (getattr(user, "user_sdwt_prod", None) or "").strip()
+            current_affiliation = selectors.get_current_affiliation_record(user=user)
+            if current_affiliation is None:
+                continue
+
+            current_user_sdwt = (
+                current_affiliation.affiliation.user_sdwt_prod
+                if current_affiliation.affiliation_id
+                else ""
+            ).strip()
             if not current_user_sdwt:
                 continue
 
@@ -172,45 +169,18 @@ def sync_external_affiliations(
             if not predicted or _same_user_sdwt_prod(current_user_sdwt, predicted):
                 continue
 
-            user.requires_affiliation_reconfirm = True
-            flagged_users.append(user)
+            current_affiliation.requires_reconfirm = True
+            flagged_affiliations.append(current_affiliation)
 
-        if flagged_users:
-            UserModel = get_user_model()
-            UserModel.objects.bulk_update(flagged_users, ["requires_affiliation_reconfirm"], batch_size=bulk_batch_size)
-            flagged = len(flagged_users)
-
-    # -----------------------------------------------------------------------------
-    # 7) 소속 옵션 누락분 추가
-    # -----------------------------------------------------------------------------
-    if affiliation_candidates:
-        user_sdwt_display_map = _build_user_sdwt_display_map(affiliation_candidates.keys())
-        user_sdwt_prods = list(user_sdwt_display_map.values())
-        existing_user_sdwt_prods = selectors.get_existing_affiliation_user_sdwt_prods(
-            user_sdwt_prods=user_sdwt_prods
-        )
-        most_common_departments = selectors.get_most_common_departments_by_user_sdwt_prods(
-            user_sdwt_prods=user_sdwt_prods
-        )
-        existing_lookup_keys = set(_build_user_sdwt_display_map(existing_user_sdwt_prods).keys())
-        missing = [
-            Affiliation(
-                department=most_common_departments.get(user_sdwt_prod) or affiliation_candidates[user_sdwt_prod],
-                line="",
-                user_sdwt_prod=user_sdwt_prod,
+        if flagged_affiliations:
+            UserCurrentAffiliation.objects.bulk_update(
+                flagged_affiliations,
+                ["requires_reconfirm"],
+                batch_size=bulk_batch_size,
             )
-            for user_sdwt_prod in user_sdwt_prods
-            if _normalize_user_sdwt_lookup_key(user_sdwt_prod) not in existing_lookup_keys
-        ]
-        if missing:
-            with transaction.atomic():
-                Affiliation.objects.bulk_create(
-                    missing,
-                    ignore_conflicts=True,
-                    batch_size=bulk_batch_size,
-                )
+            flagged = len(flagged_affiliations)
 
     # -----------------------------------------------------------------------------
-    # 8) 결과 반환
+    # 7) 결과 반환
     # -----------------------------------------------------------------------------
     return {"created": created, "updated": updated, "unchanged": unchanged, "flagged": flagged}

@@ -13,7 +13,7 @@ from typing import Any
 
 from django.conf import settings
 
-from api.messenger import services as messenger_services
+import api.common.services as messenger_services
 
 from .messenger_sender import build_drone_sop_messenger_template_inputs
 from .templates.messenger_template_registry import EXCEL_TABLE_TEMPLATE_SENDERS

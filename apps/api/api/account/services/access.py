@@ -20,6 +20,7 @@ from .. import selectors
 from ..models import UserSdwtProdAccess
 from .utils import (
     _build_user_sdwt_display_map,
+    _is_privileged_user,
     _normalize_user_sdwt_lookup_key,
     _user_can_manage_user_sdwt_prod,
     _same_user_sdwt_prod,
@@ -79,7 +80,7 @@ def _normalize_role_for_current_affiliation(
     """
 
     normalized_role = _normalize_access_role(role)
-    current_user_sdwt = (getattr(user, "user_sdwt_prod", None) or "").strip()
+    current_user_sdwt = (selectors.get_current_user_sdwt_prod(user=user) or "").strip()
     target_user_sdwt = (user_sdwt_prod or "").strip()
     if _same_user_sdwt_prod(current_user_sdwt, target_user_sdwt):
         if normalized_role == UserSdwtProdAccess.Roles.VIEWER:
@@ -115,11 +116,13 @@ def ensure_self_access(user: Any, *, role: str = UserSdwtProdAccess.Roles.MEMBER
     # -----------------------------------------------------------------------------
     # 1) 현재 소속 유효성 확인
     # -----------------------------------------------------------------------------
-    user_sdwt_prod = getattr(user, "user_sdwt_prod", None)
-    if not isinstance(user_sdwt_prod, str) or not user_sdwt_prod.strip():
+    current_affiliation = selectors.get_current_affiliation_record(user=user)
+    if current_affiliation is None or current_affiliation.affiliation is None:
         return None
 
-    normalized_user_sdwt = user_sdwt_prod.strip()
+    normalized_user_sdwt = current_affiliation.affiliation.user_sdwt_prod.strip()
+    if not normalized_user_sdwt:
+        return None
 
     # -----------------------------------------------------------------------------
     # 2) 접근 권한 역할 정규화
@@ -142,7 +145,7 @@ def ensure_self_access(user: Any, *, role: str = UserSdwtProdAccess.Roles.MEMBER
             try:
                 access = UserSdwtProdAccess.objects.create(
                     user=user,
-                    user_sdwt_prod=normalized_user_sdwt,
+                    affiliation=current_affiliation.affiliation,
                     role=normalized_role,
                     granted_by=None,
                 )
@@ -221,6 +224,11 @@ def grant_or_revoke_access(
     # 2) 대상 그룹 정규화 및 권한 검증
     # -----------------------------------------------------------------------------
     normalized_target = (target_group or "").strip()
+    target_affiliation = selectors.get_affiliation_option_by_user_sdwt_prod(
+        user_sdwt_prod=normalized_target
+    )
+    if target_affiliation is None:
+        return {"error": "Invalid user_sdwt_prod"}, 400
     if not _user_can_manage_user_sdwt_prod(user=grantor, user_sdwt_prod=normalized_target):
         return {"error": "forbidden"}, 403
 
@@ -229,7 +237,7 @@ def grant_or_revoke_access(
     # -----------------------------------------------------------------------------
     normalized_action = (action or "grant").lower()
     if normalized_action == "revoke":
-        current_target_sdwt = (getattr(target_user, "user_sdwt_prod", None) or "").strip()
+        current_target_sdwt = (selectors.get_current_user_sdwt_prod(user=target_user) or "").strip()
         if _same_user_sdwt_prod(current_target_sdwt, normalized_target):
             return {"error": "Cannot revoke access for the user's current affiliation"}, 400
         access = selectors.get_access_row_for_user_and_prod(
@@ -267,7 +275,7 @@ def grant_or_revoke_access(
             try:
                 access = UserSdwtProdAccess.objects.create(
                     user=target_user,
-                    user_sdwt_prod=normalized_target,
+                    affiliation=target_affiliation,
                     role=normalized_role,
                     granted_by=grantor,
                 )
@@ -334,6 +342,80 @@ def get_manageable_groups_with_members(*, user: Any) -> dict[str, object]:
         groups.append({"userSdwtProd": prod, "members": members_by_group.get(prod, [])})
 
     return {"groups": groups}
+
+
+def get_affiliation_members(
+    *,
+    user: Any,
+    user_sdwt_prod: str,
+) -> tuple[dict[str, object], int]:
+    """접근 가능한 소속의 사용자 멤버 목록을 반환합니다.
+
+    입력:
+    - user: 요청 사용자
+    - user_sdwt_prod: 조회할 소속 식별자
+
+    반환:
+    - tuple[dict[str, object], int]: 응답 payload와 HTTP 상태 코드
+
+    부작용:
+    - 없음
+
+    오류:
+    - 400: 소속 식별자 누락
+    - 403: 조회 권한 없음
+    """
+
+    normalized_target = (user_sdwt_prod or "").strip()
+    if not normalized_target:
+        return {"error": "user_sdwt_prod is required"}, 400
+
+    target_lookup_key = _normalize_user_sdwt_lookup_key(normalized_target)
+    accessible_values = selectors.get_accessible_user_sdwt_prods_for_user(user)
+    accessible_display_map = _build_user_sdwt_display_map(accessible_values)
+    if not _is_privileged_user(user) and target_lookup_key not in accessible_display_map:
+        return {"error": "forbidden"}, 403
+
+    canonical_user_sdwt = accessible_display_map.get(target_lookup_key, normalized_target)
+    access_rows = list(selectors.list_group_members(user_sdwt_prods={canonical_user_sdwt}))
+    access_by_user_id = {access.user_id: access for access in access_rows}
+    members: list[dict[str, object]] = []
+    seen_user_ids: set[int] = set()
+
+    for member_user in selectors.list_current_affiliation_users_by_user_sdwt_prod(
+        user_sdwt_prod=canonical_user_sdwt
+    ):
+        access = access_by_user_id.get(member_user.id)
+        members.append(
+            _serialize_affiliation_member(
+                member_user=member_user,
+                user_sdwt_prod=canonical_user_sdwt,
+                access=access,
+            )
+        )
+        seen_user_ids.add(member_user.id)
+
+    for access in access_rows:
+        if access.user_id in seen_user_ids:
+            continue
+        members.append(
+            _serialize_affiliation_member(
+                member_user=access.user,
+                user_sdwt_prod=canonical_user_sdwt,
+                access=access,
+            )
+        )
+        seen_user_ids.add(access.user_id)
+
+    role_order = {"manager": 0, "member": 1, "viewer": 2}
+    members.sort(
+        key=lambda row: (
+            role_order.get(str(row.get("role") or "viewer"), 2),
+            str(row.get("username") or ""),
+            int(row.get("userId") or 0),
+        )
+    )
+    return {"userSdwtProd": canonical_user_sdwt, "members": members}, 200
 
 
 def _serialize_access(access: UserSdwtProdAccess, source: str) -> Dict[str, object]:
@@ -422,6 +504,45 @@ def _serialize_member(access: UserSdwtProdAccess) -> Dict[str, object]:
     }
 
 
+def _serialize_affiliation_member(
+    *,
+    member_user: Any,
+    user_sdwt_prod: str,
+    access: UserSdwtProdAccess | None,
+) -> Dict[str, object]:
+    """현재 소속 사용자와 명시 접근 권한을 멤버 응답으로 직렬화합니다."""
+
+    username = getattr(member_user, "username", None)
+    username_value = username.strip() if isinstance(username, str) else ""
+    current_affiliation = _get_user_current_affiliation(member_user)
+    affiliation = getattr(current_affiliation, "affiliation", None)
+    name_value = (
+        username_value
+        or f"{getattr(member_user, 'first_name', '') or ''}{getattr(member_user, 'last_name', '') or ''}"
+    )
+    return {
+        "userId": member_user.id,
+        "username": username_value,
+        "name": name_value,
+        "knoxId": getattr(member_user, "knox_id", None),
+        "email": getattr(member_user, "email", None),
+        "department": getattr(affiliation, "department", None) or getattr(member_user, "department", None),
+        "userSdwtProd": user_sdwt_prod,
+        "role": access.role if access else UserSdwtProdAccess.Roles.MEMBER,
+        "grantedBy": access.granted_by_id if access else None,
+        "grantedAt": access.created_at.isoformat() if access else None,
+    }
+
+
+def _get_user_current_affiliation(member_user: Any) -> Any | None:
+    """사용자의 현재 소속 역참조를 안전하게 반환합니다."""
+
+    try:
+        return getattr(member_user, "current_affiliation", None)
+    except Exception:
+        return None
+
+
 def _current_access_list(user: Any) -> List[Dict[str, object]]:
     """현재 사용자 기준 접근 가능한 그룹 목록을 구성합니다.
 
@@ -453,10 +574,10 @@ def _current_access_list(user: Any) -> List[Dict[str, object]]:
     # -----------------------------------------------------------------------------
     # 2) 현재 소속 포함
     # -----------------------------------------------------------------------------
-    current_user_sdwt = getattr(user, "user_sdwt_prod", None)
+    current_user_sdwt = selectors.get_current_user_sdwt_prod(user=user)
     current_lookup_key = _normalize_user_sdwt_lookup_key(current_user_sdwt)
     if current_lookup_key:
-        display_map[current_lookup_key] = (getattr(user, "user_sdwt_prod", None) or "").strip()
+        display_map[current_lookup_key] = (current_user_sdwt or "").strip()
         access_map.setdefault(current_lookup_key, None)
 
     # -----------------------------------------------------------------------------

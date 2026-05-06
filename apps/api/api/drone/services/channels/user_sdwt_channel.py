@@ -11,6 +11,7 @@ from typing import Any
 
 from django.db import transaction
 
+from ... import selectors
 from ...models import DroneSopUserSdwtChannel
 
 _UNSET = object()
@@ -144,6 +145,12 @@ def upsert_drone_sop_user_sdwt_channel(
     normalized_messenger_template_key = _normalize_optional_template_key(messenger_template_key)
 
     normalized_target = target_user_sdwt_prod.strip()
+    if (
+        normalized_line_id is not _UNSET
+        and normalized_line_id
+        and not selectors.line_id_exists(line_id=normalized_line_id)
+    ):
+        raise ValueError("line_id must be an existing line")
 
     # -----------------------------------------------------------------------------
     # 2) 행 조회/생성 및 업데이트

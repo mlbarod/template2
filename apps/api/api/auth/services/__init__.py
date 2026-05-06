@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from .authentication import CsrfExemptSessionAuthentication
 from .oidc import (
-    _extract_user_info_from_claims,
     auth_callback,
     auth_config,
     auth_login,
@@ -24,7 +23,6 @@ from .oidc import (
 
 __all__ = [
     "CsrfExemptSessionAuthentication",
-    "_extract_user_info_from_claims",
     "auth_callback",
     "auth_config",
     "auth_login",

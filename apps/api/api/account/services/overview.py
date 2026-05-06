@@ -1,26 +1,23 @@
 # =============================================================================
 # 모듈 설명: 계정 화면 개요 데이터를 구성하는 서비스를 제공합니다.
 # - 주요 대상: get_account_overview
-# - 불변 조건: 메일함 요약은 emails 서비스에 위임합니다.
+# - 불변 조건: account 도메인의 사용자/소속/권한 정보만 구성합니다.
 # =============================================================================
 
 """계정 화면 개요 데이터를 구성하는 서비스 모음.
 
-- 주요 대상: get_account_overview
+- 주요 대상: 사용자 프로필, 소속 요약, 소속 변경 이력, 관리 그룹
 - 주요 엔드포인트/클래스: 없음(서비스 함수 제공)
-- 가정/불변 조건: 메일함 요약은 emails 서비스에 위임됨
+- 가정/불변 조건: 메일함/이메일 정보는 emails 도메인에서 제공합니다.
 """
 from __future__ import annotations
 
 from typing import Any
 
-import api.emails.services as email_services
-
 from .. import selectors
 from .access import _current_access_list, get_manageable_groups_with_members
 from .affiliation_requests import _serialize_affiliation_change
 from .affiliations import get_affiliation_reconfirm_status
-from .utils import _is_privileged_user, _normalize_user_sdwt_lookup_key
 
 
 def get_account_overview(*, user: Any, timezone_name: str) -> dict[str, object]:
@@ -49,11 +46,12 @@ def get_account_overview(*, user: Any, timezone_name: str) -> dict[str, object]:
     # -----------------------------------------------------------------------------
     # 2) 프로필/소속 기본 정보 구성
     # -----------------------------------------------------------------------------
+    current_values = selectors.get_current_affiliation_values(user=user)
     profile = {
         "id": getattr(user, "id", None),
         "username": getattr(user, "username", None),
         "knoxId": getattr(user, "knox_id", None),
-        "userSdwtProd": getattr(user, "user_sdwt_prod", None),
+        "userSdwtProd": current_values.get("user_sdwt_prod"),
         "role": selectors.get_user_profile_role(user=user),
         "isSuperuser": bool(getattr(user, "is_superuser", False)),
         "isStaff": bool(getattr(user, "is_staff", False)),
@@ -62,10 +60,11 @@ def get_account_overview(*, user: Any, timezone_name: str) -> dict[str, object]:
     # -----------------------------------------------------------------------------
     # 3) 소속 요약 정보 구성
     # -----------------------------------------------------------------------------
+    current_department = current_values.get("department") or getattr(user, "department", None)
     affiliation_payload = {
-        "currentUserSdwtProd": getattr(user, "user_sdwt_prod", None),
-        "currentDepartment": getattr(user, "department", None),
-        "currentLine": getattr(user, "line", None),
+        "currentUserSdwtProd": current_values.get("user_sdwt_prod"),
+        "currentDepartment": current_department,
+        "currentLine": current_values.get("line"),
         "timezone": timezone_name,
         "accessibleUserSdwtProds": access_list,
         "manageableUserSdwtProds": manageable,
@@ -83,43 +82,7 @@ def get_account_overview(*, user: Any, timezone_name: str) -> dict[str, object]:
     manageable_groups = get_manageable_groups_with_members(user=user)
 
     # -----------------------------------------------------------------------------
-    # 6) 메일함 접근 요약 구성
-    # -----------------------------------------------------------------------------
-    mailbox_rows = email_services.get_mailbox_access_summary_for_user(user=user)
-    access_map = {
-        _normalize_user_sdwt_lookup_key(entry.get("userSdwtProd")): entry
-        for entry in access_list
-        if _normalize_user_sdwt_lookup_key(entry.get("userSdwtProd"))
-    }
-    is_privileged = _is_privileged_user(user)
-
-    mailbox_payload: list[dict[str, object]] = []
-    for mailbox in mailbox_rows:
-        user_sdwt_prod = mailbox.get("userSdwtProd")
-        access = access_map.get(_normalize_user_sdwt_lookup_key(user_sdwt_prod))
-        if access is None and is_privileged:
-            access_source = "privileged"
-            role = "manager"
-            granted_by = None
-            granted_at = None
-        else:
-            access_source = access.get("source") if access else "unknown"
-            role = access.get("role") if access else mailbox.get("role") or "viewer"
-            granted_by = access.get("grantedBy") if access else None
-            granted_at = access.get("grantedAt") if access else None
-
-        mailbox_payload.append(
-            {
-                **mailbox,
-                "accessSource": access_source,
-                "role": role,
-                "grantedBy": granted_by,
-                "grantedAt": granted_at,
-            }
-        )
-
-    # -----------------------------------------------------------------------------
-    # 7) 최종 응답 반환
+    # 6) 최종 응답 반환
     # -----------------------------------------------------------------------------
     return {
         "user": profile,
@@ -127,5 +90,4 @@ def get_account_overview(*, user: Any, timezone_name: str) -> dict[str, object]:
         "affiliationReconfirm": get_affiliation_reconfirm_status(user=user),
         "affiliationHistory": history_payload,
         "manageableGroups": manageable_groups,
-        "mailboxAccess": mailbox_payload,
     }

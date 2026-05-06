@@ -9,7 +9,6 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Sequence, TypedDict
 
-from django.contrib.auth import get_user_model
 from django.db.models import Count, Q, QuerySet
 from django.utils import timezone
 
@@ -92,8 +91,9 @@ def list_mailbox_members(*, mailbox_user_sdwt_prod: str) -> list[dict[str, objec
     access_rows = list(account_selectors.list_group_members(user_sdwt_prods={normalized}))
     access_by_user_id = {row.user_id: row for row in access_rows}
 
-    UserModel = get_user_model()
-    affiliated_users = list(UserModel.objects.filter(user_sdwt_prod=normalized).order_by("id"))
+    affiliated_users = account_selectors.list_current_affiliation_users_by_user_sdwt_prod(
+        user_sdwt_prod=normalized
+    )
 
     members: list[dict[str, object]] = []
     seen_user_ids: set[int] = set()
@@ -190,7 +190,7 @@ def resolve_email_affiliation(*, sender_id: str, received_at: datetime | None) -
     # -----------------------------------------------------------------------------
     user = account_selectors.get_user_by_knox_id(knox_id=sender_id)
     if user is not None:
-        resolved = (getattr(user, "user_sdwt_prod", None) or "").strip()
+        resolved = (account_selectors.get_current_user_sdwt_prod(user=user) or "").strip()
         if resolved and resolved != UNASSIGNED_USER_SDWT_PROD:
             return {
                 "user_sdwt_prod": resolved,

@@ -14,7 +14,7 @@ from typing import Any, Sequence
 from django.conf import settings
 from django.template import Context, Engine
 
-from api.emails import services as email_services
+from api.common.services import send_knox_mail_api
 
 from ..shared.inform_context import build_inform_context
 from ..shared.utils import _truncate_text
@@ -102,7 +102,7 @@ def send_drone_sop_mail(
         raise ValueError("DRONE_MAIL_SENDER 미설정")
     subject = _build_mail_subject(template_key=template_key, row=row)
     body_html = _render_mail_body(template_key=template_key, row=row)
-    return email_services.send_knox_mail_api(
+    return send_knox_mail_api(
         sender_email=config.sender_email,
         receiver_emails=receiver_emails,
         subject=subject,

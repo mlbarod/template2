@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Optional, Sequence, Tuple
 
+from api.account import selectors as account_selectors
 import api.rag.services as rag_services
 
 from .. import selectors
@@ -153,7 +154,7 @@ def default_permission_groups(user: object) -> List[str]:
     # 1) 사용자 소속(user_sdwt_prod) 반영
     # -----------------------------------------------------------------------------
     groups: List[str] = []
-    raw_user_sdwt = getattr(user, "user_sdwt_prod", "")
+    raw_user_sdwt = account_selectors.get_current_user_sdwt_prod(user=user)
     if isinstance(raw_user_sdwt, str) and raw_user_sdwt.strip():
         groups.append(raw_user_sdwt.strip())
 
@@ -437,7 +438,7 @@ def build_rag_index_list_payload(*, user: object) -> dict[str, object]:
     # 1) 접근 가능한 그룹 조회
     # -----------------------------------------------------------------------------
     accessible = selectors.get_accessible_user_sdwt_prods_for_user(user=user)
-    current_user_sdwt_prod = getattr(user, "user_sdwt_prod", None)
+    current_user_sdwt_prod = account_selectors.get_current_user_sdwt_prod(user=user)
     permission_groups = set(accessible)
 
     # -----------------------------------------------------------------------------

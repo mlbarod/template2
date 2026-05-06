@@ -13,6 +13,7 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import NotFound
 
+from api.account import selectors as account_selectors
 from api.common.services import UNASSIGNED_USER_SDWT_PROD
 import api.account.services as account_services
 
@@ -157,7 +158,7 @@ def claim_unassigned_emails_for_user(*, user: Any) -> Dict[str, int]:
     if not sender_id:
         raise PermissionError("knox_id is required to claim unassigned emails")
 
-    target_user_sdwt_prod = getattr(user, "user_sdwt_prod", None)
+    target_user_sdwt_prod = account_selectors.get_current_user_sdwt_prod(user=user)
     if not isinstance(target_user_sdwt_prod, str) or not target_user_sdwt_prod.strip():
         raise ValueError("user_sdwt_prod must be set to claim unassigned emails")
 
@@ -408,7 +409,7 @@ def move_emails_after_sender_affiliation_change(
             failures.append(f"{sender_id}: 사용자 없음")
             continue
 
-        target_user_sdwt_prod = (getattr(user, "user_sdwt_prod", None) or "").strip()
+        target_user_sdwt_prod = (account_selectors.get_current_user_sdwt_prod(user=user) or "").strip()
         if not target_user_sdwt_prod or target_user_sdwt_prod == UNASSIGNED_USER_SDWT_PROD:
             failures.append(f"{sender_id}: user_sdwt_prod 없음/UNASSIGNED")
             continue

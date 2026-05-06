@@ -56,6 +56,7 @@ from .services import (
     claim_email_asset_ocr_tasks,
     claim_unassigned_emails_for_user,
     delete_single_email,
+    get_mailbox_access_summary_for_user,
     load_email_asset,
     load_email_html,
     move_emails_for_user,
@@ -473,6 +474,30 @@ class EmailMailboxMembersView(APIView):
         # -----------------------------------------------------------------------------
         members = list_mailbox_members(mailbox_user_sdwt_prod=mailbox_user_sdwt_prod)
         return JsonResponse({"userSdwtProd": mailbox_user_sdwt_prod, "members": members})
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class EmailMailboxSummaryView(APIView):
+    """현재 사용자의 메일함 접근 요약을 반환합니다."""
+
+    def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """메일함별 멤버/권한/메일 수 요약을 반환합니다.
+
+        입력:
+            요청: Django HttpRequest.
+        반환:
+            JsonResponse: {"results": [...]} 형태의 메일함 요약.
+        부작용:
+            없음.
+        오류:
+            - 401: 인증 실패
+        """
+
+        if not request.user or not request.user.is_authenticated:
+            return JsonResponse({"error": "unauthorized"}, status=401)
+
+        results = get_mailbox_access_summary_for_user(user=request.user)
+        return JsonResponse({"results": results})
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -1050,9 +1075,13 @@ class EmailOutboxProcessTriggerView(APIView):
         # -----------------------------------------------------------------------------
         # 2) limit 파라미터 파싱
         # -----------------------------------------------------------------------------
-        payload, payload_error = parse_json_body_or_error_when_present(request)
-        if payload_error is not None:
-            return payload_error
+        content_type = request.META.get("CONTENT_TYPE", "")
+        if content_type.startswith("application/json"):
+            payload, payload_error = parse_json_body_or_error_when_present(request)
+            if payload_error is not None:
+                return payload_error
+        else:
+            payload = {}
         raw_limit = payload.get("limit")
         if raw_limit is None:
             raw_limit = request.GET.get("limit")

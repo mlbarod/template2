@@ -5,6 +5,7 @@ export const emailQueryKeys = {
   list: (filters) => ["emails", "list", filters],
 
   mailboxes: ["emails", "mailboxes"],
+  mailboxSummary: ["emails", "mailboxSummary"],
 
   mailboxMembersPrefix: ["emails", "mailboxMembers"],
   mailboxMembers: (mailboxUserSdwtProd) => ["emails", "mailboxMembers", mailboxUserSdwtProd],
@@ -15,4 +16,3 @@ export const emailQueryKeys = {
   htmlPrefix: ["emails", "html"],
   html: (emailId) => ["emails", "html", emailId],
 }
-

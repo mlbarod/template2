@@ -762,6 +762,27 @@ def list_user_sdwt_prod_values_for_line(*, line_id: str) -> list[str]:
     return values
 
 
+def line_id_exists(*, line_id: str) -> bool:
+    """account_affiliation에 등록된 line_id인지 확인합니다."""
+
+    normalized_line_id = _normalize_str(line_id)
+    if not normalized_line_id:
+        return False
+
+    rows = run_query(
+        """
+        SELECT 1 AS exists_flag
+        FROM {table}
+        WHERE LOWER(line) = LOWER(%s)
+          AND line IS NOT NULL
+          AND line <> ''
+        LIMIT 1
+        """.format(table=LINE_SDWT_TABLE_NAME),
+        [normalized_line_id],
+    )
+    return bool(rows)
+
+
 def list_drone_sop_notification_targets_for_line(*, line_id: str) -> list[dict[str, object]]:
     """라인별 Drone SOP 알림 target 목록을 조회합니다.
 
@@ -1037,7 +1058,7 @@ def list_drone_sop_channel_recipients(
     target_row = get_drone_sop_channel_by_target_user_sdwt_prod(target_user_sdwt_prod=normalized)
     response_line_id = (target_row.line_id if target_row and target_row.line_id else _normalize_str(line_id)) or ""
 
-    rows = (
+    rows = list(
         DroneSopChannelRecipient.objects.filter(
             target_user_sdwt_prod__iexact=normalized,
             channel=channel,
@@ -1045,12 +1066,19 @@ def list_drone_sop_channel_recipients(
             user__is_active=True,
         )
         .select_related("user")
-        .order_by("user__user_sdwt_prod", "user__username", "user_id")
+        .order_by(
+            "user__username",
+            "user_id",
+        )
+    )
+    affiliation_by_user_id = account_selectors.get_current_affiliation_values_by_user_ids(
+        user_ids=[row.user_id for row in rows]
     )
 
     recipients: list[dict[str, object]] = []
     for row in rows:
         user = row.user
+        affiliation_values = affiliation_by_user_id.get(user.id, {})
         display_name = (
             getattr(user, "username", None)
             or getattr(user, "username_en", None)
@@ -1068,9 +1096,9 @@ def list_drone_sop_channel_recipients(
                 "sabun": getattr(user, "sabun", None) or "",
                 "knoxId": getattr(user, "knox_id", None) or "",
                 "email": getattr(user, "email", None) or "",
-                "department": getattr(user, "department", None) or "",
-                "line": getattr(user, "line", None) or "",
-                "userSdwtProd": getattr(user, "user_sdwt_prod", None) or "",
+                "department": affiliation_values.get("department") or "",
+                "line": affiliation_values.get("line") or "",
+                "userSdwtProd": affiliation_values.get("user_sdwt_prod") or "",
                 "channel": row.channel,
                 "lineId": response_line_id,
                 "targetUserSdwtProd": row.target_user_sdwt_prod,
@@ -1246,7 +1274,6 @@ def list_distinct_line_ids() -> list[str]:
         없음. 읽기 전용 조회입니다.
     """
 
-    values: list[Any] = []
     rows = run_query(
         """
         SELECT DISTINCT line AS line_id
@@ -1255,15 +1282,7 @@ def list_distinct_line_ids() -> list[str]:
         ORDER BY line_id
         """.format(table=LINE_SDWT_TABLE_NAME)
     )
-    values.extend(row.get("line_id") for row in rows)
-    values.extend(
-        DroneSopUserSdwtChannel.objects.filter(is_active=True)
-        .exclude(line_id__isnull=True)
-        .exclude(line_id__exact="")
-        .values_list("line_id", flat=True)
-        .distinct()
-    )
-    return _collapse_display_values(values)
+    return _collapse_display_values([row.get("line_id") for row in rows])
 
 
 def get_line_history_payload(

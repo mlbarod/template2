@@ -86,40 +86,6 @@ def _parse_effective_from(value: Optional[str]):
     return parsed.astimezone(dt_timezone.utc)
 
 
-def _get_authenticated_user(request: HttpRequest):
-    """DRF/Django 요청에서 인증된 사용자를 안전하게 얻습니다.
-
-    입력:
-    - 요청: Django HttpRequest 또는 DRF Request
-
-    반환:
-    - user | None: 인증된 사용자 또는 None
-
-    부작용:
-    - 없음
-
-    오류:
-    - 없음
-    """
-    # -----------------------------------------------------------------------------
-    # 1) DRF 요청이 감싼 Django 요청 확인
-    # -----------------------------------------------------------------------------
-    django_request = getattr(request, "_request", None)
-    if django_request is not None:
-        user = getattr(django_request, "user", None)
-        if user and getattr(user, "is_authenticated", False):
-            return user
-
-    # -----------------------------------------------------------------------------
-    # 2) 일반 요청의 user 확인
-    # -----------------------------------------------------------------------------
-    user = getattr(request, "user", None)
-    if user and getattr(user, "is_authenticated", False):
-        return user
-
-    return None
-
-
 def _parse_int(value: object, default: int) -> int:
     """입력 값을 int로 파싱하며 실패 시 기본값을 반환합니다.
 
@@ -778,7 +744,56 @@ class AccountGrantListView(APIView):
 
 
 # =============================================================================
-# 10) 사용자 pool 조회
+# 10) 소속 멤버 목록 조회
+# =============================================================================
+@method_decorator(csrf_exempt, name="dispatch")
+class AccountAffiliationMembersView(APIView):
+    """접근 가능한 소속의 사용자 멤버 목록을 조회합니다."""
+
+    def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """소속 멤버 목록을 반환합니다.
+
+        입력:
+        - 요청: Django HttpRequest
+        - args/kwargs: URL 라우팅 인자
+
+        반환:
+        - JsonResponse: 소속 멤버 목록
+
+        부작용:
+        - 없음
+
+        오류:
+        - 400: 소속 식별자 누락
+        - 401: 미인증
+        - 403: 접근 권한 없음
+
+        예시 요청:
+        - 예시 요청: GET /api/v1/account/affiliation/members?user_sdwt_prod=SDWT_A
+
+        snake/camel 호환:
+        - user_sdwt_prod / userSdwtProd (쿼리 키 매핑)
+        """
+
+        user = request.user
+        if not user or not user.is_authenticated:
+            return JsonResponse({"error": "unauthorized"}, status=401)
+
+        user_sdwt_prod = (
+            request.GET.get("user_sdwt_prod")
+            or request.GET.get("userSdwtProd")
+            or selectors.get_current_user_sdwt_prod(user=user)
+            or ""
+        ).strip()
+        payload, status_code = services.get_affiliation_members(
+            user=user,
+            user_sdwt_prod=user_sdwt_prod,
+        )
+        return JsonResponse(payload, status=status_code)
+
+
+# =============================================================================
+# 11) 사용자 pool 조회
 # =============================================================================
 @method_decorator(csrf_exempt, name="dispatch")
 class AccountUserPoolView(APIView):
@@ -846,7 +861,7 @@ class AccountUserPoolView(APIView):
 
 
 # =============================================================================
-# 11) line/user_sdwt_prod 선택 옵션 조회 (DB에 존재하는 조합만)
+# 12) line/user_sdwt_prod 선택 옵션 조회 (DB에 존재하는 조합만)
 # =============================================================================
 @method_decorator(csrf_exempt, name="dispatch")
 class LineSdwtOptionsView(APIView):

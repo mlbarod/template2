@@ -19,7 +19,7 @@ from django.core.paginator import EmptyPage, Paginator
 from django.db import transaction
 from django.utils import timezone
 
-from ..models import UserSdwtProdChange
+from ..models import UserCurrentAffiliation, UserSdwtProdChange
 from .. import selectors
 from .access import downgrade_member_access, ensure_self_access
 from .utils import (
@@ -107,15 +107,16 @@ def _serialize_affiliation_change_request(
     """
 
     user = change.user
+    current_values = selectors.get_current_affiliation_values(user=user)
     user_payload = {
         "id": getattr(user, "id", None),
         "username": getattr(user, "username", None),
         "email": getattr(user, "email", None),
         "sabun": getattr(user, "sabun", None),
         "knoxId": getattr(user, "knox_id", None),
-        "department": getattr(user, "department", None),
-        "line": getattr(user, "line", None),
-        "userSdwtProd": getattr(user, "user_sdwt_prod", None),
+        "department": current_values.get("department"),
+        "line": current_values.get("line"),
+        "userSdwtProd": current_values.get("user_sdwt_prod"),
     }
 
     return {
@@ -228,7 +229,7 @@ def get_affiliation_change_requests(
     if not is_privileged:
         approvable_user_sdwt_prods = selectors.list_approvable_user_sdwt_prod_values(user=user)
         allowed_user_sdwt_prods = set(approvable_user_sdwt_prods)
-        current_user_sdwt = getattr(user, "user_sdwt_prod", None)
+        current_user_sdwt = selectors.get_current_user_sdwt_prod(user=user)
         if isinstance(current_user_sdwt, str) and current_user_sdwt.strip():
             allowed_user_sdwt_prods.add(current_user_sdwt.strip())
         if not allowed_user_sdwt_prods:
@@ -301,24 +302,30 @@ def _apply_affiliation_change(*, change: UserSdwtProdChange, approver: Any | Non
     """
 
     # -----------------------------------------------------------------------------
-    # 1) 대상 사용자 업데이트
+    # 1) 현재 앱 소속 업데이트
     # -----------------------------------------------------------------------------
     target_user = change.user
     previous_user_sdwt = (getattr(change, "from_user_sdwt_prod", None) or "").strip()
     now = timezone.now()
-    target_user.user_sdwt_prod = change.to_user_sdwt_prod
-    target_user.department = change.department
-    target_user.line = change.line
-    target_user.affiliation_confirmed_at = now
-    target_user.requires_affiliation_reconfirm = False
-    target_user.save(
-        update_fields=[
-            "user_sdwt_prod",
-            "department",
-            "line",
-            "affiliation_confirmed_at",
-            "requires_affiliation_reconfirm",
-        ]
+    option = selectors.get_affiliation_option_by_user_sdwt_prod(
+        user_sdwt_prod=change.to_user_sdwt_prod
+    )
+    if option is None:
+        raise ValueError("Invalid user_sdwt_prod")
+
+    source = (
+        UserCurrentAffiliation.Sources.ADMIN_ASSIGNED
+        if approver is not None and getattr(approver, "id", None) != target_user.id
+        else UserCurrentAffiliation.Sources.USER_SELECTED
+    )
+    UserCurrentAffiliation.objects.update_or_create(
+        user=target_user,
+        defaults={
+            "affiliation": option,
+            "source": source,
+            "confirmed_at": now,
+            "requires_reconfirm": False,
+        },
     )
 
     # -----------------------------------------------------------------------------
@@ -349,7 +356,7 @@ def _apply_affiliation_change(*, change: UserSdwtProdChange, approver: Any | Non
         "status": "applied",
         "changeId": change.id,
         "userId": target_user.id,
-        "userSdwtProd": target_user.user_sdwt_prod,
+        "userSdwtProd": option.user_sdwt_prod,
         "effectiveFrom": change.effective_from.isoformat(),
     }
 
@@ -388,7 +395,7 @@ def request_affiliation_change(
     # 1) 대상 소속 정규화 및 동일 소속 요청 차단
     # -----------------------------------------------------------------------------
     normalized_target = (to_user_sdwt_prod or "").strip()
-    current_user_sdwt = (getattr(user, "user_sdwt_prod", None) or "").strip()
+    current_user_sdwt = (selectors.get_current_user_sdwt_prod(user=user) or "").strip()
     if _same_user_sdwt_prod(current_user_sdwt, normalized_target):
         return {"error": "already current affiliation"}, 400
 
@@ -455,7 +462,7 @@ def request_affiliation_change(
             user=user,
             department=getattr(option, "department", None),
             line=getattr(option, "line", None),
-            from_user_sdwt_prod=getattr(user, "user_sdwt_prod", None),
+            from_user_sdwt_prod=selectors.get_current_user_sdwt_prod(user=user),
             to_user_sdwt_prod=normalized_target,
             effective_from=effective_from,
             status=UserSdwtProdChange.Status.PENDING,
@@ -467,9 +474,10 @@ def request_affiliation_change(
         if should_auto_apply:
             return _apply_affiliation_change(change=change, approver=user), 200
 
-        if getattr(user, "requires_affiliation_reconfirm", False):
-            user.requires_affiliation_reconfirm = False
-            user.save(update_fields=["requires_affiliation_reconfirm"])
+        current_affiliation = selectors.get_current_affiliation_record(user=user)
+        if current_affiliation is not None and current_affiliation.requires_reconfirm:
+            current_affiliation.requires_reconfirm = False
+            current_affiliation.save(update_fields=["requires_reconfirm"])
 
     # -----------------------------------------------------------------------------
     # 7) 승인 대기 응답 반환

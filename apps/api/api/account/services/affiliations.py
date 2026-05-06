@@ -12,17 +12,40 @@
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, List, Tuple
 
-from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from ..models import Affiliation
+from ..models import Affiliation, UserCurrentAffiliation
 from .. import selectors
 from .access import _current_access_list
 from .affiliation_requests import request_affiliation_change
 from .utils import _same_user_sdwt_prod
+
+
+def _update_affiliation_option_values(
+    *,
+    option: Affiliation,
+    department: str,
+    line: str,
+    user_sdwt_prod: str,
+) -> Affiliation:
+    """소속 옵션의 표시 값을 필요한 경우에만 갱신합니다."""
+
+    changed_fields: list[str] = []
+    if option.department != department:
+        option.department = department
+        changed_fields.append("department")
+    if option.line != line:
+        option.line = line
+        changed_fields.append("line")
+    if option.user_sdwt_prod != user_sdwt_prod:
+        option.user_sdwt_prod = user_sdwt_prod
+        changed_fields.append("user_sdwt_prod")
+    if changed_fields:
+        option.save(update_fields=changed_fields)
+    return option
 
 
 def get_affiliation_overview(*, user: Any, timezone_name: str) -> dict[str, object]:
@@ -45,16 +68,20 @@ def get_affiliation_overview(*, user: Any, timezone_name: str) -> dict[str, obje
     access_list = _current_access_list(user)
     manageable = [entry["userSdwtProd"] for entry in access_list if entry["role"] == "manager"]
     options = selectors.list_affiliation_options()
+    current_values = selectors.get_current_affiliation_values(user=user)
+    current_department = current_values.get("department") or getattr(user, "department", None)
 
     knox_id = (getattr(user, "knox_id", None) or "").strip()
     snapshot = selectors.get_external_affiliation_snapshot_by_knox_id(knox_id=knox_id) if knox_id else None
     snapshot_user_sdwt_prod = (snapshot.predicted_user_sdwt_prod or "").strip() if snapshot else None
     snapshot_department = (snapshot.department or "").strip() if snapshot else None
+    if not snapshot_department:
+        snapshot_department = (getattr(user, "department", None) or "").strip() or None
 
     return {
-        "currentUserSdwtProd": getattr(user, "user_sdwt_prod", None),
-        "currentDepartment": getattr(user, "department", None),
-        "currentLine": getattr(user, "line", None),
+        "currentUserSdwtProd": current_values.get("user_sdwt_prod"),
+        "currentDepartment": current_department,
+        "currentLine": current_values.get("line"),
         "timezone": timezone_name,
         "accessibleUserSdwtProds": access_list,
         "manageableUserSdwtProds": manageable,
@@ -87,10 +114,11 @@ def get_affiliation_reconfirm_status(*, user: Any) -> dict[str, object]:
         knox_id=getattr(user, "knox_id", "") or ""
     )
     predicted = snapshot.predicted_user_sdwt_prod if snapshot else None
+    current_values = selectors.get_current_affiliation_values(user=user)
     return {
-        "requiresReconfirm": bool(getattr(user, "requires_affiliation_reconfirm", False)),
+        "requiresReconfirm": bool(current_values.get("requires_reconfirm", False)),
         "predictedUserSdwtProd": predicted,
-        "currentUserSdwtProd": getattr(user, "user_sdwt_prod", None),
+        "currentUserSdwtProd": current_values.get("user_sdwt_prod"),
     }
 
 
@@ -122,7 +150,7 @@ def auto_approve_affiliation_from_snapshot(
     if not user:
         return None
 
-    current_user_sdwt = (getattr(user, "user_sdwt_prod", None) or "").strip()
+    current_user_sdwt = (selectors.get_current_user_sdwt_prod(user=user) or "").strip()
     if current_user_sdwt:
         return None
 
@@ -179,7 +207,7 @@ def ensure_affiliation_option(
     - Affiliation: 소속 옵션 객체
 
     부작용:
-    - Affiliation 생성
+    - Affiliation 생성 또는 갱신
 
     오류:
     - ValueError: 필수 입력 누락
@@ -195,126 +223,89 @@ def ensure_affiliation_option(
         raise ValueError("department/line/user_sdwt_prod is required")
 
     # -----------------------------------------------------------------------------
-    # 2) 옵션 조회 및 생성 처리
+    # 2) 옵션 조회 및 생성/갱신 처리
     # -----------------------------------------------------------------------------
     with transaction.atomic():
-        option = selectors.get_affiliation_option(
-            department=normalized_department,
-            line=normalized_line,
+        option = selectors.get_affiliation_option_by_user_sdwt_prod(
             user_sdwt_prod=normalized_user_sdwt,
         )
-        if option is None:
+        if option is not None:
+            option = _update_affiliation_option_values(
+                option=option,
+                department=normalized_department,
+                line=normalized_line,
+                user_sdwt_prod=normalized_user_sdwt,
+            )
+        else:
             try:
-                option = Affiliation.objects.create(
-                    department=normalized_department,
-                    line=normalized_line,
-                    user_sdwt_prod=normalized_user_sdwt,
-                )
+                with transaction.atomic():
+                    option = Affiliation.objects.create(
+                        department=normalized_department,
+                        line=normalized_line,
+                        user_sdwt_prod=normalized_user_sdwt,
+                    )
             except IntegrityError:
-                option = selectors.get_affiliation_option(
-                    department=normalized_department,
-                    line=normalized_line,
+                option = selectors.get_affiliation_option_by_user_sdwt_prod(
                     user_sdwt_prod=normalized_user_sdwt,
                 )
                 if option is None:
                     raise
+                option = _update_affiliation_option_values(
+                    option=option,
+                    department=normalized_department,
+                    line=normalized_line,
+                    user_sdwt_prod=normalized_user_sdwt,
+                )
 
-    return option
+        return option
 
 
-def sync_user_lines_from_affiliations(*, users: Iterable[Any], dry_run: bool = False) -> dict[str, object]:
-    """line이 비어있는 사용자에게 소속 line 값을 동기화합니다.
+def set_current_affiliation_for_user(
+    *,
+    user: Any,
+    department: str,
+    line: str,
+    user_sdwt_prod: str,
+    source: str | None = None,
+) -> None:
+    """사용자의 현재 앱 소속을 account 도메인 규칙으로 설정합니다.
 
     입력:
-    - users: Django 사용자 객체 iterable
-    - dry_run: True면 업데이트 없이 로그만 생성
+    - user: 대상 사용자
+    - department: 부서 식별자
+    - line: 라인 식별자
+    - user_sdwt_prod: 소속 그룹 값
+    - source: 소속 출처(없으면 USER_SELECTED)
 
     반환:
-    - dict[str, object]: 처리 결과 요약 및 상세 로그
+    - 없음
 
     부작용:
-    - User.line 업데이트(dry_run=False)
+    - Affiliation 옵션 생성/갱신
+    - UserCurrentAffiliation 생성/갱신
 
     오류:
-    - 없음
+    - ValueError: 필수 입력 누락
     """
 
-    # -----------------------------------------------------------------------------
-    # 1) 대상 분류 및 후보 수집
-    # -----------------------------------------------------------------------------
-    total = 0
-    updated = 0
-    skipped_has_line = 0
-    skipped_no_user_sdwt_prod = 0
-    skipped_no_affiliation_line = 0
-    logs: list[str] = []
+    if user is None:
+        raise ValueError("user is required")
 
-    candidates: list[Any] = []
-    user_sdwt_prods: set[str] = set()
-
-    for user in users:
-        total += 1
-        user_label = getattr(user, "knox_id", None) or getattr(user, "pk", None) or "-"
-
-        current_line = getattr(user, "line", None)
-        if isinstance(current_line, str) and current_line.strip():
-            skipped_has_line += 1
-            logs.append(f"SKIP(기존 line 존재): {user_label} line={current_line}")
-            continue
-
-        current_sdwt = getattr(user, "user_sdwt_prod", None)
-        if not isinstance(current_sdwt, str) or not current_sdwt.strip():
-            skipped_no_user_sdwt_prod += 1
-            logs.append(f"SKIP(user_sdwt_prod 없음): {user_label}")
-            continue
-
-        normalized_sdwt = current_sdwt.strip()
-        candidates.append(user)
-        user_sdwt_prods.add(normalized_sdwt)
-
-    # -----------------------------------------------------------------------------
-    # 2) 소속 line 매핑 조회
-    # -----------------------------------------------------------------------------
-    line_map = selectors.get_affiliation_lines_by_user_sdwt_prods(
-        user_sdwt_prods=list(user_sdwt_prods)
+    option = ensure_affiliation_option(
+        department=department,
+        line=line,
+        user_sdwt_prod=user_sdwt_prod,
     )
-
-    # -----------------------------------------------------------------------------
-    # 3) 업데이트 대상 확정
-    # -----------------------------------------------------------------------------
-    to_update: list[Any] = []
-    for user in candidates:
-        user_label = getattr(user, "knox_id", None) or getattr(user, "pk", None) or "-"
-        current_sdwt = getattr(user, "user_sdwt_prod", None)
-        normalized_sdwt = (current_sdwt or "").strip()
-        line_value = line_map.get(normalized_sdwt)
-        if not isinstance(line_value, str) or not line_value.strip():
-            skipped_no_affiliation_line += 1
-            logs.append(f"SKIP(소속 line 없음): {user_label} user_sdwt_prod={normalized_sdwt}")
-            continue
-
-        user.line = line_value
-        to_update.append(user)
-        updated += 1
-        logs.append(f"UPDATED: {user_label} user_sdwt_prod={normalized_sdwt} line={line_value}")
-
-    # -----------------------------------------------------------------------------
-    # 4) 벌크 업데이트
-    # -----------------------------------------------------------------------------
-    if to_update and not dry_run:
-        UserModel = get_user_model()
-        with transaction.atomic():
-            UserModel.objects.bulk_update(to_update, ["line"], batch_size=1000)
-
-    return {
-        "total": total,
-        "updated": updated,
-        "skipped_has_line": skipped_has_line,
-        "skipped_no_user_sdwt_prod": skipped_no_user_sdwt_prod,
-        "skipped_no_affiliation_line": skipped_no_affiliation_line,
-        "logs": logs,
-        "dry_run": dry_run,
-    }
+    normalized_source = (source or "").strip() or UserCurrentAffiliation.Sources.USER_SELECTED
+    with transaction.atomic():
+        UserCurrentAffiliation.objects.update_or_create(
+            user=user,
+            defaults={
+                "affiliation": option,
+                "source": normalized_source,
+                "requires_reconfirm": False,
+            },
+        )
 
 
 def submit_affiliation_reconfirm_response(
@@ -357,18 +348,19 @@ def submit_affiliation_reconfirm_response(
     # -----------------------------------------------------------------------------
     # 2) 재확인 필요 여부 확인
     # -----------------------------------------------------------------------------
-    if not getattr(user, "requires_affiliation_reconfirm", False):
+    current_affiliation = selectors.get_current_affiliation_record(user=user)
+    if current_affiliation is None or not current_affiliation.requires_reconfirm:
         return {"error": "reconfirm not required"}, 409
 
     # -----------------------------------------------------------------------------
     # 3) 기존 소속 유지 선택 처리
     # -----------------------------------------------------------------------------
     if not accepted:
-        user.requires_affiliation_reconfirm = False
-        user.save(update_fields=["requires_affiliation_reconfirm"])
+        current_affiliation.requires_reconfirm = False
+        current_affiliation.save(update_fields=["requires_reconfirm"])
         return {
             "status": "kept",
-            "userSdwtProd": getattr(user, "user_sdwt_prod", None),
+            "userSdwtProd": selectors.get_current_user_sdwt_prod(user=user),
         }, 200
 
     # -----------------------------------------------------------------------------
@@ -386,10 +378,10 @@ def submit_affiliation_reconfirm_response(
     if not selected_user_sdwt:
         return {"error": "user_sdwt_prod is required"}, 400
 
-    current_user_sdwt = (getattr(user, "user_sdwt_prod", None) or "").strip()
+    current_user_sdwt = (selectors.get_current_user_sdwt_prod(user=user) or "").strip()
     if _same_user_sdwt_prod(current_user_sdwt, selected_user_sdwt):
-        user.requires_affiliation_reconfirm = False
-        user.save(update_fields=["requires_affiliation_reconfirm"])
+        current_affiliation.requires_reconfirm = False
+        current_affiliation.save(update_fields=["requires_reconfirm"])
         return {
             "status": "kept",
             "userSdwtProd": current_user_sdwt,
@@ -417,8 +409,8 @@ def submit_affiliation_reconfirm_response(
     )
 
     if status_code in (200, 202):
-        user.requires_affiliation_reconfirm = False
-        user.save(update_fields=["requires_affiliation_reconfirm"])
+        current_affiliation.requires_reconfirm = False
+        current_affiliation.save(update_fields=["requires_reconfirm"])
 
     return response_payload, status_code
 

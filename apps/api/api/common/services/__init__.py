@@ -1,12 +1,12 @@
 # =============================================================================
 # 모듈 설명: 공용 서비스/헬퍼의 공개 파사드를 제공합니다.
-# - 주요 대상: 활동 로그, 요청 헬퍼, DB/스토리지, 미들웨어
+# - 주요 대상: 활동 로그, 요청 헬퍼, DB/스토리지, 메일/메신저 발송, 미들웨어
 # - 불변 조건: 외부 모듈은 이 파사드를 통해 공용 기능을 사용합니다.
 # =============================================================================
 
 """공용 서비스 모듈의 공개 파사드.
 
-- 주요 대상: 활동 로그/요청 헬퍼/DB 헬퍼/스토리지/미들웨어
+- 주요 대상: 활동 로그/요청 헬퍼/DB 헬퍼/스토리지/메일/메신저 발송/미들웨어
 - 주요 엔드포인트/클래스: ActivityLoggingMiddleware, KnoxIdRequiredMiddleware 등
 - 가정/불변 조건: 공용 로직은 여기에서 일관되게 노출됨
 """
@@ -24,6 +24,20 @@ from .affiliations import (
     UNCLASSIFIED_USER_SDWT_PROD,
 )
 from .db import execute, get_cursor, run_query
+from .mail_api import MailSendError, send_knox_mail_api
+from .messenger import (
+    KnoxMessengerConfig,
+    KnoxMessengerError,
+    change_chatroom_title,
+    create_chatroom,
+    create_request_parameters,
+    knox_decrypt,
+    knox_encrypt,
+    resolve_user_ids_by_single_ids,
+    search_user_ids_by_single_ids,
+    send_chat_message,
+    send_excel_table_message_from_file,
+)
 from .middleware import ActivityLoggingMiddleware, KnoxIdRequiredMiddleware
 from .normalization import normalize_text
 from .request_helpers import (
@@ -45,9 +59,15 @@ from .storage import (
 __all__ = [
     "ActivityLoggingMiddleware",
     "KnoxIdRequiredMiddleware",
+    "KnoxMessengerConfig",
+    "KnoxMessengerError",
+    "MailSendError",
     "UNKNOWN",
     "UNASSIGNED_USER_SDWT_PROD",
     "UNCLASSIFIED_USER_SDWT_PROD",
+    "change_chatroom_title",
+    "create_chatroom",
+    "create_request_parameters",
     "delete_object",
     "download_bytes",
     "ensure_airflow_token",
@@ -57,12 +77,19 @@ __all__ = [
     "extract_bearer_token",
     "get_cursor",
     "get_minio_client",
+    "knox_decrypt",
+    "knox_encrypt",
     "merge_activity_metadata",
     "normalize_text",
     "parse_json_body",
     "parse_json_body_or_error_when_present",
     "resolve_frontend_target",
+    "resolve_user_ids_by_single_ids",
     "run_query",
+    "search_user_ids_by_single_ids",
+    "send_knox_mail_api",
+    "send_chat_message",
+    "send_excel_table_message_from_file",
     "set_activity_new_state",
     "set_activity_previous_state",
     "set_activity_summary",

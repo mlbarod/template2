@@ -19,6 +19,17 @@ from api.assistant.views import AssistantChatView
 import api.rag.services as rag_services
 
 
+def _set_current_affiliation(user, *, user_sdwt_prod: str) -> None:
+    """테스트 사용자의 현재 앱 소속을 설정합니다."""
+
+    account_services.set_current_affiliation_for_user(
+        user=user,
+        department="Dept",
+        line="Line",
+        user_sdwt_prod=user_sdwt_prod,
+    )
+
+
 class AssistantRagIndexViewsTests(TestCase):
     """RAG 인덱스/권한 그룹 API 동작을 검증합니다."""
 
@@ -30,13 +41,12 @@ class AssistantRagIndexViewsTests(TestCase):
             password="test-password",
             email="s90000@example.com",
         )
-        self.user.user_sdwt_prod = "group-a"
         self.user.knox_id = "knox-90000"
-        self.user.save(update_fields=["user_sdwt_prod", "knox_id"])
+        self.user.save(update_fields=["knox_id"])
+        _set_current_affiliation(self.user, user_sdwt_prod="group-a")
 
         manager = User.objects.create_user(sabun="S90010", password="test-password")
-        manager.user_sdwt_prod = "group-b"
-        manager.save(update_fields=["user_sdwt_prod"])
+        _set_current_affiliation(manager, user_sdwt_prod="group-b")
         account_services.ensure_self_access(manager, role="manager")
         _, status_code = account_services.grant_or_revoke_access(
             grantor=manager,
@@ -120,20 +130,18 @@ class AssistantRagIndexViewsTests(TestCase):
             password="test-password",
             email="s90001@example.com",
         )
-        superuser.user_sdwt_prod = "group-admin"
         superuser.knox_id = "knox-super"
-        superuser.save(update_fields=["user_sdwt_prod", "knox_id"])
+        superuser.save(update_fields=["knox_id"])
+        _set_current_affiliation(superuser, user_sdwt_prod="group-admin")
 
         other_user = User.objects.create_user(
             sabun="S90002",
             password="test-password",
             email="s90002@example.com",
         )
-        other_user.user_sdwt_prod = "group-c"
-        other_user.save(update_fields=["user_sdwt_prod"])
+        _set_current_affiliation(other_user, user_sdwt_prod="group-c")
         manager = User.objects.create_user(sabun="S90011", password="test-password")
-        manager.user_sdwt_prod = "group-d"
-        manager.save(update_fields=["user_sdwt_prod"])
+        _set_current_affiliation(manager, user_sdwt_prod="group-d")
         account_services.ensure_self_access(manager, role="manager")
         _, status_code = account_services.grant_or_revoke_access(
             grantor=manager,
@@ -174,17 +182,16 @@ class AssistantRagIndexViewsTests(TestCase):
             password="test-password",
             email="s90001@example.com",
         )
-        superuser.user_sdwt_prod = "group-admin"
         superuser.knox_id = "knox-super"
-        superuser.save(update_fields=["user_sdwt_prod", "knox_id"])
+        superuser.save(update_fields=["knox_id"])
+        _set_current_affiliation(superuser, user_sdwt_prod="group-admin")
 
         other_user = User.objects.create_user(
             sabun="S90002",
             password="test-password",
             email="s90002@example.com",
         )
-        other_user.user_sdwt_prod = "group-c"
-        other_user.save(update_fields=["user_sdwt_prod"])
+        _set_current_affiliation(other_user, user_sdwt_prod="group-c")
 
         self.client.force_login(superuser)
 
@@ -462,9 +469,9 @@ class AssistantChatViewTests(TestCase):
             password="test-password",
             email="dummy.user@example.com",
         )
-        self.user.user_sdwt_prod = "group-a"
         self.user.knox_id = "knox-77777"
-        self.user.save(update_fields=["knox_id", "user_sdwt_prod"])
+        self.user.save(update_fields=["knox_id"])
+        _set_current_affiliation(self.user, user_sdwt_prod="group-a")
 
     def test_chat_view_returns_response_without_rag_url_attribute_error(self) -> None:
         """정상 요청 시 응답 페이로드가 생성되는지 확인합니다."""

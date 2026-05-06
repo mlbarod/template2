@@ -19,8 +19,42 @@ from django.utils import timezone
 from django.urls import reverse
 
 import api.account.services as account_services
-from api.auth.services import _extract_user_info_from_claims
-from api.auth.services.oidc import _upsert_user_from_claims
+from api.auth.services.oidc import _extract_user_info_from_claims, _upsert_user_from_claims
+
+
+def _set_current_affiliation(user, *, user_sdwt_prod: str) -> None:
+    """테스트 사용자의 현재 앱 소속을 설정합니다."""
+
+    knox_id = getattr(user, "knox_id", None)
+    if not knox_id:
+        user.knox_id = f"KNOX-{user.sabun}"
+        user.save(update_fields=["knox_id"])
+        knox_id = user.knox_id
+
+    option = account_services.ensure_affiliation_option(
+        department="Dept",
+        line="Line",
+        user_sdwt_prod=user_sdwt_prod,
+    )
+    account_services.sync_external_affiliations(
+        records=[
+            {
+                "knox_id": knox_id,
+                "department": "Dept",
+                "user_sdwt_prod": user_sdwt_prod,
+                "source_updated_at": timezone.now(),
+            }
+        ]
+    )
+    payload, status_code = account_services.request_affiliation_change(
+        user=user,
+        option=option,
+        to_user_sdwt_prod=user_sdwt_prod,
+        effective_from=timezone.now(),
+        timezone_name="Asia/Seoul",
+    )
+    if status_code != 200:
+        raise AssertionError(payload)
 
 
 class AuthMeTests(TestCase):
@@ -42,7 +76,18 @@ class AuthMeTests(TestCase):
         user.first_name = "John"
         user.last_name = "Doe"
         user.email = "hong@example.com"
-        user.save(update_fields=["knox_id", "avatarid", "username", "first_name", "last_name", "email"])
+        user.department = "Engineering"
+        user.save(
+            update_fields=[
+                "knox_id",
+                "avatarid",
+                "username",
+                "first_name",
+                "last_name",
+                "email",
+                "department",
+            ]
+        )
 
         self.client.force_login(user)
 
@@ -55,6 +100,7 @@ class AuthMeTests(TestCase):
         self.assertEqual(payload["username"], "홍길동")
         self.assertNotIn("name", payload)
         self.assertEqual(payload["email"], "hong@example.com")
+        self.assertEqual(payload["department"], "Engineering")
         self.assertFalse(payload["has_pending_affiliation"])
 
     def test_auth_me_includes_pending_user_sdwt_prod(self) -> None:
@@ -72,8 +118,7 @@ class AuthMeTests(TestCase):
             user_sdwt_prod="group-pending",
         )
         approver = User.objects.create_user(sabun="S22346", password="test-password")
-        approver.user_sdwt_prod = "group-pending"
-        approver.save(update_fields=["user_sdwt_prod"])
+        _set_current_affiliation(approver, user_sdwt_prod="group-pending")
         account_services.ensure_self_access(approver, role="manager")
         payload, status_code = account_services.request_affiliation_change(
             user=user,
@@ -107,8 +152,7 @@ class AuthMeTests(TestCase):
         # -----------------------------------------------------------------------------
         User = get_user_model()
         user = User.objects.create_user(sabun="S12347", password="test-password")
-        user.user_sdwt_prod = "group-current"
-        user.save(update_fields=["user_sdwt_prod"])
+        _set_current_affiliation(user, user_sdwt_prod="group-current")
 
         option = account_services.ensure_affiliation_option(
             department="Dept",
@@ -116,8 +160,7 @@ class AuthMeTests(TestCase):
             user_sdwt_prod="group-next",
         )
         approver = User.objects.create_user(sabun="S22347", password="test-password")
-        approver.user_sdwt_prod = "group-next"
-        approver.save(update_fields=["user_sdwt_prod"])
+        _set_current_affiliation(approver, user_sdwt_prod="group-next")
         account_services.ensure_self_access(approver, role="manager")
         payload, status_code = account_services.request_affiliation_change(
             user=user,
@@ -246,7 +289,6 @@ class AuthOidcUserUpsertTests(TestCase):
             info=info,
             sabun="S99990",
             knox_id="KNOX-99990",
-            timezone_name="Asia/Seoul",
         )
 
         self.assertTrue(created)
@@ -254,6 +296,24 @@ class AuthOidcUserUpsertTests(TestCase):
         self.assertEqual(user.sabun, "S99990")
         self.assertEqual(user.knox_id, "KNOX-99990")
         self.assertEqual(user.email, "hong@example.com")
+
+    def test_upsert_user_from_claims_saves_sso_department(self) -> None:
+        """SSO department 값은 account_user.department에 저장되어야 합니다."""
+        info = {
+            "sabun": "S99992",
+            "knox_id": "KNOX-99992",
+            "department": "Engineering",
+        }
+
+        user, created = _upsert_user_from_claims(
+            info=info,
+            sabun="S99992",
+            knox_id="KNOX-99992",
+        )
+
+        self.assertTrue(created)
+        user.refresh_from_db()
+        self.assertEqual(user.department, "Engineering")
 
     def test_upsert_user_from_claims_updates_existing_user(self) -> None:
         """기존 사용자의 변경 필드가 갱신되어야 합니다."""
@@ -273,7 +333,6 @@ class AuthOidcUserUpsertTests(TestCase):
             info=info,
             sabun="S99991",
             knox_id="KNOX-NEW",
-            timezone_name="Asia/Seoul",
         )
 
         self.assertFalse(created)

@@ -5,9 +5,9 @@ const endpoints = {
   affiliation: "/api/v1/account/affiliation",
   affiliationRequests: "/api/v1/account/affiliation/requests",
   affiliationApprove: "/api/v1/account/affiliation/approve",
+  affiliationMembers: "/api/v1/account/affiliation/members",
   grants: "/api/v1/account/access/grants",
   manageable: "/api/v1/account/access/manageable",
-  mailboxMembers: "/api/v1/emails/mailboxes/members/",
   users: "/api/v1/account/users",
 }
 
@@ -146,15 +146,15 @@ export const accountApi = {
     return unwrap(response, "Failed to load affiliation requests")
   },
 
-  async fetchMailboxMembers({ userSdwtProd } = {}) {
+  async fetchAffiliationMembers({ userSdwtProd } = {}) {
     if (!userSdwtProd) {
       return { userSdwtProd: "", members: [] }
     }
     const params = new URLSearchParams()
     params.set("user_sdwt_prod", userSdwtProd)
-    const url = buildBackendUrl(`${endpoints.mailboxMembers}?${params.toString()}`)
+    const url = buildBackendUrl(`${endpoints.affiliationMembers}?${params.toString()}`)
     const response = await request(url, { cache: "no-store" })
-    return unwrap(response, "Failed to load mailbox members")
+    return unwrap(response, "Failed to load affiliation members")
   },
 
   async decideAffiliationRequest(payload) {

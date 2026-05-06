@@ -112,7 +112,7 @@ class UserManager(BaseUserManager):
 
 
 class User(AbstractUser):
-    """ADFS/OIDC 클레임을 저장하는 커스텀 사용자 모델입니다."""
+    """ADFS/OIDC 클레임에서 받은 사용자 식별 정보를 저장하는 커스텀 사용자 모델입니다."""
 
     username = models.CharField(max_length=150, null=True, blank=True)
     sabun = models.CharField(max_length=50, unique=True)
@@ -122,6 +122,7 @@ class User(AbstractUser):
     givenname = models.CharField(max_length=150, null=True, blank=True)
     surname = models.CharField(max_length=150, null=True, blank=True)
     deptid = models.CharField(max_length=50, null=True, blank=True)
+    department = models.CharField(max_length=128, null=True, blank=True)
     grd_name = models.CharField(max_length=150, null=True, blank=True)
     grdname_en = models.CharField(max_length=150, null=True, blank=True)
     busname = models.CharField(max_length=150, null=True, blank=True)
@@ -129,11 +130,6 @@ class User(AbstractUser):
     intname = models.CharField(max_length=150, null=True, blank=True)
     origincomp = models.CharField(max_length=150, null=True, blank=True)
     employeetype = models.CharField(max_length=150, null=True, blank=True)
-    department = models.CharField(max_length=128, null=True, blank=True)
-    line = models.CharField(max_length=64, null=True, blank=True)
-    user_sdwt_prod = models.CharField(max_length=64, null=True, blank=True)
-    requires_affiliation_reconfirm = models.BooleanField(default=False)
-    affiliation_confirmed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "account_user"
@@ -199,8 +195,48 @@ class Affiliation(models.Model):
         return f"{self.department} / {self.line} / {self.user_sdwt_prod}"
 
 
+class UserCurrentAffiliation(models.Model):
+    """앱에서 실제 권한 판단에 사용하는 사용자의 현재 소속을 저장하는 모델입니다."""
+
+    class Sources(models.TextChoices):
+        EXTERNAL_AUTO = "external_auto", "External Auto"
+        USER_SELECTED = "user_selected", "User Selected"
+        ADMIN_ASSIGNED = "admin_assigned", "Admin Assigned"
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="current_affiliation",
+    )
+    affiliation = models.ForeignKey(
+        Affiliation,
+        on_delete=models.PROTECT,
+        related_name="current_users",
+    )
+    source = models.CharField(
+        max_length=32,
+        choices=Sources.choices,
+        default=Sources.USER_SELECTED,
+    )
+    requires_reconfirm = models.BooleanField(default=False)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "account_user_current_affiliation"
+        indexes = [
+            models.Index(fields=["affiliation"], name="idx_acc_usr_cur_aff_aff"),
+            models.Index(fields=["requires_reconfirm"], name="idx_acc_usr_cur_aff_req"),
+        ]
+
+    def __str__(self) -> str:  # 사람이 읽는 표현(커버리지 제외): pragma: no cover
+        """현재 소속 표시용 문자열을 반환합니다."""
+        return f"{self.user_id} -> {self.affiliation.user_sdwt_prod}"
+
+
 class UserSdwtProdAccess(models.Model):
-    """사용자의 user_sdwt_prod 접근/관리 권한을 저장하는 모델입니다."""
+    """사용자의 소속 옵션별 접근/관리 권한을 저장하는 모델입니다."""
 
     class Roles(models.TextChoices):
         VIEWER = "viewer", "Viewer"
@@ -212,7 +248,11 @@ class UserSdwtProdAccess(models.Model):
         on_delete=models.CASCADE,
         related_name="sdwt_prod_access",
     )
-    user_sdwt_prod = models.CharField(max_length=64)
+    affiliation = models.ForeignKey(
+        Affiliation,
+        on_delete=models.CASCADE,
+        related_name="user_accesses",
+    )
     role = models.CharField(max_length=16, choices=Roles.choices, default=Roles.VIEWER)
     granted_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -227,17 +267,22 @@ class UserSdwtProdAccess(models.Model):
         db_table = "account_user_sdwt_prod_access"
         constraints = [
             models.UniqueConstraint(
-                fields=["user", "user_sdwt_prod"],
-                name="uniq_acc_usr_sdw_prd_acs_02885",
+                fields=["user", "affiliation"],
+                name="uniq_acc_usr_sdw_prd_acs_aff",
             ),
         ]
         indexes = [
             models.Index(fields=["user"], name="idx_acc_usr_sdw_prd_acs_usr"),
             models.Index(
-                fields=["user_sdwt_prod"],
-                name="idx_acc_usr_sdw_prd_acs_1a1f0",
+                fields=["affiliation"],
+                name="idx_acc_usr_sdw_prd_acs_aff",
             ),
         ]
+
+    @property
+    def user_sdwt_prod(self) -> str:
+        """권한이 연결된 소속의 user_sdwt_prod 값을 반환합니다."""
+        return self.affiliation.user_sdwt_prod if self.affiliation_id else ""
 
     def __str__(self) -> str:  # 사람이 읽는 표현(커버리지 제외): pragma: no cover
         """접근 권한 표시용 문자열을 반환합니다."""
@@ -332,6 +377,7 @@ __all__ = [
     "Affiliation",
     "ExternalAffiliationSnapshot",
     "User",
+    "UserCurrentAffiliation",
     "UserProfile",
     "UserSdwtProdAccess",
     "UserSdwtProdChange",

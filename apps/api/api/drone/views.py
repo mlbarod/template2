@@ -1324,8 +1324,7 @@ class JiraUserSdwtProdListView(DroneAuthenticatedView):
 class DroneNotificationRecipientView(DroneAuthenticatedView):
     """Drone SOP 채널별 수신인 조회/교체 엔드포인트입니다.
 
-    커스텀 targetUserSdwtProd를 허용하므로 lineId/targetUserSdwtProd 조합을
-    account_affiliation에 강제로 매칭하지 않습니다.
+    커스텀 targetUserSdwtProd는 허용하지만 lineId는 기존 라인 안에서만 허용합니다.
     """
 
     @staticmethod

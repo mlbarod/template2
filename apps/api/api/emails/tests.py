@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import base64
-import os
 from datetime import date, datetime, timedelta, timezone as dt_timezone
 from email.message import EmailMessage
 from unittest.mock import Mock, patch
@@ -22,7 +21,6 @@ from api.common.services import UNASSIGNED_USER_SDWT_PROD
 from api.emails.models import Email, EmailAsset, EmailOutbox
 from api.emails.selectors import get_filtered_emails, resolve_email_affiliation
 from api.emails.services import (
-    MailSendError,
     _parse_message_to_fields,
     claim_unassigned_emails_for_user,
     delete_single_email,
@@ -33,12 +31,22 @@ from api.emails.services import (
     move_sender_emails_after,
     parse_datetime_value,
     process_email_outbox_batch,
-    send_knox_mail_api,
     store_email_html_and_assets,
 )
 from api.rag.services import RAG_INDEX_EMAILS, resolve_rag_index_name
 
 UTC = getattr(timezone, "utc", dt_timezone.utc)
+
+
+def _set_current_affiliation(user, *, user_sdwt_prod: str) -> None:
+    """테스트 사용자의 현재 앱 소속을 설정합니다."""
+
+    account_services.set_current_affiliation_for_user(
+        user=user,
+        department="Dept",
+        line="Line",
+        user_sdwt_prod=user_sdwt_prod,
+    )
 
 
 @override_settings(TIME_ZONE="Asia/Seoul")
@@ -141,8 +149,8 @@ class EmailAffiliationTests(TestCase):
         User = get_user_model()
         user = User.objects.create_user(sabun="S12345", password="test-password")
         user.knox_id = "loginid1"
-        user.user_sdwt_prod = "group-a"
-        user.save(update_fields=["knox_id", "user_sdwt_prod"])
+        user.save(update_fields=["knox_id"])
+        _set_current_affiliation(user, user_sdwt_prod="group-a")
 
         affiliation = resolve_email_affiliation(sender_id="loginid1", received_at=timezone.now())
         self.assertEqual(affiliation["user_sdwt_prod"], "group-a")
@@ -206,8 +214,8 @@ class EmailAffiliationTests(TestCase):
         User = get_user_model()
         user = User.objects.create_user(sabun="S77777", password="test-password")
         user.knox_id = "loginid3"
-        user.user_sdwt_prod = "group-old"
-        user.save(update_fields=["knox_id", "user_sdwt_prod"])
+        user.save(update_fields=["knox_id"])
+        _set_current_affiliation(user, user_sdwt_prod="group-old")
 
         # -------------------------------------------------------------------------
         # 1) 소속 옵션 및 변경 요청 준비
@@ -219,8 +227,7 @@ class EmailAffiliationTests(TestCase):
             user_sdwt_prod="group-new",
         )
         approver = User.objects.create_user(sabun="S77778", password="test-password")
-        approver.user_sdwt_prod = "group-new"
-        approver.save(update_fields=["user_sdwt_prod"])
+        _set_current_affiliation(approver, user_sdwt_prod="group-new")
         account_services.ensure_self_access(approver, role="manager")
         payload, status_code = account_services.request_affiliation_change(
             user=user,
@@ -440,8 +447,8 @@ class EmailMoveServiceTests(TestCase):
         User = get_user_model()
         user = User.objects.create_user(sabun="S22222", password="test-password")
         user.knox_id = "loginid-claim"
-        user.user_sdwt_prod = "group-claim"
-        user.save(update_fields=["knox_id", "user_sdwt_prod"])
+        user.save(update_fields=["knox_id"])
+        _set_current_affiliation(user, user_sdwt_prod="group-claim")
 
         Email.objects.create(
             message_id="claim-msg-a",
@@ -572,8 +579,8 @@ class EmailMailboxAccessViewTests(TestCase):
         User = get_user_model()
         user = User.objects.create_user(sabun="S11111", password="test-password")
         user.knox_id = "knox-11111"
-        user.user_sdwt_prod = "group-a"
-        user.save(update_fields=["knox_id", "user_sdwt_prod"])
+        user.save(update_fields=["knox_id"])
+        _set_current_affiliation(user, user_sdwt_prod="group-a")
 
         Email.objects.create(
             message_id="msg-a",
@@ -621,8 +628,7 @@ class EmailMailboxAccessViewTests(TestCase):
 
         User = get_user_model()
         user = User.objects.create_user(sabun="S11110", password="test-password")
-        user.user_sdwt_prod = "group-a"
-        user.save(update_fields=["user_sdwt_prod"])
+        _set_current_affiliation(user, user_sdwt_prod="group-a")
 
         self.client.force_login(user)
 
@@ -645,8 +651,8 @@ class EmailMailboxAccessViewTests(TestCase):
         User = get_user_model()
         user = User.objects.create_user(sabun="S11113", password="test-password")
         user.knox_id = "loginid-sender"
-        user.user_sdwt_prod = "group-a"
-        user.save(update_fields=["knox_id", "user_sdwt_prod"])
+        user.save(update_fields=["knox_id"])
+        _set_current_affiliation(user, user_sdwt_prod="group-a")
 
         sent_email = Email.objects.create(
             message_id="msg-sent-1",
@@ -685,8 +691,8 @@ class EmailMailboxAccessViewTests(TestCase):
         User = get_user_model()
         user = User.objects.create_user(sabun="S11114", password="test-password")
         user.knox_id = "loginid-sender"
-        user.user_sdwt_prod = "group-a"
-        user.save(update_fields=["knox_id", "user_sdwt_prod"])
+        user.save(update_fields=["knox_id"])
+        _set_current_affiliation(user, user_sdwt_prod="group-a")
 
         self.client.force_login(user)
 
@@ -709,12 +715,11 @@ class EmailMailboxAccessViewTests(TestCase):
         User = get_user_model()
         user = User.objects.create_user(sabun="S11112", password="test-password")
         user.knox_id = "knox-11112"
-        user.user_sdwt_prod = "group-a"
-        user.save(update_fields=["knox_id", "user_sdwt_prod"])
+        user.save(update_fields=["knox_id"])
+        _set_current_affiliation(user, user_sdwt_prod="group-a")
 
         manager = User.objects.create_user(sabun="S11113", password="test-password")
-        manager.user_sdwt_prod = "group-empty"
-        manager.save(update_fields=["user_sdwt_prod"])
+        _set_current_affiliation(manager, user_sdwt_prod="group-empty")
         account_services.ensure_self_access(manager, role="manager")
         _, status_code = account_services.grant_or_revoke_access(
             grantor=manager,
@@ -749,12 +754,11 @@ class EmailMailboxAccessViewTests(TestCase):
         User = get_user_model()
         user = User.objects.create_user(sabun="S22222", password="test-password")
         user.knox_id = "knox-22222"
-        user.user_sdwt_prod = "group-a"
-        user.save(update_fields=["knox_id", "user_sdwt_prod"])
+        user.save(update_fields=["knox_id"])
+        _set_current_affiliation(user, user_sdwt_prod="group-a")
 
         manager = User.objects.create_user(sabun="S22223", password="test-password")
-        manager.user_sdwt_prod = "group-b"
-        manager.save(update_fields=["user_sdwt_prod"])
+        _set_current_affiliation(manager, user_sdwt_prod="group-b")
         account_services.ensure_self_access(manager, role="manager")
         _, status_code = account_services.grant_or_revoke_access(
             grantor=manager,
@@ -814,23 +818,22 @@ class EmailMailboxAccessViewTests(TestCase):
         requester = User.objects.create_user(sabun="S33333", password="test-password")
         requester.username = "홍길동"
         requester.knox_id = "loginid-requester"
-        requester.user_sdwt_prod = "group-a"
-        requester.save(update_fields=["username", "knox_id", "user_sdwt_prod"])
+        requester.save(update_fields=["username", "knox_id"])
+        _set_current_affiliation(requester, user_sdwt_prod="group-a")
 
         affiliated = User.objects.create_user(sabun="S33334", password="test-password")
         affiliated.username = "김철수"
         affiliated.knox_id = "loginid-affiliated"
-        affiliated.user_sdwt_prod = "group-a"
-        affiliated.save(update_fields=["username", "knox_id", "user_sdwt_prod"])
+        affiliated.save(update_fields=["username", "knox_id"])
+        _set_current_affiliation(affiliated, user_sdwt_prod="group-a")
 
         granted = User.objects.create_user(sabun="S33335", password="test-password")
         granted.username = "이영희"
         granted.knox_id = "loginid-granted"
-        granted.user_sdwt_prod = "group-b"
-        granted.save(update_fields=["username", "knox_id", "user_sdwt_prod"])
+        granted.save(update_fields=["username", "knox_id"])
+        _set_current_affiliation(granted, user_sdwt_prod="group-b")
         manager = User.objects.create_user(sabun="S33336", password="test-password")
-        manager.user_sdwt_prod = "group-a"
-        manager.save(update_fields=["user_sdwt_prod"])
+        _set_current_affiliation(manager, user_sdwt_prod="group-a")
         account_services.ensure_self_access(manager, role="manager")
         _, status_code = account_services.grant_or_revoke_access(
             grantor=manager,
@@ -923,13 +926,13 @@ class EmailMailboxAccessViewTests(TestCase):
         User = get_user_model()
         user = User.objects.create_user(sabun="S44444", password="test-password")
         user.knox_id = "knox-44444"
-        user.user_sdwt_prod = "group-a"
-        user.save(update_fields=["knox_id", "user_sdwt_prod"])
+        user.save(update_fields=["knox_id"])
+        _set_current_affiliation(user, user_sdwt_prod="group-a")
 
         other = User.objects.create_user(sabun="S44445", password="test-password")
         other.knox_id = "knox-44445"
-        other.user_sdwt_prod = "group-b"
-        other.save(update_fields=["knox_id", "user_sdwt_prod"])
+        other.save(update_fields=["knox_id"])
+        _set_current_affiliation(other, user_sdwt_prod="group-b")
 
         self.client.force_login(user)
 
@@ -952,17 +955,16 @@ class EmailMailboxAccessViewTests(TestCase):
         User = get_user_model()
         user = User.objects.create_user(sabun="S55555", password="test-password")
         user.knox_id = "knox-55555"
-        user.user_sdwt_prod = "group-a"
-        user.save(update_fields=["knox_id", "user_sdwt_prod"])
+        user.save(update_fields=["knox_id"])
+        _set_current_affiliation(user, user_sdwt_prod="group-a")
 
         mailbox_owner = User.objects.create_user(sabun="S55556", password="test-password")
         mailbox_owner.knox_id = "knox-55556"
-        mailbox_owner.user_sdwt_prod = "group-b"
-        mailbox_owner.save(update_fields=["knox_id", "user_sdwt_prod"])
+        mailbox_owner.save(update_fields=["knox_id"])
+        _set_current_affiliation(mailbox_owner, user_sdwt_prod="group-b")
 
         manager = User.objects.create_user(sabun="S55557", password="test-password")
-        manager.user_sdwt_prod = "group-b"
-        manager.save(update_fields=["user_sdwt_prod"])
+        _set_current_affiliation(manager, user_sdwt_prod="group-b")
         account_services.ensure_self_access(manager, role="manager")
         _, status_code = account_services.grant_or_revoke_access(
             grantor=manager,
@@ -1139,8 +1141,8 @@ class EmailMailboxAccessViewTests(TestCase):
         User = get_user_model()
         user = User.objects.create_user(sabun="S44444", password="test-password")
         user.knox_id = "loginid-claim"
-        user.user_sdwt_prod = "group-a"
-        user.save(update_fields=["knox_id", "user_sdwt_prod"])
+        user.save(update_fields=["knox_id"])
+        _set_current_affiliation(user, user_sdwt_prod="group-a")
 
         unassigned = Email.objects.create(
             message_id="msg-unassigned",
@@ -1267,173 +1269,6 @@ class RagIndexNameTests(SimpleTestCase):
             "api.rag.services.RAG_INDEX_LIST", ["rp-a", "rp-b"]
         ):
             self.assertEqual(resolve_rag_index_name(None), "rp-a")
-
-
-class KnoxMailApiTests(SimpleTestCase):
-    """emails.services.send_knox_mail_api 동작을 검증합니다."""
-
-    @patch.dict(
-        os.environ,
-        {
-            "MAIL_API_URL": "http://mail.test/send",
-            "MAIL_API_KEY": "ticket",
-            "MAIL_API_SYSTEM_ID": "plane",
-            "MAIL_API_KNOX_ID": "knox-user",
-        },
-        clear=False,
-    )
-    @patch("api.emails.services.requests.post")
-    def test_send_knox_mail_api_returns_json(self, mock_post: Mock) -> None:
-        """JSON 응답이 dict로 반환되는지 확인합니다.
-
-        입력:
-            없음(환경변수/응답 모킹).
-        반환:
-            없음.
-        부작용:
-            외부 요청 모킹.
-        오류:
-            조건 불일치 시 assertion 실패.
-        """
-
-        response = Mock()
-        response.ok = True
-        response.status_code = 200
-        response.text = ""
-        response.headers = {"content-type": "application/json"}
-        response.json.return_value = {"status": "ok"}
-        mock_post.return_value = response
-
-        result = send_knox_mail_api(
-            sender_email="sender@example.com",
-            receiver_emails=["a@example.com", "b@example.com"],
-            subject="Subject",
-            html_content="<p>Hello</p>",
-        )
-        self.assertEqual(result, {"status": "ok"})
-        mock_post.assert_called_once_with(
-            "http://mail.test/send",
-            params={"systemId": "plane", "loginUser.login": "knox-user"},
-            headers={"x-dep-ticket": "ticket"},
-            json={
-                "receiverList": [
-                    {"email": "a@example.com", "recipientType": "TO"},
-                    {"email": "b@example.com", "recipientType": "TO"},
-                ],
-                "title": "Subject",
-                "content": "<p>Hello</p>",
-                "senderMailAddress": "sender@example.com",
-            },
-            timeout=10,
-        )
-
-    @patch.dict(
-        os.environ,
-        {
-            "MAIL_API_URL": "http://mail.test/send",
-            "MAIL_API_KEY": "ticket",
-            "MAIL_API_KNOX_ID": "knox-user",
-        },
-        clear=False,
-    )
-    @patch("api.emails.services.requests.post")
-    def test_send_knox_mail_api_returns_ok_for_non_json(self, mock_post: Mock) -> None:
-        """비 JSON 응답은 ok=True로 처리되는지 확인합니다.
-
-        입력:
-            없음(환경변수/응답 모킹).
-        반환:
-            없음.
-        부작용:
-            외부 요청 모킹.
-        오류:
-            조건 불일치 시 assertion 실패.
-        """
-
-        response = Mock()
-        response.ok = True
-        response.status_code = 204
-        response.text = ""
-        response.headers = {"content-type": "text/plain"}
-        mock_post.return_value = response
-
-        result = send_knox_mail_api(
-            sender_email="sender@example.com",
-            receiver_emails=["a@example.com"],
-            subject="Subject",
-            html_content="<p>Hello</p>",
-        )
-        self.assertEqual(result, {"ok": True})
-
-    @patch.dict(
-        os.environ,
-        {
-            "MAIL_API_URL": "http://mail.test/send",
-            "MAIL_API_KEY": "ticket",
-            "MAIL_API_KNOX_ID": "knox-user",
-        },
-        clear=False,
-    )
-    @patch("api.emails.services.requests.post")
-    def test_send_knox_mail_api_raises_on_http_error(self, mock_post: Mock) -> None:
-        """HTTP 오류 응답 시 예외가 발생하는지 확인합니다.
-
-        입력:
-            없음(환경변수/응답 모킹).
-        반환:
-            없음.
-        부작용:
-            외부 요청 모킹.
-        오류:
-            MailSendError 발생.
-        """
-
-        response = Mock()
-        response.ok = False
-        response.status_code = 500
-        response.text = "server error"
-        response.headers = {"content-type": "text/plain"}
-        mock_post.return_value = response
-
-        with self.assertRaises(MailSendError) as ctx:
-            send_knox_mail_api(
-                sender_email="sender@example.com",
-                receiver_emails=["a@example.com"],
-                subject="Subject",
-                html_content="<p>Hello</p>",
-            )
-        self.assertIn("메일 API 오류 500", str(ctx.exception))
-
-    def test_send_knox_mail_api_raises_when_missing_env(self) -> None:
-        """환경변수 누락 시 예외가 발생하는지 확인합니다.
-
-        입력:
-            없음(환경변수 패치).
-        반환:
-            없음.
-        부작용:
-            환경변수 패치.
-        오류:
-            MailSendError 발생.
-        """
-
-        with patch.dict(
-            os.environ,
-            {
-                "MAIL_API_URL": "",
-                "MAIL_API_KEY": "",
-                "MAIL_API_SYSTEM_ID": "",
-                "MAIL_API_KNOX_ID": "",
-            },
-            clear=False,
-        ):
-            with self.assertRaises(MailSendError):
-                send_knox_mail_api(
-                    sender_email="sender@example.com",
-                    receiver_emails=["a@example.com"],
-                    subject="Subject",
-                    html_content="<p>Hello</p>",
-                )
 
 
 class EmailParsingTests(SimpleTestCase):
@@ -1670,8 +1505,8 @@ class EmailEndpointTests(TestCase):
         User = get_user_model()
         self.user = User.objects.create_user(sabun="S11111", password="test-password")
         self.user.knox_id = "knox-11111"
-        self.user.user_sdwt_prod = "group-a"
-        self.user.save(update_fields=["knox_id", "user_sdwt_prod"])
+        self.user.save(update_fields=["knox_id"])
+        _set_current_affiliation(self.user, user_sdwt_prod="group-a")
 
         self.email = Email.objects.create(
             message_id="msg-111",
@@ -1784,8 +1619,29 @@ class EmailEndpointTests(TestCase):
             조건 불일치 시 assertion 실패.
         """
 
+        User = get_user_model()
+        manager = User.objects.create_user(sabun="S11112", password="test-password")
+        _set_current_affiliation(manager, user_sdwt_prod="group-b")
+        account_services.ensure_self_access(manager, role="manager")
+        _, status_code = account_services.grant_or_revoke_access(
+            grantor=manager,
+            target_group="group-b",
+            target_user=self.user,
+            action="grant",
+            role="member",
+        )
+        self.assertEqual(status_code, 200)
+
         mailbox_response = self.client.get(reverse("emails-mailboxes"))
         self.assertEqual(mailbox_response.status_code, 200)
+
+        summary_response = self.client.get(reverse("emails-mailbox-summary"))
+        self.assertEqual(summary_response.status_code, 200)
+        summary_rows = summary_response.json()["results"]
+        self.assertIn("group-a", {row["userSdwtProd"] for row in summary_rows})
+        summary_by_mailbox = {row["userSdwtProd"]: row for row in summary_rows}
+        self.assertEqual(summary_by_mailbox["group-a"]["accessSource"], "self")
+        self.assertEqual(summary_by_mailbox["group-b"]["accessSource"], "grant")
 
         members_response = self.client.get(
             reverse("emails-mailbox-members"),
@@ -1859,8 +1715,7 @@ class EmailEndpointTests(TestCase):
 
         User = get_user_model()
         manager = User.objects.create_user(sabun="S77779", password="test-password")
-        manager.user_sdwt_prod = "group-b"
-        manager.save(update_fields=["user_sdwt_prod"])
+        _set_current_affiliation(manager, user_sdwt_prod="group-b")
         account_services.ensure_self_access(manager, role="manager")
         _, status_code = account_services.grant_or_revoke_access(
             grantor=manager,

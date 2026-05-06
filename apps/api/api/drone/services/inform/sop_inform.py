@@ -15,7 +15,7 @@ from django.db import transaction
 from django.db.models import Case, DateTimeField, F, Value, When
 from django.utils import timezone
 
-from api.messenger import services as messenger_services
+import api.common.services as messenger_services
 
 from ... import selectors
 from ...models import DroneSOP

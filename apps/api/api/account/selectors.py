@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import Any, Iterable
 
 from django.contrib.auth import get_user_model
-from django.db.models import Count, Min, Q, QuerySet
+from django.db.models import Q, QuerySet
 from django.db.models.functions import Lower
 from django.utils import timezone
 
@@ -25,6 +25,7 @@ from api.common.services import UNKNOWN, UNCLASSIFIED_USER_SDWT_PROD
 from .models import (
     Affiliation,
     ExternalAffiliationSnapshot,
+    UserCurrentAffiliation,
     UserProfile,
     UserSdwtProdAccess,
     UserSdwtProdChange,
@@ -75,30 +76,6 @@ def _normalize_user_sdwt_lookup_key(value: Any) -> str | None:
     return cleaned.casefold()
 
 
-def _normalize_user_sdwt_prod_values(values: Iterable[Any]) -> list[str]:
-    """user_sdwt_prod 값 목록을 정규화합니다.
-
-    입력:
-    - values: 원본 값 iterable
-
-    반환:
-    - list[str]: 공백 제거된 문자열 목록
-
-    부작용:
-    - 없음
-
-    오류:
-    - 없음
-    """
-
-    normalized: list[str] = []
-    for value in values:
-        cleaned = _normalize_user_sdwt_prod(value)
-        if cleaned:
-            normalized.append(cleaned)
-    return normalized
-
-
 def _build_user_sdwt_display_map(values: Iterable[Any]) -> dict[str, str]:
     """case-insensitive 비교용 lookup key → 표시값 매핑을 생성합니다.
 
@@ -143,6 +120,114 @@ def _collapse_user_sdwt_prod_values(values: Iterable[Any]) -> set[str]:
     return set(_build_user_sdwt_display_map(values).values())
 
 
+def get_current_affiliation_record(*, user: Any) -> UserCurrentAffiliation | None:
+    """사용자의 현재 앱 소속 행을 조회합니다.
+
+    입력:
+    - user: Django 사용자 객체
+
+    반환:
+    - UserCurrentAffiliation | None: 현재 소속 행 또는 None
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - 없음
+    """
+
+    if not user:
+        return None
+
+    return (
+        UserCurrentAffiliation.objects.filter(user=user)
+        .select_related("affiliation")
+        .order_by("id")
+        .first()
+    )
+
+
+def get_current_affiliation_values(*, user: Any) -> dict[str, Any]:
+    """현재 앱 소속 값을 평탄화해 반환합니다.
+
+    입력:
+    - user: Django 사용자 객체
+
+    반환:
+    - dict[str, Any]: affiliation/department/line/user_sdwt_prod/reconfirm 값
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - 없음
+    """
+
+    row = get_current_affiliation_record(user=user)
+    affiliation = row.affiliation if row and row.affiliation_id else None
+    return {
+        "affiliation": affiliation,
+        "department": affiliation.department if affiliation else None,
+        "line": affiliation.line if affiliation else None,
+        "user_sdwt_prod": affiliation.user_sdwt_prod if affiliation else None,
+        "requires_reconfirm": bool(row.requires_reconfirm) if row else False,
+        "confirmed_at": row.confirmed_at if row else None,
+        "source": row.source if row else None,
+    }
+
+
+def get_current_affiliation_values_by_user_ids(*, user_ids: Iterable[int]) -> dict[int, dict[str, Any]]:
+    """사용자 id별 현재 앱 소속 값을 평탄화해 반환합니다.
+
+    입력:
+    - user_ids: 사용자 id iterable
+
+    반환:
+    - dict[int, dict[str, Any]]: user_id → 소속 값 매핑
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - 없음
+    """
+
+    normalized_ids: set[int] = set()
+    for user_id in user_ids:
+        try:
+            value = int(user_id)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            normalized_ids.add(value)
+    if not normalized_ids:
+        return {}
+
+    rows = (
+        UserCurrentAffiliation.objects.filter(user_id__in=normalized_ids)
+        .select_related("affiliation")
+        .order_by("user_id")
+    )
+    result: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        affiliation = row.affiliation if row.affiliation_id else None
+        result[row.user_id] = {
+            "department": affiliation.department if affiliation else None,
+            "line": affiliation.line if affiliation else None,
+            "user_sdwt_prod": affiliation.user_sdwt_prod if affiliation else None,
+            "source": row.source,
+        }
+    return result
+
+
+def get_current_user_sdwt_prod(*, user: Any) -> str | None:
+    """현재 앱 소속의 user_sdwt_prod 값을 반환합니다."""
+
+    values = get_current_affiliation_values(user=user)
+    current = values.get("user_sdwt_prod")
+    return current if isinstance(current, str) and current.strip() else None
+
+
 def get_accessible_user_sdwt_prods_for_user(user: Any) -> set[str]:
     """사용자가 접근 가능한 user_sdwt_prod 값 집합을 조회합니다.
 
@@ -169,12 +254,12 @@ def get_accessible_user_sdwt_prods_for_user(user: Any) -> set[str]:
     # 2) 슈퍼유저는 전체 집합 반환
     # -----------------------------------------------------------------------------
     if getattr(user, "is_superuser", False):
-        UserModel = get_user_model()
         values = set(list_distinct_user_sdwt_prod_values())
         values.update(
-            UserModel.objects.exclude(user_sdwt_prod__isnull=True)
-            .exclude(user_sdwt_prod="")
-            .values_list("user_sdwt_prod", flat=True)
+            UserCurrentAffiliation.objects.select_related("affiliation")
+            .exclude(affiliation__user_sdwt_prod__isnull=True)
+            .exclude(affiliation__user_sdwt_prod="")
+            .values_list("affiliation__user_sdwt_prod", flat=True)
             .distinct()
         )
         return _collapse_user_sdwt_prod_values(values)
@@ -183,10 +268,13 @@ def get_accessible_user_sdwt_prods_for_user(user: Any) -> set[str]:
     # 3) 접근 권한 및 본인 소속 포함
     # -----------------------------------------------------------------------------
     values = set(
-        UserSdwtProdAccess.objects.filter(user=user).values_list("user_sdwt_prod", flat=True)
+        UserSdwtProdAccess.objects.filter(user=user).values_list(
+            "affiliation__user_sdwt_prod",
+            flat=True,
+        )
     )
 
-    user_sdwt_prod = getattr(user, "user_sdwt_prod", None)
+    user_sdwt_prod = get_current_user_sdwt_prod(user=user)
     if isinstance(user_sdwt_prod, str) and user_sdwt_prod.strip():
         values.add(user_sdwt_prod)
     # -----------------------------------------------------------------------------
@@ -217,8 +305,8 @@ def list_distinct_user_sdwt_prod_values() -> set[str]:
         .distinct()
     )
     access_values = set(
-        UserSdwtProdAccess.objects.exclude(user_sdwt_prod="")
-        .values_list("user_sdwt_prod", flat=True)
+        UserSdwtProdAccess.objects.exclude(affiliation__user_sdwt_prod="")
+        .values_list("affiliation__user_sdwt_prod", flat=True)
         .distinct()
     )
 
@@ -247,143 +335,6 @@ def list_affiliation_options() -> list[dict[str, str]]:
         .order_by("department", "line", "user_sdwt_prod")
         .values("department", "line", "user_sdwt_prod")
     )
-
-
-def get_existing_affiliation_user_sdwt_prods(*, user_sdwt_prods: list[str]) -> set[str]:
-    """user_sdwt_prod 목록 중 기존 소속에 존재하는 값을 세트로 반환합니다.
-
-    입력:
-    - user_sdwt_prods: 소속 식별자 목록
-
-    반환:
-    - set[str]: 존재하는 user_sdwt_prod 값 세트
-
-    부작용:
-    - 없음(읽기 전용)
-
-    오류:
-    - 없음
-    """
-
-    # -----------------------------------------------------------------------------
-    # 1) 입력 정규화
-    # -----------------------------------------------------------------------------
-    display_map = _build_user_sdwt_display_map(user_sdwt_prods)
-    if not display_map:
-        return set()
-
-    # -----------------------------------------------------------------------------
-    # 2) 기존 소속 조회
-    # -----------------------------------------------------------------------------
-    existing_lookup_keys = set(
-        Affiliation.objects.annotate(user_sdwt_prod_lookup=Lower("user_sdwt_prod"))
-        .filter(user_sdwt_prod_lookup__in=display_map.keys())
-        .values_list("user_sdwt_prod_lookup", flat=True)
-        .distinct()
-    )
-    return {display_map[key] for key in existing_lookup_keys if key in display_map}
-
-
-def get_affiliation_lines_by_user_sdwt_prods(*, user_sdwt_prods: list[str]) -> dict[str, str]:
-    """user_sdwt_prod 목록에 대응하는 line 값을 조회합니다.
-
-    입력:
-    - user_sdwt_prods: 소속 식별자 목록
-
-    반환:
-    - dict[str, str]: user_sdwt_prod → line 매핑
-
-    부작용:
-    - 없음(읽기 전용)
-
-    오류:
-    - 없음
-    """
-
-    # -----------------------------------------------------------------------------
-    # 1) 입력 정규화
-    # -----------------------------------------------------------------------------
-    display_map = _build_user_sdwt_display_map(user_sdwt_prods)
-    if not display_map:
-        return {}
-
-    # -----------------------------------------------------------------------------
-    # 2) line 매핑 조회
-    # -----------------------------------------------------------------------------
-    rows = (
-        Affiliation.objects.annotate(user_sdwt_prod_lookup=Lower("user_sdwt_prod"))
-        .filter(user_sdwt_prod_lookup__in=display_map.keys())
-        .exclude(line__isnull=True)
-        .exclude(line__exact="")
-        .values("user_sdwt_prod_lookup", "line")
-    )
-    result: dict[str, str] = {}
-    for row in rows:
-        lookup_key = row.get("user_sdwt_prod_lookup")
-        line = row.get("line")
-        if not isinstance(lookup_key, str) or not lookup_key.strip():
-            continue
-        if not isinstance(line, str) or not line.strip():
-            continue
-        display_value = display_map.get(lookup_key)
-        if display_value and display_value not in result:
-            result[display_value] = line
-    return result
-
-
-def get_most_common_departments_by_user_sdwt_prods(*, user_sdwt_prods: list[str]) -> dict[str, str]:
-    """user_sdwt_prod별로 가장 많이 등장한 department를 조회합니다.
-
-    입력:
-    - user_sdwt_prods: 소속 식별자 목록
-
-    반환:
-    - dict[str, str]: user_sdwt_prod → department 매핑
-
-    부작용:
-    - 없음(읽기 전용)
-
-    오류:
-    - 없음
-    """
-
-    # -----------------------------------------------------------------------------
-    # 1) 입력 정규화
-    # -----------------------------------------------------------------------------
-    display_map = _build_user_sdwt_display_map(user_sdwt_prods)
-    if not display_map:
-        return {}
-
-    # -----------------------------------------------------------------------------
-    # 2) department 빈도 집계(동률은 가장 먼저 등장한 id 우선)
-    # -----------------------------------------------------------------------------
-    rows = (
-        ExternalAffiliationSnapshot.objects.annotate(
-            predicted_user_sdwt_prod_lookup=Lower("predicted_user_sdwt_prod")
-        )
-        .filter(predicted_user_sdwt_prod_lookup__in=display_map.keys())
-        .exclude(department__isnull=True)
-        .exclude(department__exact="")
-        .values("predicted_user_sdwt_prod_lookup", "department")
-        .annotate(count=Count("id"), min_id=Min("id"))
-        .order_by("predicted_user_sdwt_prod_lookup", "-count", "min_id")
-    )
-
-    # -----------------------------------------------------------------------------
-    # 3) user_sdwt_prod별 최빈 department 선택
-    # -----------------------------------------------------------------------------
-    result: dict[str, str] = {}
-    for row in rows:
-        key = row.get("predicted_user_sdwt_prod_lookup")
-        department = row.get("department")
-        if not isinstance(key, str) or not key.strip():
-            continue
-        if not isinstance(department, str) or not department.strip():
-            continue
-        display_value = display_map.get(key)
-        if display_value and display_value not in result:
-            result[display_value] = department
-    return result
 
 
 def affiliation_exists_for_user_sdwt_prod(*, user_sdwt_prod: str) -> bool:
@@ -440,7 +391,10 @@ def list_active_user_emails_by_user_sdwt_prod(*, user_sdwt_prod: str) -> list[st
     # -----------------------------------------------------------------------------
     User = get_user_model()
     rows = (
-        User.objects.filter(user_sdwt_prod__iexact=user_sdwt_prod.strip(), is_active=True)
+        User.objects.filter(
+            current_affiliation__affiliation__user_sdwt_prod__iexact=user_sdwt_prod.strip(),
+            is_active=True,
+        )
         .exclude(email__isnull=True)
         .exclude(email__exact="")
         .values_list("email", flat=True)
@@ -487,7 +441,10 @@ def list_active_user_knox_ids_by_user_sdwt_prod(*, user_sdwt_prod: str) -> list[
     # -----------------------------------------------------------------------------
     User = get_user_model()
     rows = (
-        User.objects.filter(user_sdwt_prod__iexact=user_sdwt_prod.strip(), is_active=True)
+        User.objects.filter(
+            current_affiliation__affiliation__user_sdwt_prod__iexact=user_sdwt_prod.strip(),
+            is_active=True,
+        )
         .exclude(knox_id__isnull=True)
         .exclude(knox_id__exact="")
         .values_list("knox_id", flat=True)
@@ -612,10 +569,10 @@ def list_distinct_active_user_sdwt_prod_values() -> list[str]:
     User = get_user_model()
     values = (
         User.objects.filter(is_active=True)
-        .exclude(user_sdwt_prod__isnull=True)
-        .exclude(user_sdwt_prod__exact="")
-        .values_list("user_sdwt_prod", flat=True)
-        .order_by("user_sdwt_prod")
+        .exclude(current_affiliation__affiliation__user_sdwt_prod__isnull=True)
+        .exclude(current_affiliation__affiliation__user_sdwt_prod__exact="")
+        .values_list("current_affiliation__affiliation__user_sdwt_prod", flat=True)
+        .order_by("current_affiliation__affiliation__user_sdwt_prod")
         .distinct()
     )
 
@@ -659,9 +616,13 @@ def list_active_user_pool(
     normalized_contact_field = contact_field.strip() if isinstance(contact_field, str) else ""
 
     User = get_user_model()
-    queryset = User.objects.filter(is_active=True)
+    queryset = User.objects.filter(is_active=True).select_related(
+        "current_affiliation__affiliation"
+    )
     if normalized_user_sdwt:
-        queryset = queryset.filter(user_sdwt_prod__iexact=normalized_user_sdwt)
+        queryset = queryset.filter(
+            current_affiliation__affiliation__user_sdwt_prod__iexact=normalized_user_sdwt
+        )
     if normalized_contact_field in {"email", "knox_id"}:
         queryset = queryset.exclude(**{f"{normalized_contact_field}__isnull": True}).exclude(
             **{f"{normalized_contact_field}__exact": ""}
@@ -679,21 +640,13 @@ def list_active_user_pool(
             | Q(sabun__icontains=normalized_search)
             | Q(knox_id__icontains=normalized_search)
             | Q(email__icontains=normalized_search)
-            | Q(user_sdwt_prod__icontains=normalized_search)
+            | Q(current_affiliation__affiliation__user_sdwt_prod__icontains=normalized_search)
         )
 
-    rows = queryset.order_by("user_sdwt_prod", "username", "id").values(
-        "id",
+    rows = queryset.order_by(
+        "current_affiliation__affiliation__user_sdwt_prod",
         "username",
-        "username_en",
-        "givenname",
-        "surname",
-        "sabun",
-        "knox_id",
-        "email",
-        "department",
-        "line",
-        "user_sdwt_prod",
+        "id",
     )
     if safe_limit is not None:
         rows = rows[:safe_limit]
@@ -702,26 +655,31 @@ def list_active_user_pool(
     # 3) 프론트엔드 선택 옵션 형태로 직렬화
     # -----------------------------------------------------------------------------
     results: list[dict[str, object]] = []
-    for row in rows:
+    for user in rows:
+        affiliation = getattr(
+            getattr(user, "current_affiliation", None),
+            "affiliation",
+            None,
+        )
         display_name = (
-            row.get("username")
-            or row.get("username_en")
-            or row.get("givenname")
-            or row.get("knox_id")
-            or row.get("sabun")
+            getattr(user, "username", None)
+            or getattr(user, "username_en", None)
+            or getattr(user, "givenname", None)
+            or getattr(user, "knox_id", None)
+            or getattr(user, "sabun", None)
             or ""
         )
         results.append(
             {
-                "id": row["id"],
-                "username": row.get("username") or "",
+                "id": user.id,
+                "username": getattr(user, "username", None) or "",
                 "displayName": display_name,
-                "sabun": row.get("sabun") or "",
-                "knoxId": row.get("knox_id") or "",
-                "email": row.get("email") or "",
-                "department": row.get("department") or "",
-                "line": row.get("line") or "",
-                "userSdwtProd": row.get("user_sdwt_prod") or "",
+                "sabun": getattr(user, "sabun", None) or "",
+                "knoxId": getattr(user, "knox_id", None) or "",
+                "email": getattr(user, "email", None) or "",
+                "department": getattr(affiliation, "department", "") or "",
+                "line": getattr(affiliation, "line", "") or "",
+                "userSdwtProd": getattr(affiliation, "user_sdwt_prod", "") or "",
             }
         )
     return results
@@ -744,7 +702,9 @@ def list_user_sdwt_prod_access_rows(*, user: Any) -> list[UserSdwtProdAccess]:
     """
 
     return list(
-        UserSdwtProdAccess.objects.filter(user=user).order_by("user_sdwt_prod", "id")
+        UserSdwtProdAccess.objects.filter(user=user)
+        .select_related("affiliation", "user", "granted_by")
+        .order_by("affiliation__user_sdwt_prod", "id")
     )
 
 
@@ -896,7 +856,7 @@ def user_has_manage_permission(*, user: Any, user_sdwt_prod: str) -> bool:
 
     return UserSdwtProdAccess.objects.filter(
         user=user,
-        user_sdwt_prod__iexact=normalized,
+        affiliation__user_sdwt_prod__iexact=normalized,
         role=UserSdwtProdAccess.Roles.MANAGER,
     ).exists()
 
@@ -1114,7 +1074,7 @@ def get_current_user_sdwt_prod_change(*, user: Any) -> UserSdwtProdChange | None
     if not user:
         return None
 
-    current_user_sdwt_prod = getattr(user, "user_sdwt_prod", None)
+    current_user_sdwt_prod = get_current_user_sdwt_prod(user=user)
     if not isinstance(current_user_sdwt_prod, str) or not current_user_sdwt_prod.strip():
         return None
 
@@ -1229,8 +1189,11 @@ def get_access_row_for_user_and_prod(
         return None
 
     return (
-        UserSdwtProdAccess.objects.filter(user=user, user_sdwt_prod__iexact=normalized)
-        .select_related("user")
+        UserSdwtProdAccess.objects.filter(
+            user=user,
+            affiliation__user_sdwt_prod__iexact=normalized,
+        )
+        .select_related("user", "affiliation")
         .order_by("id")
         .first()
     )
@@ -1263,7 +1226,7 @@ def other_manager_exists(
 
     return (
         UserSdwtProdAccess.objects.filter(
-            user_sdwt_prod__iexact=normalized,
+            affiliation__user_sdwt_prod__iexact=normalized,
             role=UserSdwtProdAccess.Roles.MANAGER,
         )
         .exclude(user=exclude_user)
@@ -1292,7 +1255,7 @@ def list_manageable_user_sdwt_prod_values(*, user: Any) -> set[str]:
             user=user,
             role=UserSdwtProdAccess.Roles.MANAGER,
         ).values_list(
-            "user_sdwt_prod",
+            "affiliation__user_sdwt_prod",
             flat=True,
         )
     )
@@ -1320,37 +1283,11 @@ def list_approvable_user_sdwt_prod_values(*, user: Any) -> set[str]:
             user=user,
             role__in=[UserSdwtProdAccess.Roles.MEMBER, UserSdwtProdAccess.Roles.MANAGER],
         ).values_list(
-            "user_sdwt_prod",
+            "affiliation__user_sdwt_prod",
             flat=True,
         )
     )
     return _collapse_user_sdwt_prod_values(values)
-
-
-def has_approver_for_user_sdwt_prod(*, user_sdwt_prod: str) -> bool:
-    """특정 소속에 승인(role=member/manager) 가능한 사용자가 존재하는지 확인합니다.
-
-    입력:
-    - user_sdwt_prod: 소속 식별자
-
-    반환:
-    - bool: 승인 가능 사용자 존재 여부
-
-    부작용:
-    - 없음(읽기 전용)
-
-    오류:
-    - 없음
-    """
-
-    normalized = (user_sdwt_prod or "").strip()
-    if not normalized:
-        return False
-
-    return UserSdwtProdAccess.objects.filter(
-        user_sdwt_prod__iexact=normalized,
-        role__in=[UserSdwtProdAccess.Roles.MEMBER, UserSdwtProdAccess.Roles.MANAGER],
-    ).exists()
 
 
 def list_affiliation_change_requests(
@@ -1469,10 +1406,42 @@ def list_group_members(*, user_sdwt_prods: set[str]) -> QuerySet[UserSdwtProdAcc
         return UserSdwtProdAccess.objects.none()
 
     return (
-        UserSdwtProdAccess.objects.annotate(user_sdwt_prod_lookup=Lower("user_sdwt_prod"))
+        UserSdwtProdAccess.objects.annotate(
+            user_sdwt_prod_lookup=Lower("affiliation__user_sdwt_prod")
+        )
         .filter(user_sdwt_prod_lookup__in=lookup_keys)
-        .select_related("user")
-        .order_by("user_sdwt_prod", "user_id")
+        .select_related("user", "affiliation")
+        .order_by("affiliation__user_sdwt_prod", "user_id")
+    )
+
+
+def list_current_affiliation_users_by_user_sdwt_prod(*, user_sdwt_prod: str) -> list[Any]:
+    """현재 앱 소속이 지정 user_sdwt_prod인 사용자를 조회합니다.
+
+    입력:
+    - user_sdwt_prod: 소속 식별자
+
+    반환:
+    - list[Any]: 사용자 객체 목록
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - 없음
+    """
+
+    normalized = _normalize_user_sdwt_prod(user_sdwt_prod)
+    if not normalized:
+        return []
+
+    UserModel = get_user_model()
+    return list(
+        UserModel.objects.filter(
+            current_affiliation__affiliation__user_sdwt_prod__iexact=normalized
+        )
+        .select_related("current_affiliation__affiliation")
+        .order_by("id")
     )
 
 
@@ -1575,6 +1544,11 @@ def resolve_user_affiliation(user: Any, at_time: datetime | None) -> dict[str, s
     if timezone.is_naive(at_time):
         at_time = timezone.make_aware(at_time, timezone.utc)
 
+    current_values = get_current_affiliation_values(user=user)
+    current_department = current_values.get("department")
+    current_line = current_values.get("line")
+    current_user_sdwt_prod = current_values.get("user_sdwt_prod")
+
     # -----------------------------------------------------------------------------
     # 2) 기준 시각까지 승인된 변경 조회
     # -----------------------------------------------------------------------------
@@ -1590,10 +1564,10 @@ def resolve_user_affiliation(user: Any, at_time: datetime | None) -> dict[str, s
     # -----------------------------------------------------------------------------
     if change:
         return {
-            "department": change.department or getattr(user, "department", None) or UNKNOWN,
-            "line": change.line or getattr(user, "line", None) or "",
+            "department": change.department or current_department or UNKNOWN,
+            "line": change.line or current_line or "",
             "user_sdwt_prod": change.to_user_sdwt_prod
-            or getattr(user, "user_sdwt_prod", None)
+            or current_user_sdwt_prod
             or UNCLASSIFIED_USER_SDWT_PROD,
         }
 
@@ -1615,10 +1589,10 @@ def resolve_user_affiliation(user: Any, at_time: datetime | None) -> dict[str, s
     # 5) 기본 스냅샷 반환
     # -----------------------------------------------------------------------------
     return {
-        "department": getattr(user, "department", None) or UNKNOWN,
-        "line": getattr(user, "line", None) or "",
+        "department": current_department or UNKNOWN,
+        "line": current_line or "",
         "user_sdwt_prod": before_user_sdwt_prod
-        or getattr(user, "user_sdwt_prod", None)
+        or current_user_sdwt_prod
         or UNCLASSIFIED_USER_SDWT_PROD,
     }
 

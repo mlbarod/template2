@@ -2,10 +2,12 @@ import { useSearchParams } from "react-router-dom"
 
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { AccessListCard, MailboxAccessCard, useAccountOverview } from "@/features/account"
+import { AccessListCard, useAccountOverview } from "@/features/account"
 
 import { EmailMailboxMembersDatatable } from "../components/EmailMailboxMembersDatatable"
+import { MailboxAccessCard } from "../components/MailboxAccessCard"
 import { useEmailMailboxMembers } from "../hooks/useEmailMailboxMembers"
+import { useEmailMailboxSummary } from "../hooks/useEmailMailboxes"
 import { getMailboxFromSearchParams, getMailboxLabel, isUnassignedMailbox } from "../utils/mailbox"
 
 export function EmailMembersPage() {
@@ -29,10 +31,19 @@ export function EmailMembersPage() {
     isError: isAccountError,
     error: accountError,
   } = useAccountOverview()
+  const {
+    data: mailboxSummary,
+    isLoading: mailboxSummaryLoading,
+    isError: isMailboxSummaryError,
+    error: mailboxSummaryError,
+  } = useEmailMailboxSummary()
 
   const safeMembers = canLoadMembers && Array.isArray(members) ? members : []
   const affiliation = accountOverview?.affiliation
-  const mailboxAccess = accountOverview?.mailboxAccess || []
+  const mailboxAccess = mailboxSummary?.results || []
+  const isTopCardError = isAccountError || isMailboxSummaryError
+  const topCardError = accountError || mailboxSummaryError
+  const isTopCardLoading = accountLoading || mailboxSummaryLoading
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col gap-4 overflow-hidden">
@@ -53,13 +64,13 @@ export function EmailMembersPage() {
       <div className="grid flex-1 min-h-0 min-w-0 grid-rows-[auto_1fr] gap-4">
         {/* ✅ 상단 카드: 높이 제한 X (자연 높이) */}
         <div className="grid gap-4 md:grid-cols-2">
-          {isAccountError ? (
+          {isTopCardError ? (
             <div className="rounded-lg border bg-card p-6 md:col-span-2">
               <p className="text-sm text-destructive">
-                {accountError?.message || "메일함 접근 정보를 불러오지 못했습니다."}
+                {topCardError?.message || "메일함 접근 정보를 불러오지 못했습니다."}
               </p>
             </div>
-          ) : accountLoading ? (
+          ) : isTopCardLoading ? (
             <>
               <Skeleton className="h-72 w-full" />
               <Skeleton className="h-72 w-full" />
@@ -67,7 +78,6 @@ export function EmailMembersPage() {
           ) : (
             <>
               <AccessListCard data={affiliation} />
-              {/* ✅ 여기 MailboxAccessCard 내부에서만 테이블 스크롤 처리 */}
               <MailboxAccessCard mailboxes={mailboxAccess} />
             </>
           )}

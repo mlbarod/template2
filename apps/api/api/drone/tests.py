@@ -75,6 +75,17 @@ def _ensure_target_mapping(
     )
 
 
+def _set_current_affiliation(user, *, user_sdwt_prod: str, department: str = "Dept", line: str = "Line") -> None:
+    """테스트 사용자의 현재 앱 소속을 설정합니다."""
+
+    account_services.set_current_affiliation_for_user(
+        user=user,
+        department=department,
+        line=line,
+        user_sdwt_prod=user_sdwt_prod,
+    )
+
+
 def _create_drone_sop(**overrides: object) -> DroneSOP:
     """테스트용 DroneSOP 기본 행을 생성합니다."""
 
@@ -458,6 +469,24 @@ class DroneSopJiraUpdateTests(TestCase):
 class DroneSelectorCaseInsensitiveTests(TestCase):
     """sdwt/user/target 소속 비교의 대소문자 비구분 동작을 검증합니다."""
 
+    def test_list_distinct_line_ids_excludes_custom_target_lines(self) -> None:
+        """line 선택지는 커스텀 target line이 아니라 기존 소속 line만 사용해야 합니다."""
+
+        account_services.ensure_affiliation_option(
+            department="Dept",
+            line="L1",
+            user_sdwt_prod="TARGET-SDWT",
+        )
+        DroneSopUserSdwtChannel.objects.create(
+            line_id="CUSTOM_LINE",
+            target_user_sdwt_prod="CUSTOM_TARGET",
+            source=DroneSopUserSdwtChannel.Sources.CUSTOM,
+        )
+
+        self.assertTrue(selectors.line_id_exists(line_id="l1"))
+        self.assertFalse(selectors.line_id_exists(line_id="CUSTOM_LINE"))
+        self.assertEqual(selectors.list_distinct_line_ids(), ["L1"])
+
     def test_selector_lookups_ignore_case_for_user_sdwt_prod_and_target(self) -> None:
         """소속/채널/수신자 조회가 대소문자를 무시하는지 확인합니다."""
         User = get_user_model()
@@ -466,8 +495,8 @@ class DroneSelectorCaseInsensitiveTests(TestCase):
             password="test-password",
             knox_id="knox-71000",
             email="user71000@example.com",
-            user_sdwt_prod="TARGET-SDWT",
         )
+        _set_current_affiliation(user, department="Dept", line="L1", user_sdwt_prod="TARGET-SDWT")
         account_services.ensure_affiliation_option(
             department="Dept",
             line="L1",
@@ -912,15 +941,15 @@ class DroneSopChannelRecipientTests(TestCase):
             password="test-password",
             knox_id="knox-71001",
             email="mail-user@example.com",
-            user_sdwt_prod="PHOTO_B",
         )
+        _set_current_affiliation(self.mail_user, user_sdwt_prod="PHOTO_B")
         self.same_group_user = User.objects.create_user(
             sabun="S71002",
             password="test-password",
             knox_id="knox-71002",
             email="same-group@example.com",
-            user_sdwt_prod="ETCH_A",
         )
+        _set_current_affiliation(self.same_group_user, department="Dept", line="L1", user_sdwt_prod="ETCH_A")
         account_services.ensure_affiliation_option(
             department="Dept",
             line="L1",
@@ -949,6 +978,11 @@ class DroneSopChannelRecipientTests(TestCase):
     def test_same_target_cannot_be_reused_by_another_line(self) -> None:
         """같은 target_user_sdwt_prod는 다른 line 수신인 설정에 재사용할 수 없어야 합니다."""
 
+        account_services.ensure_affiliation_option(
+            department="Dept",
+            line="L2",
+            user_sdwt_prod="PHOTO_B",
+        )
         services.replace_drone_sop_channel_recipients(
             line_id="L1",
             target_user_sdwt_prod="ETCH_A",
@@ -994,12 +1028,12 @@ class DroneSopChannelRecipientTests(TestCase):
         self.assertEqual(target.source, DroneSopUserSdwtChannel.Sources.AFFILIATION)
 
     def test_replace_allows_custom_target_without_affiliation(self) -> None:
-        """account_affiliation에 없는 커스텀 target도 수신인으로 저장할 수 있어야 합니다."""
+        """account_affiliation에 없는 커스텀 target도 기존 line 안에서는 저장할 수 있어야 합니다."""
 
         custom_target = "CUSTOM_TARGET"
 
         result = services.replace_drone_sop_channel_recipients(
-            line_id="CUSTOM_LINE",
+            line_id="L1",
             target_user_sdwt_prod=custom_target,
             channel="mail",
             user_ids=[self.mail_user.id],
@@ -1007,7 +1041,7 @@ class DroneSopChannelRecipientTests(TestCase):
         )
 
         self.assertFalse(selectors.affiliation_exists_for_user_sdwt_prod(user_sdwt_prod=custom_target))
-        self.assertEqual(result["lineId"], "CUSTOM_LINE")
+        self.assertEqual(result["lineId"], "L1")
         self.assertEqual(result["targetUserSdwtProd"], custom_target)
         self.assertEqual(result["recipients"][0]["userId"], self.mail_user.id)
         target = selectors.get_drone_sop_channel_by_target_user_sdwt_prod(
@@ -1016,14 +1050,33 @@ class DroneSopChannelRecipientTests(TestCase):
         self.assertIsNotNone(target)
         if target is None:
             return
-        self.assertEqual(target.line_id, "CUSTOM_LINE")
+        self.assertEqual(target.line_id, "L1")
         self.assertEqual(target.source, DroneSopUserSdwtChannel.Sources.CUSTOM)
         self.assertEqual(
             selectors.list_mail_receiver_emails_for_user_sdwt_prod(
-                line_id="CUSTOM_LINE",
+                line_id="L1",
                 user_sdwt_prod=custom_target,
             ),
             ["mail-user@example.com"],
+        )
+
+    def test_replace_rejects_custom_target_for_unknown_line(self) -> None:
+        """커스텀 target이 신규 line_id를 만들 수 없도록 차단합니다."""
+
+        with self.assertRaisesMessage(ValueError, "line_id must be an existing line"):
+            services.replace_drone_sop_channel_recipients(
+                line_id="CUSTOM_LINE",
+                target_user_sdwt_prod="CUSTOM_TARGET",
+                channel="mail",
+                user_ids=[self.mail_user.id],
+                actor=self.actor,
+            )
+
+        self.assertFalse(
+            DroneSopUserSdwtChannel.objects.filter(
+                line_id="CUSTOM_LINE",
+                target_user_sdwt_prod="CUSTOM_TARGET",
+            ).exists()
         )
 
     def test_replace_reactivates_and_deactivates_recipient_rows(self) -> None:
@@ -1290,8 +1343,8 @@ class DroneSopChannelRecipientTests(TestCase):
             password="test-password",
             knox_id="knox-71005",
             email="account-manager@example.com",
-            user_sdwt_prod="ETCH_A",
         )
+        _set_current_affiliation(account_manager, department="Dept", line="L1", user_sdwt_prod="ETCH_A")
         account_services.ensure_self_access(account_manager, role="manager")
 
         self.client.force_login(account_manager)
@@ -1357,7 +1410,7 @@ class DroneSopChannelRecipientTests(TestCase):
         self.assertIn("ETCH_A", payload["targetUserSdwtProds"])
 
     def test_notification_target_endpoint_creates_custom_target(self) -> None:
-        """account_affiliation에 없는 커스텀 target도 line 소유 target으로 생성할 수 있어야 합니다."""
+        """account_affiliation에 없는 커스텀 target도 기존 line 소유 target으로 생성할 수 있어야 합니다."""
 
         self.client.force_login(self.actor)
         response = self.client.post(
@@ -1370,6 +1423,20 @@ class DroneSopChannelRecipientTests(TestCase):
         target = DroneSopUserSdwtChannel.objects.get(target_user_sdwt_prod="L1_NIGHT_SHIFT")
         self.assertEqual(target.line_id, "L1")
         self.assertEqual(target.source, DroneSopUserSdwtChannel.Sources.CUSTOM)
+
+    def test_notification_target_endpoint_rejects_unknown_line(self) -> None:
+        """알림 target 생성은 기존 line 안에서만 허용해야 합니다."""
+
+        self.client.force_login(self.actor)
+        response = self.client.post(
+            reverse("line-dashboard-notification-targets"),
+            data=json.dumps({"lineId": "CUSTOM_LINE", "targetUserSdwtProd": "CUSTOM_TARGET"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "line_id must be an existing line")
+        self.assertFalse(DroneSopUserSdwtChannel.objects.filter(line_id="CUSTOM_LINE").exists())
 
     def test_notification_recipient_endpoint_empty_list_deactivates_recipients(self) -> None:
         """빈 userIds 저장은 기존 활성 수신인을 모두 비활성화해야 합니다."""
@@ -1434,8 +1501,8 @@ class DroneSopChannelRecipientTests(TestCase):
             sabun="S71003",
             password="test-password",
             knox_id="knox-71003",
-            user_sdwt_prod="PHOTO_B",
         )
+        _set_current_affiliation(no_email_user, user_sdwt_prod="PHOTO_B")
 
         self.client.force_login(self.actor)
         response = self.client.put(
@@ -1491,8 +1558,8 @@ class DroneSopChannelRecipientTests(TestCase):
             sabun="S71004",
             password="test-password",
             email="no-knox@example.com",
-            user_sdwt_prod="PHOTO_B",
         )
+        _set_current_affiliation(no_knox_user, user_sdwt_prod="PHOTO_B")
 
         self.client.force_login(self.actor)
         response = self.client.put(
@@ -2864,9 +2931,9 @@ class DroneSopInformPolicyTests(TestCase):
         """메일 전송 성공 시 informed_at이 설정되는지 확인합니다."""
         User = get_user_model()
         user = User.objects.create_user(sabun="S84001", password="test-password")
-        user.user_sdwt_prod = "SDWT1"
         user.email = "user84001@example.com"
-        user.save(update_fields=["user_sdwt_prod", "email"])
+        user.save(update_fields=["email"])
+        _set_current_affiliation(user, user_sdwt_prod="SDWT1")
 
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT1",
@@ -3020,14 +3087,14 @@ class DroneSopInformPolicyTests(TestCase):
         User = get_user_model()
 
         user_a = User.objects.create_user(sabun="S83001", password="test-password")
-        user_a.user_sdwt_prod = "SDWT1"
         user_a.knox_id = "knox-001"
-        user_a.save(update_fields=["user_sdwt_prod", "knox_id"])
+        user_a.save(update_fields=["knox_id"])
+        _set_current_affiliation(user_a, user_sdwt_prod="SDWT1")
 
         user_b = User.objects.create_user(sabun="S83002", password="test-password")
-        user_b.user_sdwt_prod = "SDWT1"
         user_b.knox_id = " knox-002 "
-        user_b.save(update_fields=["user_sdwt_prod", "knox_id"])
+        user_b.save(update_fields=["knox_id"])
+        _set_current_affiliation(user_b, user_sdwt_prod="SDWT1")
 
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT1",
@@ -3130,14 +3197,14 @@ class DroneSopInformPolicyTests(TestCase):
 
         User = get_user_model()
         user_a = User.objects.create_user(sabun="S83003", password="test-password")
-        user_a.user_sdwt_prod = "SDWT1"
         user_a.knox_id = "knox-003"
-        user_a.save(update_fields=["user_sdwt_prod", "knox_id"])
+        user_a.save(update_fields=["knox_id"])
+        _set_current_affiliation(user_a, user_sdwt_prod="SDWT1")
 
         user_b = User.objects.create_user(sabun="S83004", password="test-password")
-        user_b.user_sdwt_prod = "SDWT1"
         user_b.knox_id = "knox-004"
-        user_b.save(update_fields=["user_sdwt_prod", "knox_id"])
+        user_b.save(update_fields=["knox_id"])
+        _set_current_affiliation(user_b, user_sdwt_prod="SDWT1")
 
         DroneSopUserSdwtChannel.objects.create(
             target_user_sdwt_prod="SDWT1",
@@ -3970,7 +4037,7 @@ class DroneSopMessengerLineATemplateTests(TestCase):
         """common 템플릿이 Excel Table API를 호출하는지 확인합니다."""
 
         from api.drone.services.messenger.templates import messenger_template_common as common_template
-        from api.messenger import services as messenger_services
+        import api.common.services as messenger_services
 
         captured: dict[str, str] = {}
 
@@ -4026,7 +4093,7 @@ class DroneSopMessengerLineATemplateTests(TestCase):
             build_drone_sop_messenger_template_inputs,
         )
         from api.drone.services.messenger.templates import messenger_template_common as common_template
-        from api.messenger import services as messenger_services
+        import api.common.services as messenger_services
 
         captured: dict[str, str] = {}
 
@@ -4085,7 +4152,7 @@ class DroneSopMessengerLineBTemplateTests(TestCase):
         """H1 템플릿이 Excel Table API를 호출하는지 확인합니다."""
 
         from api.drone.services.messenger.templates import messenger_template_h1 as H1_template
-        from api.messenger import services as messenger_services
+        import api.common.services as messenger_services
 
         captured: dict[str, str] = {}
 
@@ -4140,7 +4207,7 @@ class DroneSopMessengerApiRoutingTests(TestCase):
 
     def _build_config(self):
         from api.drone.services.messenger import messenger_api
-        from api.messenger import services as messenger_services
+        import api.common.services as messenger_services
 
         return messenger_api.DroneMessengerConfig(
             ttl=1800,
