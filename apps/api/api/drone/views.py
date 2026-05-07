@@ -1385,6 +1385,16 @@ class DroneNotificationRecipientView(DroneAuthenticatedView):
             return JsonResponse({"error": "targetUserSdwtProd already belongs to another line"}, status=400)
         return None
 
+    @staticmethod
+    def _resolve_target_line_id(*, line_id: str, target_user_sdwt_prod: str) -> str:
+        """기존 target이 있으면 저장된 line_id를 우선 사용합니다."""
+
+        target = selectors.get_drone_sop_channel_by_target_user_sdwt_prod(
+            target_user_sdwt_prod=target_user_sdwt_prod
+        )
+        target_line_id = getattr(target, "line_id", "") if target else ""
+        return target_line_id or line_id
+
     def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
         """target/channel 수신인 목록을 반환합니다.
 
@@ -1428,12 +1438,10 @@ class DroneNotificationRecipientView(DroneAuthenticatedView):
         channel, channel_error = self._validate_channel(request.GET.get("channel") or "mail")
         if channel_error is not None:
             return channel_error
-        target_line_error = self._validate_target_line_context(
+        resolved_line_id = self._resolve_target_line_id(
             line_id=line_id,
             target_user_sdwt_prod=target_user_sdwt_prod,
         )
-        if target_line_error is not None:
-            return target_line_error
 
         if not self._can_update_recipients(user=request.user):
             return JsonResponse({"error": "forbidden"}, status=403)
@@ -1442,13 +1450,13 @@ class DroneNotificationRecipientView(DroneAuthenticatedView):
         # 3) 수신인 조회 및 응답 반환
         # -----------------------------------------------------------------------------
         recipients = selectors.list_drone_sop_channel_recipients(
-            line_id=line_id,
+            line_id=resolved_line_id,
             target_user_sdwt_prod=target_user_sdwt_prod,
             channel=channel,
         )
         return JsonResponse(
             {
-                "lineId": line_id,
+                "lineId": resolved_line_id,
                 "targetUserSdwtProd": target_user_sdwt_prod,
                 "channel": channel,
                 "recipients": recipients,

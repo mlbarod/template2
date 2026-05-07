@@ -1007,6 +1007,33 @@ class DroneSopChannelRecipientTests(TestCase):
             ["mail-user@example.com"],
         )
 
+    def test_notification_recipient_get_uses_existing_target_line(self) -> None:
+        """기존 target 조회는 요청 line이 달라도 저장된 line 수신인을 반환해야 합니다."""
+
+        services.replace_drone_sop_channel_recipients(
+            line_id="L1",
+            target_user_sdwt_prod="ETCH_A",
+            channel="mail",
+            user_ids=[self.mail_user.id],
+            actor=self.actor,
+        )
+
+        self.client.force_login(self.actor)
+        response = self.client.get(
+            reverse("line-dashboard-notification-recipients"),
+            {
+                "lineId": "L2",
+                "targetUserSdwtProd": "ETCH_A",
+                "channel": "mail",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["lineId"], "L1")
+        self.assertEqual(payload["targetUserSdwtProd"], "ETCH_A")
+        self.assertEqual([row["userId"] for row in payload["recipients"]], [self.mail_user.id])
+
     def test_replace_preserves_existing_affiliation_target_source(self) -> None:
         """수신인 저장이 기존 affiliation target을 custom으로 바꾸지 않아야 합니다."""
 

@@ -17,6 +17,15 @@ import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -25,6 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Table,
   TableBody,
@@ -41,24 +51,17 @@ import { formatUpdatedAt, isDuplicateMessage, normalizeDraft } from "../utils/li
 
 const LABELS = {
   titleSuffix: "Line E-SOP Settings",
-  jiraTitle: "Jira Project Key",
-  jiraDescription: "알림 Target별 Jira 프로젝트 키를 설정합니다.",
-  jiraHelper: "설정된 키는 Jira 이슈 생성 시 사용됩니다.",
   badgesTitle: "알림 Target",
-  badgesDescription: "라인에 등록된 알림 Target을 표시합니다.",
-  jiraUserSdwtLabel: "알림 Target",
-  jiraUserSdwtPlaceholder: "알림 Target 선택",
+  targetSelectLabel: "알림 Target",
+  targetSelectPlaceholder: "알림 Target 선택",
+  targetCreateLabel: "새 알림 Target",
   targetCreatePlaceholder: "ex) L1_NIGHT_SHIFT",
   targetCreate: "Target 추가",
-  jiraPlaceholder: "ex) DRONE",
-  jiraSave: "Save",
   mailRecipientsTitle: "메일 수신인",
   mailRecipientsDescription: "선택한 알림 Target의 메일 수신인을 개별 사용자로 관리합니다.",
   mailRecipientsHelper: "소속에서 불러오기는 현재 소속 사용자를 한 번에 후보로 추가합니다.",
   recipientSourcePlaceholder: "소속 선택",
   recipientSearchPlaceholder: "이름/사번/Knox/email 검색",
-  recipientLoadGroup: "소속에서 불러오기",
-  recipientSearch: "검색",
   recipientSave: "수신인 저장",
   addTitle: "E-SOP Custom End Step 추가",
   mainStep: "Main Step",
@@ -76,7 +79,6 @@ const LABELS = {
 
 const DUPLICATE_MESSAGE = "이미 등록된 스텝입니다. 다른 스텝을 입력해주세요."
 const MAX_FIELD_LENGTH = 50
-const MAX_JIRA_KEY_LENGTH = 64
 const RECIPIENT_CHANNELS = [
   {
     channel: "mail",
@@ -141,14 +143,6 @@ function showUpdateToast() {
   })
 }
 
-function showJiraKeyToast() {
-  toast.success("저장 완료", {
-    description: "Jira project key가 저장되었습니다.",
-    icon: <IconDeviceFloppy className="h-5 w-5 text-[var(--normal-text)]" />,
-    ...buildToastOptions({ intent: "success" }),
-  })
-}
-
 function showDeleteToast() {
   toast.warning("삭제 완료", {
     description: "설정이 제거되었습니다.",
@@ -185,12 +179,12 @@ function LineUserSdwtBadges({ lineId, values }) {
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="font-mono text-xs font-semibold text-foreground">{lineId} Line Target : </span>
+    <div className="grid h-full min-h-0 grid-cols-2 content-start gap-2 overflow-y-auto rounded-md border p-2">
+      <span className="col-span-2 font-mono text-xs font-semibold text-foreground">{lineId} Line Target : </span>
       {values.map((value) => (
-        <Badge key={value} variant="secondary" className="gap-1 text-[11px] font-mono">
+        <Badge key={value} variant="secondary" className="min-w-0 justify-start gap-1 text-[11px] font-mono">
           <BadgeCheckIcon className="h-3 w-3" />
-          {value}
+          <span className="truncate">{value}</span>
         </Badge>
       ))}
     </div>
@@ -201,22 +195,40 @@ function getRecipientPrimaryText(user) {
   return user?.displayName || user?.username || user?.knoxId || user?.sabun || `User ${user?.userId || user?.id}`
 }
 
+function getRecipientUserId(user) {
+  const userId = Number.parseInt(user?.userId ?? user?.id, 10)
+  return Number.isFinite(userId) && userId > 0 ? userId : null
+}
+
 function getRecipientSecondaryText(user) {
   const parts = [user?.userSdwtProd, user?.email, user?.knoxId].filter(Boolean)
   return parts.length ? parts.join(" · ") : "연락처 정보 없음"
 }
 
+function getRecipientListText(user) {
+  const name =
+    user?.displayName ||
+    user?.username ||
+    user?.sabun ||
+    user?.knoxId ||
+    `User ${user?.userId || user?.id}`
+  const knoxId = user?.knoxId || ""
+  const userSdwtProd = user?.userSdwtProd || ""
+  const nameWithKnox = knoxId && name !== knoxId ? `${name}(${knoxId})` : name
+  return userSdwtProd ? `${nameWithKnox}-${userSdwtProd}` : nameWithKnox
+}
+
 function mergeRecipientUsers(currentUsers, nextUsers) {
   const byId = new Map()
   for (const user of currentUsers || []) {
-    const userId = Number.parseInt(user?.userId ?? user?.id, 10)
-    if (Number.isFinite(userId) && userId > 0) {
+    const userId = getRecipientUserId(user)
+    if (userId) {
       byId.set(userId, { ...user, userId, id: userId })
     }
   }
   for (const user of nextUsers || []) {
-    const userId = Number.parseInt(user?.userId ?? user?.id, 10)
-    if (Number.isFinite(userId) && userId > 0) {
+    const userId = getRecipientUserId(user)
+    if (userId) {
       byId.set(userId, { ...user, userId, id: userId })
     }
   }
@@ -231,12 +243,86 @@ function sameUserSdwtProd(left, right) {
   return String(left || "").trim().toLowerCase() === String(right || "").trim().toLowerCase()
 }
 
-function RecipientChannelCard({
+function getRecipientPickerUsers(results) {
+  return mergeRecipientUsers(results?.group || [], results?.search || [])
+}
+
+function RecipientPickerUserList({
+  users,
+  selectedIds,
+  isLoading,
+  loadingText,
+  emptyText,
+  onToggleUser,
+  onToggleAll,
+}) {
+  const visibleUserIds = users.map(getRecipientUserId).filter(Boolean)
+  const selectedVisibleCount = visibleUserIds.filter((userId) => selectedIds.includes(userId)).length
+  const allChecked = visibleUserIds.length > 0 && selectedVisibleCount === visibleUserIds.length
+  const checked = allChecked ? true : selectedVisibleCount > 0 ? "indeterminate" : false
+
+  if (isLoading) {
+    return (
+      <div className="rounded-md border px-3 py-8 text-center text-xs text-muted-foreground">
+        {loadingText}
+      </div>
+    )
+  }
+
+  if (users.length === 0) {
+    return (
+      <div className="rounded-md border px-3 py-8 text-center text-xs text-muted-foreground">
+        {emptyText}
+      </div>
+    )
+  }
+
+  return (
+    <div className="grid min-h-0 grid-rows-[auto,1fr] overflow-hidden rounded-md border">
+      <label className="flex items-center gap-2 border-b px-3 py-2 text-xs font-medium">
+        <Checkbox
+          checked={checked}
+          onCheckedChange={(nextChecked) => onToggleAll(nextChecked === true)}
+        />
+        현재 결과 전체 선택
+      </label>
+      <div className="min-h-0 overflow-y-auto">
+        {users.map((user) => {
+          const userId = getRecipientUserId(user)
+          if (!userId) return null
+          return (
+            <label
+              key={userId}
+              className="flex min-w-0 cursor-pointer items-center gap-3 border-b px-3 py-2 last:border-b-0"
+            >
+              <Checkbox
+                checked={selectedIds.includes(userId)}
+                onCheckedChange={(nextChecked) => onToggleUser(userId, nextChecked === true)}
+              />
+              <div className="min-w-0">
+                <div className="truncate text-xs font-medium">{getRecipientListText(user)}</div>
+                <div className="truncate text-[11px] text-muted-foreground">
+                  {getRecipientSecondaryText(user)}
+                </div>
+              </div>
+            </label>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function RecipientPickerDialog({
+  open,
+  activeTab,
   config,
   selectedUserSdwtProd,
   canManageRecipients,
   accountUserSdwtValues,
   sourceSdwt,
+  onOpenChange,
+  onTabChange,
   onSourceSdwtChange,
   isLoadingSourceUsers,
   onLoadSourceRecipients,
@@ -244,20 +330,146 @@ function RecipientChannelCard({
   onSearchChange,
   isSearchingRecipients,
   onSearch,
-  searchResults,
-  onAddUser,
+  results,
+  selectedIds,
+  onToggleUser,
+  onToggleAll,
+  onApply,
+  error,
+}) {
+  const groupUsers = results?.group || []
+  const searchUsers = results?.search || []
+  const selectableUsers = getRecipientPickerUsers(results)
+  const selectedCount = selectableUsers.filter((user) => {
+    const userId = getRecipientUserId(user)
+    return userId && selectedIds.includes(userId)
+  }).length
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="grid max-h-[85vh] w-[min(760px,calc(100%-2rem))] max-w-[min(760px,calc(100%-2rem))] grid-rows-[auto,1fr,auto] overflow-hidden">
+        <DialogHeader>
+          <DialogTitle>{config.title} 선택</DialogTitle>
+          <DialogDescription>
+            {selectedUserSdwtProd || "알림 Target"}에 추가할 수신인을 선택한 뒤 적용합니다.
+          </DialogDescription>
+        </DialogHeader>
+
+        <Tabs value={activeTab} onValueChange={onTabChange} className="min-h-0">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="group">소속에서 불러오기</TabsTrigger>
+            <TabsTrigger value="search">이름 · KnoxID 검색</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="group" className="grid min-h-0 grid-rows-[auto,1fr] gap-3">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+              <Select
+                value={sourceSdwt || undefined}
+                onValueChange={onSourceSdwtChange}
+                disabled={!canManageRecipients || accountUserSdwtValues.length === 0}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder={LABELS.recipientSourcePlaceholder} />
+                </SelectTrigger>
+                <SelectContent>
+                  {accountUserSdwtValues.map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {value}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onLoadSourceRecipients}
+                disabled={!canManageRecipients || !sourceSdwt || isLoadingSourceUsers}
+                className="gap-1"
+              >
+                <IconUsers className="size-4" />
+                불러오기
+              </Button>
+            </div>
+
+            <RecipientPickerUserList
+              users={groupUsers}
+              selectedIds={selectedIds}
+              isLoading={isLoadingSourceUsers}
+              loadingText="소속 사용자를 불러오는 중입니다."
+              emptyText="소속을 선택하고 불러오기를 누르세요."
+              onToggleUser={onToggleUser}
+              onToggleAll={(checked) => onToggleAll(groupUsers, checked)}
+            />
+          </TabsContent>
+
+          <TabsContent value="search" className="grid min-h-0 grid-rows-[auto,1fr] gap-3">
+            <form className="grid grid-cols-[minmax(0,1fr)_auto] gap-2" onSubmit={onSearch}>
+              <Input
+                value={searchValue}
+                onChange={(event) => onSearchChange(event.target.value)}
+                placeholder={LABELS.recipientSearchPlaceholder}
+                disabled={!canManageRecipients || isSearchingRecipients}
+              />
+              <Button
+                type="submit"
+                variant="outline"
+                disabled={!canManageRecipients || isSearchingRecipients}
+                className="gap-1"
+              >
+                <IconSearch className="size-4" />
+                검색
+              </Button>
+            </form>
+
+            <RecipientPickerUserList
+              users={searchUsers}
+              selectedIds={selectedIds}
+              isLoading={isSearchingRecipients}
+              loadingText="사용자를 검색하는 중입니다."
+              emptyText="검색어를 입력하고 검색을 누르세요."
+              onToggleUser={onToggleUser}
+              onToggleAll={(checked) => onToggleAll(searchUsers, checked)}
+            />
+          </TabsContent>
+        </Tabs>
+
+        <DialogFooter className="items-center gap-2 sm:justify-between">
+          <div className="min-w-0 text-xs text-muted-foreground">
+            {error ? <span className="text-destructive">{error}</span> : `${selectedCount}명 선택됨`}
+          </div>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              취소
+            </Button>
+            <Button type="button" onClick={onApply} disabled={!canManageRecipients || selectedCount === 0}>
+              <IconUserPlus className="mr-1 size-4" />
+              선택 인원 적용
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function RecipientChannelCard({
+  config,
+  selectedUserSdwtProd,
+  canManageRecipients,
   recipients,
   isLoadingRecipients,
   onRemoveUser,
   onSave,
+  onOpenPicker,
   isDraftCurrent,
   isSavingRecipients,
   error,
 }) {
-  const disabled = !selectedUserSdwtProd || !canManageRecipients
+  const saveDisabled = !selectedUserSdwtProd || !canManageRecipients
+  const pickerDisabled = !selectedUserSdwtProd
 
   return (
-    <div className="rounded-lg border bg-background p-4 shadow-sm">
+    <div className="flex h-full min-h-0 flex-col rounded-lg border bg-background p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3 pb-3">
         <div className="min-w-0 space-y-1">
           <h2 className="text-base font-medium">{config.title}</h2>
@@ -278,7 +490,7 @@ function RecipientChannelCard({
           type="button"
           size="sm"
           onClick={() => onSave(config.channel)}
-          disabled={disabled || !isDraftCurrent || isSavingRecipients || isLoadingRecipients}
+          disabled={saveDisabled || !isDraftCurrent || isSavingRecipients || isLoadingRecipients}
           className="shrink-0 gap-1"
         >
           <IconDeviceFloppy className="size-4" />
@@ -286,81 +498,19 @@ function RecipientChannelCard({
         </Button>
       </div>
 
-      <div className="grid gap-3">
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-          <Select
-            value={sourceSdwt || undefined}
-            onValueChange={(value) => onSourceSdwtChange(config.channel, value)}
-            disabled={disabled || accountUserSdwtValues.length === 0}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder={LABELS.recipientSourcePlaceholder} />
-            </SelectTrigger>
-            <SelectContent>
-              {accountUserSdwtValues.map((value) => (
-                <SelectItem key={value} value={value}>
-                  {value}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onLoadSourceRecipients(config.channel)}
-            disabled={disabled || !sourceSdwt || isLoadingSourceUsers}
-            className="gap-1"
-          >
-            <IconUsers className="size-4" />
-            {LABELS.recipientLoadGroup}
-          </Button>
-        </div>
+      <div className="flex flex-1 min-h-0 flex-col gap-3">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => onOpenPicker(config.channel)}
+          disabled={pickerDisabled}
+          className="justify-start gap-1"
+        >
+          <IconUserPlus className="size-4" />
+          수신인 검색/추가
+        </Button>
 
-        <form className="grid grid-cols-[minmax(0,1fr)_auto] gap-2" onSubmit={(event) => onSearch(config.channel, event)}>
-          <Input
-            value={searchValue}
-            onChange={(event) => onSearchChange(config.channel, event.target.value)}
-            placeholder={LABELS.recipientSearchPlaceholder}
-            disabled={disabled || isSearchingRecipients}
-          />
-          <Button
-            type="submit"
-            variant="outline"
-            disabled={disabled || isSearchingRecipients}
-            className="gap-1"
-          >
-            <IconSearch className="size-4" />
-            {LABELS.recipientSearch}
-          </Button>
-        </form>
-
-        {searchResults.length > 0 && (
-          <div className="grid max-h-28 gap-1 overflow-y-auto rounded-md border bg-muted/30 p-2">
-            {searchResults.map((candidate) => (
-              <div key={candidate.userId} className="flex min-w-0 items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="truncate text-xs font-medium">{getRecipientPrimaryText(candidate)}</div>
-                  <div className="truncate text-[11px] text-muted-foreground">
-                    {getRecipientSecondaryText(candidate)}
-                  </div>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => onAddUser(config.channel, candidate)}
-                  disabled={!canManageRecipients}
-                  className="h-7 shrink-0 gap-1"
-                >
-                  <IconUserPlus className="size-3" />
-                  추가
-                </Button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="min-h-0 max-h-40 overflow-y-auto rounded-md border">
+        <div className="min-h-64 flex-1 overflow-y-auto rounded-md border">
           {isLoadingRecipients ? (
             <div className="px-3 py-6 text-center text-xs text-muted-foreground">{config.loadingText}</div>
           ) : recipients.length === 0 ? (
@@ -372,10 +522,7 @@ function RecipientChannelCard({
                 className="flex min-w-0 items-center justify-between gap-2 border-b px-3 py-2 last:border-b-0"
               >
                 <div className="min-w-0">
-                  <div className="truncate text-xs font-medium">{getRecipientPrimaryText(recipient)}</div>
-                  <div className="truncate text-[11px] text-muted-foreground">
-                    {getRecipientSecondaryText(recipient)}
-                  </div>
+                  <div className="truncate text-xs font-medium">{getRecipientListText(recipient)}</div>
                 </div>
                 <Button
                   type="button"
@@ -403,18 +550,14 @@ export function LineSettingsPage({ lineId = "" }) {
   const {
     entries,
     userSdwtValues,
-    notificationTargets,
-    jiraKey,
     mailRecipients,
     mailRecipientsTargetUserSdwtProd,
     messengerRecipients,
     messengerRecipientsTargetUserSdwtProd,
-    jiraKeyError,
     mailRecipientsError,
     messengerRecipientsError,
     error,
     isLoading,
-    isJiraKeyLoading,
     isMailRecipientsLoading,
     isMessengerRecipientsLoading,
     hasLoadedOnce,
@@ -423,7 +566,6 @@ export function LineSettingsPage({ lineId = "" }) {
     createEntry,
     updateEntry,
     deleteEntry,
-    updateJiraKey,
     createTarget,
     updateMailRecipients,
     updateMessengerRecipients,
@@ -441,16 +583,19 @@ export function LineSettingsPage({ lineId = "" }) {
   const [editDraft, setEditDraft] = React.useState({ mainStep: "", customEndStep: "" })
   const [rowErrors, setRowErrors] = React.useState({})
   const [savingMap, setSavingMap] = React.useState({})
-  const [jiraKeyDraft, setJiraKeyDraft] = React.useState("")
-  const [jiraKeyFormError, setJiraKeyFormError] = React.useState(null)
-  const [isSavingJiraKey, setIsSavingJiraKey] = React.useState(false)
   const [newTargetDraft, setNewTargetDraft] = React.useState("")
   const [targetFormError, setTargetFormError] = React.useState(null)
   const [isCreatingTarget, setIsCreatingTarget] = React.useState(false)
   const [recipientDrafts, setRecipientDrafts] = React.useState({ mail: [], messenger: [] })
   const [recipientDraftTargets, setRecipientDraftTargets] = React.useState({ mail: "", messenger: "" })
   const [recipientSearches, setRecipientSearches] = React.useState({ mail: "", messenger: "" })
-  const [recipientSearchResults, setRecipientSearchResults] = React.useState({ mail: [], messenger: [] })
+  const [recipientPickerOpen, setRecipientPickerOpen] = React.useState({ mail: false, messenger: false })
+  const [recipientPickerTabs, setRecipientPickerTabs] = React.useState({ mail: "group", messenger: "group" })
+  const [recipientPickerResults, setRecipientPickerResults] = React.useState({
+    mail: { group: [], search: [] },
+    messenger: { group: [], search: [] },
+  })
+  const [recipientPickerSelectedIds, setRecipientPickerSelectedIds] = React.useState({ mail: [], messenger: [] })
   const [recipientSourceSdwt, setRecipientSourceSdwt] = React.useState({ mail: "", messenger: "" })
   const [accountUserSdwtValues, setAccountUserSdwtValues] = React.useState([])
   const [recipientActionErrors, setRecipientActionErrors] = React.useState({ mail: null, messenger: null })
@@ -461,11 +606,9 @@ export function LineSettingsPage({ lineId = "" }) {
   const sourceLoadRequestRef = React.useRef({ mail: 0, messenger: 0 })
   recipientContextRef.current = { lineId, selectedUserSdwtProd }
 
-  const isSuperuser = Boolean(user?.is_superuser)
   const isRefreshing = isLoading && hasLoadedOnce
   const canManageRecipients = Boolean(selectedUserSdwtProd && isGlobalOperator)
   const canCreateTarget = Boolean(lineId && isGlobalOperator)
-  const targetCount = notificationTargets.length
   const isRecipientDraftCurrent = React.useMemo(
     () => ({
       mail: sameUserSdwtProd(recipientDraftTargets.mail, selectedUserSdwtProd),
@@ -506,6 +649,58 @@ export function LineSettingsPage({ lineId = "" }) {
     setRecipientSearches((prev) => ({ ...prev, [channel]: value }))
   }, [])
 
+  const handleRecipientPickerOpenChange = React.useCallback((channel, open) => {
+    setRecipientPickerOpen((prev) => ({ ...prev, [channel]: open }))
+  }, [])
+
+  const handleRecipientPickerTabChange = React.useCallback((channel, value) => {
+    setRecipientPickerTabs((prev) => ({ ...prev, [channel]: value }))
+  }, [])
+
+  const handleOpenRecipientPicker = React.useCallback(
+    (channel) => {
+      const config = RECIPIENT_CHANNEL_CONFIG[channel]
+      if (!selectedUserSdwtProd) {
+        setRecipientActionErrors((prev) => ({ ...prev, [channel]: "알림 Target을 선택하세요." }))
+        return
+      }
+      setRecipientActionErrors((prev) => ({
+        ...prev,
+        [channel]: canManageRecipients ? null : config.permissionErrorText,
+      }))
+      setRecipientPickerOpen((prev) => ({ ...prev, [channel]: true }))
+    },
+    [canManageRecipients, selectedUserSdwtProd],
+  )
+
+  const handleRecipientPickerUserToggle = React.useCallback((channel, userId, checked) => {
+    setRecipientPickerSelectedIds((prev) => {
+      const current = new Set(prev[channel] || [])
+      if (checked) {
+        current.add(userId)
+      } else {
+        current.delete(userId)
+      }
+      return { ...prev, [channel]: Array.from(current) }
+    })
+  }, [])
+
+  const handleRecipientPickerAllToggle = React.useCallback((channel, users, checked) => {
+    setRecipientPickerSelectedIds((prev) => {
+      const current = new Set(prev[channel] || [])
+      for (const user of users || []) {
+        const userId = getRecipientUserId(user)
+        if (!userId) continue
+        if (checked) {
+          current.add(userId)
+        } else {
+          current.delete(userId)
+        }
+      }
+      return { ...prev, [channel]: Array.from(current) }
+    })
+  }, [])
+
   React.useEffect(() => {
     if (!lineId || userSdwtValues.length === 0) {
       setSelectedUserSdwtProd("")
@@ -515,11 +710,6 @@ export function LineSettingsPage({ lineId = "" }) {
       setSelectedUserSdwtProd(userSdwtValues[0])
     }
   }, [lineId, selectedUserSdwtProd, userSdwtValues])
-
-  React.useEffect(() => {
-    setJiraKeyDraft(jiraKey || "")
-    setJiraKeyFormError(null)
-  }, [jiraKey, lineId, selectedUserSdwtProd])
 
   React.useEffect(() => {
     setNewTargetDraft("")
@@ -532,7 +722,9 @@ export function LineSettingsPage({ lineId = "" }) {
     setRecipientDrafts({ mail: [], messenger: [] })
     setRecipientDraftTargets({ mail: selectedUserSdwtProd || "", messenger: selectedUserSdwtProd || "" })
     setRecipientActionErrors({ mail: null, messenger: null })
-    setRecipientSearchResults({ mail: [], messenger: [] })
+    setRecipientPickerOpen({ mail: false, messenger: false })
+    setRecipientPickerResults({ mail: { group: [], search: [] }, messenger: { group: [], search: [] } })
+    setRecipientPickerSelectedIds({ mail: [], messenger: [] })
     setIsLoadingSourceUsers({ mail: false, messenger: false })
     setIsSavingRecipients({ mail: false, messenger: false })
   }, [lineId, selectedUserSdwtProd])
@@ -544,7 +736,8 @@ export function LineSettingsPage({ lineId = "" }) {
     setRecipientDrafts((prev) => ({ ...prev, mail: mailRecipients || [] }))
     setRecipientDraftTargets((prev) => ({ ...prev, mail: selectedUserSdwtProd || "" }))
     setRecipientActionErrors((prev) => ({ ...prev, mail: null }))
-    setRecipientSearchResults((prev) => ({ ...prev, mail: [] }))
+    setRecipientPickerResults((prev) => ({ ...prev, mail: { group: [], search: [] } }))
+    setRecipientPickerSelectedIds((prev) => ({ ...prev, mail: [] }))
   }, [mailRecipients, mailRecipientsTargetUserSdwtProd, selectedUserSdwtProd])
 
   React.useEffect(() => {
@@ -554,7 +747,8 @@ export function LineSettingsPage({ lineId = "" }) {
     setRecipientDrafts((prev) => ({ ...prev, messenger: messengerRecipients || [] }))
     setRecipientDraftTargets((prev) => ({ ...prev, messenger: selectedUserSdwtProd || "" }))
     setRecipientActionErrors((prev) => ({ ...prev, messenger: null }))
-    setRecipientSearchResults((prev) => ({ ...prev, messenger: [] }))
+    setRecipientPickerResults((prev) => ({ ...prev, messenger: { group: [], search: [] } }))
+    setRecipientPickerSelectedIds((prev) => ({ ...prev, messenger: [] }))
   }, [messengerRecipients, messengerRecipientsTargetUserSdwtProd, selectedUserSdwtProd])
 
   React.useEffect(() => {
@@ -637,38 +831,6 @@ export function LineSettingsPage({ lineId = "" }) {
     [createEntry, formValues.customEndStep, formValues.mainStep, lineId, resetForm],
   )
 
-  const handleJiraKeySave = React.useCallback(
-    async (event) => {
-      event.preventDefault()
-      if (!selectedUserSdwtProd) {
-        setJiraKeyFormError("알림 Target을 선택하세요.")
-        return
-      }
-
-      const normalized = jiraKeyDraft.trim()
-      if (normalized.length > MAX_JIRA_KEY_LENGTH) {
-        setJiraKeyFormError(`Jira key must be ${MAX_JIRA_KEY_LENGTH} characters or fewer`)
-        return
-      }
-
-      setIsSavingJiraKey(true)
-      setJiraKeyFormError(null)
-
-      try {
-        await updateJiraKey({ jiraKey: normalized })
-        showJiraKeyToast()
-      } catch (requestError) {
-        const message =
-          requestError instanceof Error ? requestError.message : "Failed to update Jira key"
-        setJiraKeyFormError(message)
-        showRequestErrorToast(message)
-      } finally {
-        setIsSavingJiraKey(false)
-      }
-    },
-    [jiraKeyDraft, selectedUserSdwtProd, updateJiraKey],
-  )
-
   const handleCreateTarget = React.useCallback(async () => {
     const normalized = newTargetDraft.trim()
     if (!lineId) {
@@ -733,7 +895,17 @@ export function LineSettingsPage({ lineId = "" }) {
           contactField: config.contactField,
           limit: 20,
         })
-        setRecipientSearchResults((prev) => ({ ...prev, [channel]: results || [] }))
+        const previousSearchIds = new Set(
+          (recipientPickerResults[channel]?.search || []).map(getRecipientUserId).filter(Boolean),
+        )
+        setRecipientPickerResults((prev) => ({
+          ...prev,
+          [channel]: { ...(prev[channel] || { group: [], search: [] }), search: results || [] },
+        }))
+        setRecipientPickerSelectedIds((prev) => ({
+          ...prev,
+          [channel]: (prev[channel] || []).filter((userId) => !previousSearchIds.has(userId)),
+        }))
         if (!results?.length) {
           setRecipientActionErrors((prev) => ({ ...prev, [channel]: "검색 결과가 없습니다." }))
         }
@@ -746,21 +918,8 @@ export function LineSettingsPage({ lineId = "" }) {
         setIsSearchingRecipients((prev) => ({ ...prev, [channel]: false }))
       }
     },
-    [canManageRecipients, recipientSearches],
+    [canManageRecipients, recipientPickerResults, recipientSearches],
   )
-
-  const handleAddRecipientUser = React.useCallback((channel, userToAdd) => {
-    const config = RECIPIENT_CHANNEL_CONFIG[channel]
-    if (!canManageRecipients) {
-      setRecipientActionErrors((prev) => ({ ...prev, [channel]: config.permissionErrorText }))
-      return
-    }
-    setRecipientDraftTargets((prev) => ({ ...prev, [channel]: selectedUserSdwtProd || "" }))
-    setRecipientDrafts((prev) => ({
-      ...prev,
-      [channel]: mergeRecipientUsers(prev[channel], [userToAdd]),
-    }))
-  }, [canManageRecipients, selectedUserSdwtProd])
 
   const handleRemoveRecipientUser = React.useCallback((channel, userToRemove) => {
     const config = RECIPIENT_CHANNEL_CONFIG[channel]
@@ -795,6 +954,9 @@ export function LineSettingsPage({ lineId = "" }) {
     const requestLineId = lineId
     const requestTarget = selectedUserSdwtProd
     const requestSourceSdwt = sourceSdwt
+    const previousGroupIds = new Set(
+      (recipientPickerResults[channel]?.group || []).map(getRecipientUserId).filter(Boolean),
+    )
     const isCurrentLoad = () =>
       sourceLoadRequestRef.current[channel] === requestId &&
       isCurrentRecipientContext(requestLineId, requestTarget)
@@ -807,16 +969,22 @@ export function LineSettingsPage({ lineId = "" }) {
       if (!isCurrentLoad()) {
         return
       }
-      setRecipientDrafts((prev) => ({
+      const loadedUsers = results || []
+      setRecipientPickerResults((prev) => ({
         ...prev,
-        [channel]: mergeRecipientUsers(prev[channel], results || []),
+        [channel]: { ...(prev[channel] || { group: [], search: [] }), group: loadedUsers },
       }))
-      setRecipientDraftTargets((prev) => ({ ...prev, [channel]: requestTarget || "" }))
-      toast.success("수신인 후보 추가", {
-        description: `${requestSourceSdwt} 소속 사용자 ${results?.length || 0}명을 목록에 추가했습니다.`,
-        icon: <IconUsers className="h-5 w-5 text-[var(--normal-text)]" />,
-        ...buildToastOptions({ intent: "success" }),
+      setRecipientPickerSelectedIds((prev) => {
+        const current = new Set((prev[channel] || []).filter((userId) => !previousGroupIds.has(userId)))
+        for (const user of loadedUsers) {
+          const userId = getRecipientUserId(user)
+          if (userId) current.add(userId)
+        }
+        return { ...prev, [channel]: Array.from(current) }
       })
+      if (loadedUsers.length === 0) {
+        setRecipientActionErrors((prev) => ({ ...prev, [channel]: "소속 사용자 결과가 없습니다." }))
+      }
     } catch (requestError) {
       if (!isCurrentLoad()) {
         return
@@ -830,7 +998,45 @@ export function LineSettingsPage({ lineId = "" }) {
         setIsLoadingSourceUsers((prev) => ({ ...prev, [channel]: false }))
       }
     }
-  }, [canManageRecipients, isCurrentRecipientContext, lineId, recipientSourceSdwt, selectedUserSdwtProd])
+  }, [
+    canManageRecipients,
+    isCurrentRecipientContext,
+    lineId,
+    recipientPickerResults,
+    recipientSourceSdwt,
+    selectedUserSdwtProd,
+  ])
+
+  const handleApplyRecipientPicker = React.useCallback((channel) => {
+    const config = RECIPIENT_CHANNEL_CONFIG[channel]
+    if (!canManageRecipients) {
+      setRecipientActionErrors((prev) => ({ ...prev, [channel]: config.permissionErrorText }))
+      return
+    }
+
+    const selectedIds = new Set(recipientPickerSelectedIds[channel] || [])
+    const selectedUsers = getRecipientPickerUsers(recipientPickerResults[channel]).filter((user) => {
+      const userId = getRecipientUserId(user)
+      return userId && selectedIds.has(userId)
+    })
+    if (selectedUsers.length === 0) {
+      setRecipientActionErrors((prev) => ({ ...prev, [channel]: "적용할 인원을 선택하세요." }))
+      return
+    }
+
+    setRecipientDraftTargets((prev) => ({ ...prev, [channel]: selectedUserSdwtProd || "" }))
+    setRecipientDrafts((prev) => ({
+      ...prev,
+      [channel]: mergeRecipientUsers(prev[channel], selectedUsers),
+    }))
+    setRecipientActionErrors((prev) => ({ ...prev, [channel]: null }))
+    setRecipientPickerOpen((prev) => ({ ...prev, [channel]: false }))
+    toast.success("수신인 후보 추가", {
+      description: `${selectedUsers.length}명을 수신인 목록에 추가했습니다.`,
+      icon: <IconUsers className="h-5 w-5 text-[var(--normal-text)]" />,
+      ...buildToastOptions({ intent: "success" }),
+    })
+  }, [canManageRecipients, recipientPickerResults, recipientPickerSelectedIds, selectedUserSdwtProd])
 
   const handleRecipientsSave = React.useCallback(async (channel) => {
     const config = RECIPIENT_CHANNEL_CONFIG[channel]
@@ -1049,7 +1255,7 @@ export function LineSettingsPage({ lineId = "" }) {
       {/* 본문 */}
       <div className="grid flex-1 min-h-0 min-w-0 grid-rows-[auto_1fr] gap-3">
         {/* 상단 카드 */}
-        <div className="grid min-w-0 grid-cols-1 gap-3 xl:grid-cols-3">
+        <div className="grid min-w-0 grid-cols-1 gap-3 xl:grid-cols-2">
           {/* E-SOP End Step 추가 카드 */}
           <div className="rounded-lg border bg-background p-4 shadow-sm">
             <div className="flex flex-col gap-3">
@@ -1108,227 +1314,134 @@ export function LineSettingsPage({ lineId = "" }) {
           </div>
 
           {/* 알림 Target 카드 */}
-          <div className="rounded-lg border bg-background p-4 shadow-sm">
+          <div className="grid h-full min-h-0 grid-cols-2 grid-rows-[auto,auto,1fr] gap-3 rounded-lg border bg-background p-4 shadow-sm">
             <div className="space-y-1 pb-3">
               <h2 className="text-base font-medium">{LABELS.badgesTitle}</h2>
-              <p className="text-xs text-muted-foreground">{LABELS.badgesDescription}</p>
-
             </div>
 
-            <div className="pt-1">
-              <LineUserSdwtBadges lineId={lineId} values={userSdwtValues} />
-            </div>
-          </div>
-
-          {/* Jira 카드 */}
-          <div className="rounded-lg border bg-background p-4 shadow-sm">
-            <div className="space-y-1 pb-3">
-              <h2 className="text-base font-medium">{LABELS.jiraTitle}</h2>
-              <p className="text-xs text-muted-foreground">{LABELS.jiraDescription}</p>
-              <p className="text-xs text-muted-foreground">
-                {LABELS.jiraHelper} 현재 {targetCount}개 Target이 표시됩니다.
-              </p>
-            </div>
-
-            {jiraKeyFormError ? (
-              <p className="text-xs text-destructive" role="alert">
-                {jiraKeyFormError}
-              </p>
-            ) : targetFormError ? (
+            {targetFormError ? (
               <p className="text-xs text-destructive" role="alert">
                 {targetFormError}
-              </p>
-            ) : jiraKeyError ? (
-              <p className="text-xs text-destructive" role="alert">
-                {jiraKeyError}
               </p>
             ) : (
               <p className="text-xs text-muted-foreground">&nbsp;</p>
             )}
 
-            {isSuperuser ? (
-              <form
-                className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-3"
-                onSubmit={handleJiraKeySave}
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground" htmlFor="target-user-sdwt-select">
+                {LABELS.targetSelectLabel}
+              </label>
+              <Select
+                value={selectedUserSdwtProd || undefined}
+                onValueChange={setSelectedUserSdwtProd}
+                disabled={!lineId || userSdwtValues.length === 0}
               >
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground" htmlFor="jira-user-sdwt-select">
-                    {LABELS.jiraUserSdwtLabel}
-                  </label>
-                  <Select
-                    value={selectedUserSdwtProd || undefined}
-                    onValueChange={setSelectedUserSdwtProd}
-                    disabled={!lineId || userSdwtValues.length === 0 || isJiraKeyLoading}
-                  >
-                    <SelectTrigger id="jira-user-sdwt-select" className="w-full">
-                      <SelectValue placeholder={LABELS.jiraUserSdwtPlaceholder} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {userSdwtValues.map((value) => (
-                        <SelectItem key={value} value={value}>
-                          {value}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {canCreateTarget ? (
-                    <div className="flex gap-2">
-                      <Input
-                        value={newTargetDraft}
-                        onChange={(event) => setNewTargetDraft(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            event.preventDefault()
-                            void handleCreateTarget()
-                          }
-                        }}
-                        placeholder={LABELS.targetCreatePlaceholder}
-                        maxLength={64}
-                        disabled={isCreatingTarget}
-                        className="h-8 text-xs"
-                      />
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={handleCreateTarget}
-                        disabled={isCreatingTarget || !newTargetDraft.trim()}
-                        className="h-8 shrink-0"
-                      >
-                        <IconPlus className="mr-1 size-3" />
-                        {LABELS.targetCreate}
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground" htmlFor="jira-key-input">
-                    {LABELS.jiraTitle}
-                  </label>
-                  <Input
-                    id="jira-key-input"
-                    value={jiraKeyDraft}
-                    onChange={(event) => setJiraKeyDraft(event.target.value)}
-                    placeholder={LABELS.jiraPlaceholder}
-                    maxLength={MAX_JIRA_KEY_LENGTH}
-                    disabled={!selectedUserSdwtProd || isJiraKeyLoading || isSavingJiraKey}
-                  />
-                </div>
-
-                <div className="flex items-end justify-end">
-                  <Button
-                    type="submit"
-                    disabled={!selectedUserSdwtProd || isJiraKeyLoading || isSavingJiraKey}
-                    className="w-auto"
-                  >
-                    <IconDeviceFloppy className="mr-1 size-4" />
-                    {LABELS.jiraSave}
-                  </Button>
-                </div>
-              </form>
-            ) : (
-              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground" htmlFor="jira-user-sdwt-select">
-                    {LABELS.jiraUserSdwtLabel}
-                  </label>
-                  <Select
-                    value={selectedUserSdwtProd || undefined}
-                    onValueChange={setSelectedUserSdwtProd}
-                    disabled={!lineId || userSdwtValues.length === 0 || isJiraKeyLoading}
-                  >
-                    <SelectTrigger id="jira-user-sdwt-select" className="w-full">
-                      <SelectValue placeholder={LABELS.jiraUserSdwtPlaceholder} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {userSdwtValues.map((value) => (
-                        <SelectItem key={value} value={value}>
-                          {value}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {canCreateTarget ? (
-                    <div className="flex gap-2">
-                      <Input
-                        value={newTargetDraft}
-                        onChange={(event) => setNewTargetDraft(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            event.preventDefault()
-                            void handleCreateTarget()
-                          }
-                        }}
-                        placeholder={LABELS.targetCreatePlaceholder}
-                        maxLength={64}
-                        disabled={isCreatingTarget}
-                        className="h-8 text-xs"
-                      />
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={handleCreateTarget}
-                        disabled={isCreatingTarget || !newTargetDraft.trim()}
-                        className="h-8 shrink-0"
-                      >
-                        <IconPlus className="mr-1 size-3" />
-                        {LABELS.targetCreate}
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground" htmlFor="jira-key-input">
-                    {LABELS.jiraTitle}
-                  </label>
-                  <Input
-                    id="jira-key-input"
-                    value={jiraKeyDraft}
-                    placeholder={LABELS.jiraPlaceholder}
-                    maxLength={MAX_JIRA_KEY_LENGTH}
-                    disabled
-                  />
-                </div>
+                <SelectTrigger id="target-user-sdwt-select" className="w-full">
+                  <SelectValue placeholder={LABELS.targetSelectPlaceholder} />
+                </SelectTrigger>
+                <SelectContent>
+                  {userSdwtValues.map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {value}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <label className="pt-2 text-xs font-medium text-muted-foreground" htmlFor="target-create-input">
+                {LABELS.targetCreateLabel}
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  id="target-create-input"
+                  value={newTargetDraft}
+                  onChange={(event) => setNewTargetDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault()
+                      void handleCreateTarget()
+                    }
+                  }}
+                  placeholder={LABELS.targetCreatePlaceholder}
+                  maxLength={64}
+                  disabled={!lineId || !canCreateTarget || isCreatingTarget}
+                  className="h-8 text-xs"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleCreateTarget}
+                  disabled={!lineId || !canCreateTarget || isCreatingTarget || !newTargetDraft.trim()}
+                  className="h-8 shrink-0"
+                >
+                  <IconPlus className="mr-1 size-3" />
+                  {LABELS.targetCreate}
+                </Button>
               </div>
-            )}
+              {!canCreateTarget ? (
+                <p className="text-[11px] text-muted-foreground">
+                  알림 Target 추가는 operator 권한과 선택된 line이 필요합니다.
+                </p>
+              ) : null}
+            </div>
+
+            <div className="col-start-2 row-span-3 row-start-1 h-full min-h-0 min-w-0">
+              <LineUserSdwtBadges lineId={lineId} values={userSdwtValues} />
+            </div>
           </div>
         </div>
 
         {/* 수신인 및 테이블 카드 */}
         <div className="grid min-h-0 min-w-0 grid-cols-1 gap-3 xl:grid-cols-4">
           {RECIPIENT_CHANNELS.map((config) => (
-            <RecipientChannelCard
-              key={config.channel}
-              config={config}
-              selectedUserSdwtProd={selectedUserSdwtProd}
-              canManageRecipients={canManageRecipients}
-              accountUserSdwtValues={accountUserSdwtValues}
-              sourceSdwt={recipientSourceSdwt[config.channel] || ""}
-              onSourceSdwtChange={handleRecipientSourceSdwtChange}
-              isLoadingSourceUsers={Boolean(isLoadingSourceUsers[config.channel])}
-              onLoadSourceRecipients={handleLoadSourceRecipients}
-              searchValue={recipientSearches[config.channel] || ""}
-              onSearchChange={handleRecipientSearchChange}
-              isSearchingRecipients={Boolean(isSearchingRecipients[config.channel])}
-              onSearch={handleRecipientSearch}
-              searchResults={recipientSearchResults[config.channel] || []}
-              onAddUser={handleAddRecipientUser}
-              recipients={currentRecipientDrafts[config.channel] || []}
-              isLoadingRecipients={
-                config.channel === "messenger" ? isMessengerRecipientsLoading : isMailRecipientsLoading
-              }
-              onRemoveUser={handleRemoveRecipientUser}
-              onSave={handleRecipientsSave}
-              isDraftCurrent={Boolean(isRecipientDraftCurrent[config.channel])}
-              isSavingRecipients={Boolean(isSavingRecipients[config.channel])}
-              error={
-                recipientActionErrors[config.channel] ||
-                (config.channel === "messenger" ? messengerRecipientsError : mailRecipientsError)
-              }
-            />
+            <React.Fragment key={config.channel}>
+              <RecipientChannelCard
+                config={config}
+                selectedUserSdwtProd={selectedUserSdwtProd}
+                canManageRecipients={canManageRecipients}
+                recipients={currentRecipientDrafts[config.channel] || []}
+                isLoadingRecipients={
+                  config.channel === "messenger" ? isMessengerRecipientsLoading : isMailRecipientsLoading
+                }
+                onRemoveUser={handleRemoveRecipientUser}
+                onSave={handleRecipientsSave}
+                onOpenPicker={handleOpenRecipientPicker}
+                isDraftCurrent={Boolean(isRecipientDraftCurrent[config.channel])}
+                isSavingRecipients={Boolean(isSavingRecipients[config.channel])}
+                error={
+                  recipientActionErrors[config.channel] ||
+                  (config.channel === "messenger" ? messengerRecipientsError : mailRecipientsError)
+                }
+              />
+              <RecipientPickerDialog
+                open={Boolean(recipientPickerOpen[config.channel])}
+                activeTab={recipientPickerTabs[config.channel] || "group"}
+                config={config}
+                selectedUserSdwtProd={selectedUserSdwtProd}
+                canManageRecipients={canManageRecipients}
+                accountUserSdwtValues={accountUserSdwtValues}
+                sourceSdwt={recipientSourceSdwt[config.channel] || ""}
+                onOpenChange={(open) => handleRecipientPickerOpenChange(config.channel, open)}
+                onTabChange={(value) => handleRecipientPickerTabChange(config.channel, value)}
+                onSourceSdwtChange={(value) => handleRecipientSourceSdwtChange(config.channel, value)}
+                isLoadingSourceUsers={Boolean(isLoadingSourceUsers[config.channel])}
+                onLoadSourceRecipients={() => handleLoadSourceRecipients(config.channel)}
+                searchValue={recipientSearches[config.channel] || ""}
+                onSearchChange={(value) => handleRecipientSearchChange(config.channel, value)}
+                isSearchingRecipients={Boolean(isSearchingRecipients[config.channel])}
+                onSearch={(event) => handleRecipientSearch(config.channel, event)}
+                results={recipientPickerResults[config.channel] || { group: [], search: [] }}
+                selectedIds={recipientPickerSelectedIds[config.channel] || []}
+                onToggleUser={(userId, checked) =>
+                  handleRecipientPickerUserToggle(config.channel, userId, checked)
+                }
+                onToggleAll={(users, checked) =>
+                  handleRecipientPickerAllToggle(config.channel, users, checked)
+                }
+                onApply={() => handleApplyRecipientPicker(config.channel)}
+                error={recipientActionErrors[config.channel]}
+              />
+            </React.Fragment>
           ))}
 
           {/* 테이블 */}
