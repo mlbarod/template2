@@ -12,53 +12,21 @@ from typing import Any
 from django.db import IntegrityError, transaction
 
 from ... import selectors
-from ...models import DroneSopTarget, DroneSopUserSdwtChannel, DroneSopUserSdwtProdMap
-
-_UNSET = object()
-VALID_TARGET_SOURCES = {
-    DroneSopUserSdwtChannel.Sources.AFFILIATION,
-    DroneSopUserSdwtChannel.Sources.CUSTOM,
-}
+from ...models import DroneSopUserSdwtChannel, DroneSopUserSdwtProdMap
+from .normalization import (
+    UNSET as _UNSET,
+    normalize_optional_template_key as _normalize_optional_template_key,
+    normalize_optional_text as _normalize_optional_text,
+    normalize_required_mapping_value as _normalize_required_mapping_value,
+    normalize_target_source as _normalize_target_source,
+    same_text as _same_text,
+    validate_optional_chatroom_id as _validate_optional_chatroom_id,
+    validate_optional_str as _validate_optional_str,
+)
 
 
 class DroneSopTargetMappingDuplicateError(ValueError):
     """이미 활성화된 target mapping이 있을 때 발생하는 오류입니다."""
-
-
-def _normalize_optional_text(value: Any) -> str:
-    """선택 문자열 값을 공백 제거 기준으로 정규화합니다."""
-
-    return value.strip() if isinstance(value, str) else ""
-
-
-def _same_text(left: str | None, right: str | None) -> bool:
-    """대소문자 차이를 무시하고 두 문자열이 같은지 확인합니다."""
-
-    normalized_left = _normalize_optional_text(left)
-    normalized_right = _normalize_optional_text(right)
-    return normalized_left.casefold() == normalized_right.casefold()
-
-
-def _normalize_required_mapping_value(value: Any, field_name: str) -> str:
-    """target mapping 필수 문자열 값을 검증하고 정규화합니다."""
-
-    normalized = _normalize_optional_text(value)
-    if not normalized:
-        raise ValueError(f"{field_name} is required")
-    if len(normalized) > 64:
-        raise ValueError(f"{field_name} must be 64 characters or fewer")
-    return normalized
-
-
-def _normalize_target_source(value: str | object) -> str | object:
-    """target source 값을 허용된 값으로 정규화합니다."""
-
-    if value is _UNSET:
-        return value
-    normalized = _normalize_optional_text(value)
-    if normalized not in VALID_TARGET_SOURCES:
-        raise ValueError("source must be affiliation or custom")
-    return normalized
 
 
 def upsert_drone_sop_user_sdwt_channel(
@@ -130,25 +98,6 @@ def upsert_drone_sop_user_sdwt_channel(
         and needtosend_enabled is _UNSET
     ):
         raise ValueError("at least one field is required")
-
-    def _validate_optional_str(value: object, field_name: str) -> None:
-        if value is _UNSET:
-            return
-        if value is not None and not isinstance(value, str):
-            raise ValueError(f"{field_name} must be string or None")
-
-    def _validate_optional_chatroom_id(value: object) -> None:
-        if value is _UNSET or value is None:
-            return
-        if not isinstance(value, int) or value <= 0:
-            raise ValueError("chatroom_id must be positive int or None")
-
-    def _normalize_optional_template_key(value: object) -> str | None | object:
-        if value is _UNSET or value is None:
-            return value
-        assert isinstance(value, str)
-        cleaned = value.strip()
-        return cleaned or None
 
     _validate_optional_str(jira_key, "jira_key")
     _validate_optional_chatroom_id(chatroom_id)
