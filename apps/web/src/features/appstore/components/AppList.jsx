@@ -4,10 +4,11 @@ import { ArrowUpRight, Eye, Heart, MessageSquare } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+import { getCoverScreenshotUrl } from "../utils/appScreenshots"
 
 function StatBadge({ icon: Icon, value, label }) {
   return (
@@ -101,9 +102,7 @@ export function AppList({
     <div className="grid grid-cols-[repeat(auto-fit,280px)] gap-3">
       {apps.map((app) => {
         const isSelected = selectedAppId === app.id
-        const coverSrc =
-          app.screenshotUrl ||
-          (Array.isArray(app.screenshotUrls) ? app.screenshotUrls[app.coverScreenshotIndex ?? 0] : "")
+        const coverSrc = getCoverScreenshotUrl(app)
 
         return (
           <Card

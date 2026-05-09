@@ -1,6 +1,7 @@
 // 앱스토어 API 요청 유틸 (React Query 전용)
 
 import { buildBackendUrl } from "@/lib/api"
+import { normalizeCoverIndex, normalizeScreenshotUrls } from "../utils/appScreenshots"
 
 function parseJson(response) {
   return response
@@ -67,28 +68,15 @@ function normalizeApp(raw) {
     : undefined
 
   const screenshotUrl = ensureString(raw.screenshotUrl || raw.screenshot_url)
-  const screenshotUrlsRaw = raw.screenshotUrls || raw.screenshot_urls
-  const screenshotUrls = Array.isArray(screenshotUrlsRaw)
-    ? screenshotUrlsRaw
-        .filter((value) => typeof value === "string" && value.trim())
-        .map((value) => value.trim())
-    : []
+  const screenshotUrls = normalizeScreenshotUrls(raw.screenshotUrls || raw.screenshot_urls)
   const coverScreenshotIndexRaw = raw.coverScreenshotIndex ?? raw.cover_screenshot_index ?? 0
-  const coverScreenshotIndex = Number.isFinite(Number(coverScreenshotIndexRaw))
-    ? Number(coverScreenshotIndexRaw)
-    : 0
 
   const resolvedScreenshotUrls = screenshotUrls.length
     ? screenshotUrls
     : screenshotUrl
       ? [screenshotUrl]
       : []
-  const resolvedCoverIndex =
-    Number.isInteger(coverScreenshotIndex) &&
-    coverScreenshotIndex >= 0 &&
-    coverScreenshotIndex < resolvedScreenshotUrls.length
-      ? coverScreenshotIndex
-      : 0
+  const resolvedCoverIndex = normalizeCoverIndex(coverScreenshotIndexRaw, resolvedScreenshotUrls.length)
 
   return {
     id,

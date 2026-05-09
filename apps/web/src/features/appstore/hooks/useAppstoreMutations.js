@@ -36,6 +36,13 @@ function updateDetail(queryClient, appId, updater) {
   })
 }
 
+function updateCommentsQuery(queryClient, appId, updater) {
+  queryClient.setQueryData(appstoreQueryKeys.comments(appId), (previous) => {
+    if (!previous?.comments) return previous
+    return updater(previous)
+  })
+}
+
 function collectDescendantCommentIds(comments, rootId) {
   const ids = new Set([rootId])
   let changed = true
@@ -51,6 +58,18 @@ function collectDescendantCommentIds(comments, rootId) {
     })
   }
   return ids
+}
+
+function replaceComment(comments, comment) {
+  return comments.map((item) => (item.id === comment.id ? comment : item))
+}
+
+function applyCommentLikeResult(comments, result) {
+  return comments.map((comment) =>
+    comment.id === result.commentId
+      ? { ...comment, liked: result.liked, likeCount: result.likeCount }
+      : comment,
+  )
 }
 
 export function useAppstoreMutations() {
@@ -142,8 +161,7 @@ export function useAppstoreMutations() {
             : item,
         ),
       )
-      queryClient.setQueryData(appstoreQueryKeys.comments(variables.appId), (previous) => {
-        if (!previous?.comments) return previous
+      updateCommentsQuery(queryClient, variables.appId, (previous) => {
         return {
           ...previous,
           comments: [...previous.comments, comment],
@@ -157,16 +175,13 @@ export function useAppstoreMutations() {
     mutationFn: ({ appId, commentId, content }) => updateComment(appId, commentId, content),
     onSuccess: (comment, variables) => {
       updateDetail(queryClient, variables.appId, (app) => {
-        const nextComments = (app.comments ?? []).map((item) =>
-          item.id === comment.id ? comment : item,
-        )
+        const nextComments = replaceComment(app.comments ?? [], comment)
         return { ...app, comments: nextComments }
       })
-      queryClient.setQueryData(appstoreQueryKeys.comments(variables.appId), (previous) => {
-        if (!previous?.comments) return previous
+      updateCommentsQuery(queryClient, variables.appId, (previous) => {
         return {
           ...previous,
-          comments: previous.comments.map((item) => (item.id === comment.id ? comment : item)),
+          comments: replaceComment(previous.comments, comment),
         }
       })
     },
@@ -183,8 +198,7 @@ export function useAppstoreMutations() {
         const nextComments = currentComments.filter((item) => !idsToRemove.has(item.id))
         return { ...app, comments: nextComments, commentCount: nextComments.length }
       })
-      queryClient.setQueryData(appstoreQueryKeys.comments(variables.appId), (previous) => {
-        if (!previous?.comments) return previous
+      updateCommentsQuery(queryClient, variables.appId, (previous) => {
         const idsToRemove = collectDescendantCommentIds(previous.comments, variables.commentId)
         removedCount = Math.max(removedCount, idsToRemove.size)
         const filtered = previous.comments.filter((item) => !idsToRemove.has(item.id))
@@ -207,21 +221,15 @@ export function useAppstoreMutations() {
   const toggleCommentLikeMutation = useMutation({
     mutationFn: ({ appId, commentId }) => toggleCommentLike(appId, commentId),
     onSuccess: (result) => {
-      const updateLike = (comment) =>
-        comment.id === result.commentId
-          ? { ...comment, liked: result.liked, likeCount: result.likeCount }
-          : comment
-
       updateDetail(queryClient, result.appId, (app) => ({
         ...app,
-        comments: (app.comments ?? []).map(updateLike),
+        comments: applyCommentLikeResult(app.comments ?? [], result),
       }))
 
-      queryClient.setQueryData(appstoreQueryKeys.comments(result.appId), (previous) => {
-        if (!previous?.comments) return previous
+      updateCommentsQuery(queryClient, result.appId, (previous) => {
         return {
           ...previous,
-          comments: previous.comments.map(updateLike),
+          comments: applyCommentLikeResult(previous.comments, result),
         }
       })
     },

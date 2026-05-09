@@ -10,9 +10,9 @@ from typing import Any, Dict
 from ..selectors import get_app_by_id
 from ..models import AppStoreApp
 from .screenshots import (
-    _normalize_screenshot_gallery,
-    _normalize_screenshot_input,
-    _split_cover_and_gallery,
+    normalize_screenshot_gallery,
+    normalize_screenshot_input,
+    split_cover_and_gallery,
 )
 
 
@@ -56,12 +56,12 @@ def create_app(
     # -----------------------------------------------------------------------------
     # 1) 스크린샷 입력 분리/정규화
     # -----------------------------------------------------------------------------
-    cover_input, gallery_inputs = _split_cover_and_gallery(screenshot_urls or [])
+    cover_input, gallery_inputs = split_cover_and_gallery(screenshot_urls or [])
     if not cover_input:
         cover_input = (screenshot_url or "").strip()
 
-    normalized_url, screenshot_base64, screenshot_mime_type = _normalize_screenshot_input(cover_input)
-    screenshot_gallery = _normalize_screenshot_gallery(gallery_inputs)
+    normalized_url, screenshot_base64, screenshot_mime_type = normalize_screenshot_input(cover_input)
+    screenshot_gallery = normalize_screenshot_gallery(gallery_inputs)
 
     # -----------------------------------------------------------------------------
     # 2) 앱 레코드 생성
@@ -125,14 +125,14 @@ def update_app(*, app: AppStoreApp, updates: Dict[str, Any]) -> AppStoreApp:
     # 3) 스크린샷 필드 반영
     # -----------------------------------------------------------------------------
     if screenshot_urls_input is not None:
-        cover_input, gallery_inputs = _split_cover_and_gallery(screenshot_urls_input)
-        normalized_url, screenshot_base64, screenshot_mime_type = _normalize_screenshot_input(cover_input)
+        cover_input, gallery_inputs = split_cover_and_gallery(screenshot_urls_input)
+        normalized_url, screenshot_base64, screenshot_mime_type = normalize_screenshot_input(cover_input)
         app.screenshot_url = normalized_url
         app.screenshot_base64 = screenshot_base64
         app.screenshot_mime_type = screenshot_mime_type
-        app.screenshot_gallery = _normalize_screenshot_gallery(gallery_inputs)
+        app.screenshot_gallery = normalize_screenshot_gallery(gallery_inputs)
     elif screenshot_input is not None:
-        normalized_url, screenshot_base64, screenshot_mime_type = _normalize_screenshot_input(screenshot_input)
+        normalized_url, screenshot_base64, screenshot_mime_type = normalize_screenshot_input(screenshot_input)
         app.screenshot_url = normalized_url
         app.screenshot_base64 = screenshot_base64
         app.screenshot_mime_type = screenshot_mime_type

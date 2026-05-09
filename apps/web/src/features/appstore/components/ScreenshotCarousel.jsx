@@ -2,29 +2,19 @@ import { useEffect, useState } from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-
-function clampIndex(value, length) {
-  if (!length) return 0
-  const numeric = Number(value)
-  if (!Number.isFinite(numeric)) return 0
-  const integer = Math.floor(numeric)
-  if (integer < 0 || integer >= length) return 0
-  return integer
-}
+import { normalizeCoverIndex, normalizeScreenshotUrls } from "../utils/appScreenshots"
 
 export function ScreenshotCarousel({ images, altBase = "스크린샷", initialIndex = 0 }) {
-  const safeImages = Array.isArray(images)
-    ? images.filter((src) => typeof src === "string" && src.trim()).map((src) => src.trim())
-    : []
+  const safeImages = normalizeScreenshotUrls(images)
   const total = safeImages.length
-  const [activeIndex, setActiveIndex] = useState(() => clampIndex(initialIndex, total))
+  const [activeIndex, setActiveIndex] = useState(() => normalizeCoverIndex(initialIndex, total))
 
   useEffect(() => {
-    setActiveIndex((prev) => clampIndex(prev, total))
+    setActiveIndex((prev) => normalizeCoverIndex(prev, total))
   }, [total])
 
   useEffect(() => {
-    setActiveIndex(clampIndex(initialIndex, total))
+    setActiveIndex(normalizeCoverIndex(initialIndex, total))
   }, [initialIndex, total])
 
   if (!total) {

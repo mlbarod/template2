@@ -26,8 +26,6 @@
 """
 from __future__ import annotations
 
-import base64
-import binascii
 import logging
 from typing import Any, Sequence
 
@@ -50,10 +48,9 @@ from .selectors import (
 )
 from .serializers import (
     AppStoreAppCreateSerializer,
-    apply_cover_index,
-    can_manage_app,
-    can_manage_comment,
-    sanitize_screenshot_urls,
+    AppStoreAppUpdateSerializer,
+    AppStoreCommentCreateSerializer,
+    AppStoreCommentUpdateSerializer,
     serialize_app,
     serialize_comment,
 )
@@ -68,6 +65,8 @@ from .services import (
     update_app,
     update_comment,
 )
+from .services.permissions import can_manage_app, can_manage_comment
+from .services.screenshots import resolve_cover_image
 
 logger = logging.getLogger(__name__)
 
@@ -285,25 +284,16 @@ class AppStoreAppCoverView(APIView):
             return HttpResponse(status=404)
 
         # -----------------------------------------------------------------------------
-        # 2) 외부 URL 리다이렉트
+        # 2) 커버 이미지 해석 및 HTTP 응답 매핑
         # -----------------------------------------------------------------------------
-        if getattr(app, "screenshot_url", ""):
-            return HttpResponseRedirect(app.screenshot_url)
-
-        # -----------------------------------------------------------------------------
-        # 3) base64 디코딩 및 응답
-        # -----------------------------------------------------------------------------
-        base64_value = getattr(app, "screenshot_base64", "") or ""
-        if not base64_value:
-            return HttpResponse(status=404)
-        try:
-            binary = base64.b64decode(base64_value, validate=True)
-        except (binascii.Error, ValueError):
-            logger.exception("Failed to decode appstore screenshot for app %s", app_id)
-            return HttpResponse(status=400)
-
-        content_type = getattr(app, "screenshot_mime_type", "") or "image/png"
-        return HttpResponse(binary, content_type=content_type)
+        cover = resolve_cover_image(app)
+        if cover.is_redirect:
+            return HttpResponseRedirect(cover.redirect_url)
+        if cover.has_binary:
+            return HttpResponse(cover.binary, content_type=cover.content_type)
+        if cover.status_code == 400:
+            logger.error("Failed to decode appstore screenshot for app %s", app_id)
+        return HttpResponse(status=cover.status_code)
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -420,62 +410,24 @@ class AppStoreAppDetailView(APIView):
             return JsonResponse({"error": "Invalid JSON body"}, status=400)
 
         # -----------------------------------------------------------------------------
-        # 4) 업데이트 필드 구성
+        # 4) 입력 검증/업데이트 필드 구성
         # -----------------------------------------------------------------------------
-        updates: dict[str, Any] = {}
-
-        if "name" in payload:
-            name = str(payload.get("name") or "").strip()
-            if not name:
-                return JsonResponse({"error": "name is required"}, status=400)
-            updates["name"] = name
-
-        if "category" in payload:
-            category = str(payload.get("category") or "").strip()[:MAX_CATEGORY_LENGTH]
-            if not category:
-                return JsonResponse({"error": "category is required"}, status=400)
-            updates["category"] = category
-
-        if "description" in payload:
-            updates["description"] = str(payload.get("description") or "").strip()
-
-        if "url" in payload:
-            url = str(payload.get("url") or "").strip()
-            if not url:
-                return JsonResponse({"error": "url is required"}, status=400)
-            updates["url"] = url
-
-        if "manualUrl" in payload or "manual_url" in payload:
-            manual_url = str(payload.get("manualUrl") or payload.get("manual_url") or "").strip()
-            updates["manual_url"] = manual_url or None
-
-        if "screenshotUrl" in payload or "screenshot_url" in payload:
-            updates["screenshot_url"] = str(payload.get("screenshotUrl") or payload.get("screenshot_url") or "").strip()
-
-        screenshot_urls = None
-        if "screenshotUrls" in payload or "screenshot_urls" in payload:
-            screenshot_urls = sanitize_screenshot_urls(payload.get("screenshotUrls") or payload.get("screenshot_urls"))
-            screenshot_urls = apply_cover_index(
-                screenshot_urls,
-                payload.get("coverScreenshotIndex") or payload.get("cover_screenshot_index"),
+        serializer = AppStoreAppUpdateSerializer(
+            data=payload,
+            context={
+                "max_category_length": MAX_CATEGORY_LENGTH,
+                "max_contact_length": MAX_CONTACT_LENGTH,
+            },
+        )
+        if not serializer.is_valid():
+            return JsonResponse(
+                {"error": extract_first_error_message(serializer.errors)},
+                status=400,
             )
-            updates.pop("screenshot_url", None)
-            updates["screenshot_urls"] = screenshot_urls
-
-        if "contactName" in payload:
-            updates["contact_name"] = str(payload.get("contactName") or "").strip()[:MAX_CONTACT_LENGTH]
-
-        if "contactKnoxid" in payload:
-            updates["contact_knoxid"] = str(payload.get("contactKnoxid") or "").strip()[:MAX_CONTACT_LENGTH]
+        updates = serializer.validated_data
 
         # -----------------------------------------------------------------------------
-        # 5) 변경사항 유효성 확인
-        # -----------------------------------------------------------------------------
-        if not updates:
-            return JsonResponse({"error": "No changes provided"}, status=400)
-
-        # -----------------------------------------------------------------------------
-        # 6) 업데이트 수행
+        # 5) 업데이트 수행
         # -----------------------------------------------------------------------------
         try:
             app = update_app(app=app, updates=updates)
@@ -727,27 +679,26 @@ class AppStoreCommentsView(APIView):
             return JsonResponse({"error": "App not found"}, status=404)
 
         # -----------------------------------------------------------------------------
-        # 3) JSON 파싱 및 본문 확인
+        # 3) JSON 파싱 및 입력 검증
         # -----------------------------------------------------------------------------
         payload = parse_json_body(request)
         if payload is None:
             return JsonResponse({"error": "Invalid JSON body"}, status=400)
 
-        content = str(payload.get("content") or "").strip()
-        if not content:
-            return JsonResponse({"error": "content is required"}, status=400)
+        serializer = AppStoreCommentCreateSerializer(data=payload)
+        if not serializer.is_valid():
+            return JsonResponse(
+                {"error": extract_first_error_message(serializer.errors)},
+                status=400,
+            )
+        validated = serializer.validated_data
 
         # -----------------------------------------------------------------------------
         # 4) 부모 댓글 확인(대댓글)
         # -----------------------------------------------------------------------------
         parent_comment: Any | None = None
-        raw_parent_id = payload.get("parentCommentId") or payload.get("parent_comment_id")
-        if raw_parent_id is not None and str(raw_parent_id).strip():
-            try:
-                parent_id = int(raw_parent_id)
-            except (TypeError, ValueError):
-                return JsonResponse({"error": "parentCommentId must be an integer"}, status=400)
-
+        parent_id = validated.get("parent_comment_id")
+        if parent_id is not None:
             parent_comment = get_comment_by_id(app_id=app.pk, comment_id=parent_id)
             if not parent_comment:
                 return JsonResponse({"error": "Parent comment not found"}, status=404)
@@ -756,7 +707,12 @@ class AppStoreCommentsView(APIView):
         # 5) 댓글 생성
         # -----------------------------------------------------------------------------
         try:
-            comment = create_comment(app=app, user=request.user, content=content, parent_comment=parent_comment)
+            comment = create_comment(
+                app=app,
+                user=request.user,
+                content=validated["content"],
+                parent_comment=parent_comment,
+            )
             return JsonResponse(
                 {"comment": serialize_comment(comment, request.user, set())},
                 status=201,
@@ -822,24 +778,25 @@ class AppStoreCommentDetailView(APIView):
             return JsonResponse({"error": "Forbidden"}, status=403)
 
         # -----------------------------------------------------------------------------
-        # 3) JSON 파싱 및 본문 확인
+        # 3) JSON 파싱 및 입력 검증
         # -----------------------------------------------------------------------------
         payload = parse_json_body(request)
         if payload is None:
             return JsonResponse({"error": "Invalid JSON body"}, status=400)
 
-        if "content" not in payload:
-            return JsonResponse({"error": "content is required"}, status=400)
-
-        content = str(payload.get("content") or "").strip()
-        if not content:
-            return JsonResponse({"error": "content is required"}, status=400)
+        serializer = AppStoreCommentUpdateSerializer(data=payload)
+        if not serializer.is_valid():
+            return JsonResponse(
+                {"error": extract_first_error_message(serializer.errors)},
+                status=400,
+            )
+        validated = serializer.validated_data
 
         # -----------------------------------------------------------------------------
         # 4) 댓글 업데이트
         # -----------------------------------------------------------------------------
         try:
-            comment = update_comment(comment=comment, content=content)
+            comment = update_comment(comment=comment, content=validated["content"])
             liked_comment_ids: set[int] = set()
             if request.user.is_authenticated:
                 liked_comment_ids = set(get_liked_comment_ids_for_user(user=request.user, app_id=app.pk))

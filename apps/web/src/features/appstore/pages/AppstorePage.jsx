@@ -1,15 +1,21 @@
 // 앱스토어 메인 페이지
 import { useEffect, useMemo, useState } from "react"
-import { toast } from "sonner"
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { useAuth } from "@/features/auth"
+import { useAppstorePageActions } from "../hooks/useAppstorePageActions"
 import { useAppstoreMutations } from "../hooks/useAppstoreMutations"
 import { useAppDetailQuery, useAppsQuery } from "../hooks/useAppstoreQueries"
 import { AppDetail } from "../components/AppDetail"
 import { AppFilters } from "../components/AppFilters"
 import { AppFormDialog } from "../components/AppFormDialog"
 import { AppList } from "../components/AppList"
+import {
+  buildAppCategories,
+  buildCategoryCounts,
+  buildFormCategoryOptions,
+  filterApps,
+} from "../utils/appFilters"
 
 const EMPTY_APPS = []
 
@@ -28,17 +34,14 @@ export function AppstorePage() {
   const apps = appsQuery.data?.apps ?? EMPTY_APPS
   const { user } = useAuth()
 
+  const mutations = useAppstoreMutations()
   const {
     createAppMutation,
     updateAppMutation,
-    deleteAppMutation,
     toggleLikeMutation,
     toggleCommentLikeMutation,
-    viewMutation,
     createCommentMutation,
-    updateCommentMutation,
-    deleteCommentMutation,
-  } = useAppstoreMutations()
+  } = mutations
 
   useEffect(() => {
     if (selectedAppId && !apps.some((app) => app.id === selectedAppId)) {
@@ -60,47 +63,20 @@ export function AppstorePage() {
   }, [user])
 
   const categories = useMemo(() => {
-    const unique = new Set(["all"])
-    apps.forEach((app) => {
-      const value = app.category || "기타"
-      unique.add(value)
-    })
-    return Array.from(unique)
+    return buildAppCategories(apps)
   }, [apps])
 
   const formCategoryOptions = useMemo(() => {
-    const unique = new Set()
-    apps.forEach((app) => {
-      const value = typeof app.category === "string" ? app.category.trim() : ""
-      if (value) unique.add(value)
-    })
-    return Array.from(unique)
+    return buildFormCategoryOptions(apps)
   }, [apps])
 
   const categoryCounts = useMemo(() => {
-    return apps.reduce((acc, app) => {
-      const key = app.category || "기타"
-      acc[key] = (acc[key] ?? 0) + 1
-      return acc
-    }, {})
+    return buildCategoryCounts(apps)
   }, [apps])
 
-  const normalizedQuery = query.trim().toLowerCase()
   const filteredApps = useMemo(() => {
-    return apps.filter((app) => {
-      const categoryValueRaw = app.category || "기타"
-      const matchesCategory = category === "all" || categoryValueRaw === category
-      const name = (app.name || "").toLowerCase()
-      const description = (app.description || "").toLowerCase()
-      const categoryValue = categoryValueRaw.toLowerCase()
-      const matchesQuery =
-        !normalizedQuery ||
-        name.includes(normalizedQuery) ||
-        description.includes(normalizedQuery) ||
-        categoryValue.includes(normalizedQuery)
-      return matchesCategory && matchesQuery
-    })
-  }, [apps, category, normalizedQuery])
+    return filterApps(apps, { category, query })
+  }, [apps, category, query])
 
   const detailApp = appDetailQuery.data?.app ?? null
 
@@ -109,119 +85,29 @@ export function AppstorePage() {
     setIsDetailOpen(true)
   }
 
-  const handleToggleLike = async (app) => {
-    try {
-      await toggleLikeMutation.mutateAsync(app.id)
-    } catch (error) {
-      toast.error(error?.message || "좋아요 토글에 실패했습니다.")
-    }
-  }
-
-  const handleOpenLink = async (app) => {
-    if (!app?.url) return
-    try {
-      await viewMutation.mutateAsync(app.id)
-    } catch {
-      // 조회수 증가는 실패해도 링크는 열어줍니다.
-    } finally {
-      if (typeof window !== "undefined") {
-        window.open(app.url, "_blank", "noopener,noreferrer")
-      }
-    }
-  }
-
-  const handleOpenManual = (app) => {
-    const manualUrl = typeof app?.manualUrl === "string" ? app.manualUrl.trim() : ""
-    if (!manualUrl) return
-    if (typeof window !== "undefined") {
-      window.open(manualUrl, "_blank", "noopener,noreferrer")
-    }
-  }
-
-  const handleSubmitApp = async (payload) => {
-    try {
-      if (editingApp) {
-        const updated = await updateAppMutation.mutateAsync({ appId: editingApp.id, updates: payload })
-        toast.success("앱 정보를 수정했어요.")
-        setSelectedAppId(updated.id)
-      } else {
-        const created = await createAppMutation.mutateAsync(payload)
-        toast.success("앱을 등록했어요.")
-        setSelectedAppId(created.id)
-      }
-      setIsFormOpen(false)
-      setEditingApp(null)
-    } catch (error) {
-      toast.error(error?.message || "앱 정보를 저장하지 못했습니다.")
-    }
-  }
-
-  const handleEditApp = (app) => {
-    setEditingApp(app)
-    setIsFormOpen(true)
-  }
-
-  const handleDeleteApp = async (app) => {
-    const confirmed = typeof window === "undefined" ? true : window.confirm("이 앱을 삭제할까요?")
-    if (!confirmed) return
-    try {
-      await deleteAppMutation.mutateAsync(app.id)
-      toast.success("앱을 삭제했어요.")
-      const nextId = apps.find((item) => item.id !== app.id)?.id ?? null
-      setSelectedAppId(nextId)
-      setIsDetailOpen(false)
-    } catch (error) {
-      toast.error(error?.message || "앱을 삭제하지 못했습니다.")
-    }
-  }
-
-  const handleAddComment = async (appId, content, parentCommentId) => {
-    try {
-      const result = await createCommentMutation.mutateAsync({ appId, content, parentCommentId })
-      toast.success("댓글을 추가했어요.")
-      return result
-    } catch (error) {
-      toast.error(error?.message || "댓글을 추가하지 못했습니다.")
-      throw error
-    }
-  }
-
-  const handleToggleCommentLike = async (appId, commentId) => {
-    setTogglingCommentLikeId(commentId)
-    try {
-      await toggleCommentLikeMutation.mutateAsync({ appId, commentId })
-    } catch (error) {
-      toast.error(error?.message || "댓글 좋아요 토글에 실패했습니다.")
-    } finally {
-      setTogglingCommentLikeId(null)
-    }
-  }
-
-  const handleUpdateComment = async (appId, commentId, content) => {
-    setUpdatingCommentId(commentId)
-    try {
-      const result = await updateCommentMutation.mutateAsync({ appId, commentId, content })
-      toast.success("댓글을 수정했어요.")
-      return result
-    } catch (error) {
-      toast.error(error?.message || "댓글을 수정하지 못했습니다.")
-      throw error
-    } finally {
-      setUpdatingCommentId(null)
-    }
-  }
-
-  const handleDeleteComment = async (appId, commentId) => {
-    setDeletingCommentId(commentId)
-    try {
-      await deleteCommentMutation.mutateAsync({ appId, commentId })
-      toast.success("댓글을 삭제했어요.")
-    } catch (error) {
-      toast.error(error?.message || "댓글을 삭제하지 못했습니다.")
-    } finally {
-      setDeletingCommentId(null)
-    }
-  }
+  const {
+    handleAddComment,
+    handleDeleteApp,
+    handleDeleteComment,
+    handleEditApp,
+    handleOpenLink,
+    handleOpenManual,
+    handleSubmitApp,
+    handleToggleCommentLike,
+    handleToggleLike,
+    handleUpdateComment,
+  } = useAppstorePageActions({
+    apps,
+    editingApp,
+    mutations,
+    setDeletingCommentId,
+    setEditingApp,
+    setIsDetailOpen,
+    setIsFormOpen,
+    setSelectedAppId,
+    setTogglingCommentLikeId,
+    setUpdatingCommentId,
+  })
 
   const resetFilters = () => {
     setQuery("")
