@@ -1,7 +1,7 @@
 # =============================================================================
 # 모듈 설명: voc 게시판 CRUD APIView를 제공합니다.
 # - 주요 클래스: VocPostsView, VocPostDetailView, VocReplyView
-# - 불변 조건: 상태 값은 STATUS_SET 기준이며 JSON 바디를 사용합니다.
+# - 불변 조건: 서비스 검증 결과와 기존 JSON 응답 형식을 유지합니다.
 # =============================================================================
 
 """VOC(Q&A) 게시판 CRUD 뷰.
@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from django.http import HttpRequest, JsonResponse
 from django.utils.decorators import method_decorator
@@ -30,26 +31,72 @@ from api.common.services import (
 from api.common.services import parse_json_body
 
 from .selectors import (
-    get_default_post_app,
-    get_default_post_status,
     get_post_detail,
     get_post_list,
     get_status_counts,
-    get_valid_post_apps,
-    get_valid_post_statuses,
 )
 from .serializers import serialize_post, serialize_reply
 from .services import add_reply, can_manage_post, create_post, delete_post, update_post
+from .services.posts import (
+    VocInputError,
+    build_create_post_data,
+    build_reply_content,
+    build_update_post_data,
+    validate_status_filter,
+)
 
 logger = logging.getLogger(__name__)
 
-# =============================================================================
-# 상수: 상태/앱 집합 및 제목/앱 길이 제한
-# =============================================================================
-STATUS_SET = get_valid_post_statuses()
-APP_SET = get_valid_post_apps()
-MAX_TITLE_LENGTH = 255
-MAX_APP_LENGTH = 80
+
+def _json_error(message: str, *, status: int) -> JsonResponse:
+    """기존 오류 응답 형식으로 JSON 오류를 반환합니다."""
+
+    return JsonResponse({"error": message}, status=status)
+
+
+def _parse_payload(request: HttpRequest) -> tuple[dict[str, Any] | None, JsonResponse | None]:
+    """JSON 요청 바디를 파싱하고 오류 응답을 함께 반환합니다."""
+
+    payload = parse_json_body(request)
+    if payload is None:
+        return None, _json_error("Invalid JSON body", status=400)
+    return payload, None
+
+
+def _validation_error_response(error: VocInputError) -> JsonResponse:
+    """입력 검증 예외를 기존 400 응답으로 변환합니다."""
+
+    return _json_error(str(error), status=400)
+
+
+def _get_mutable_post_or_none(*, post_id: int) -> Any | None:
+    """수정/삭제 대상 게시글을 조회하고 조회 예외는 기존처럼 없음으로 처리합니다."""
+
+    try:
+        return get_post_detail(post_id=post_id)
+    except Exception:
+        return None
+
+
+def _post_list_response(posts: list[dict[str, Any]]) -> JsonResponse:
+    """게시글 목록 응답 payload를 조립합니다."""
+
+    return JsonResponse(
+        {
+            "results": posts,
+            "total": len(posts),
+            "statusCounts": get_status_counts(),
+        }
+    )
+
+
+def _post_with_counts_response(post: Any, *, status: int = 200) -> JsonResponse:
+    """게시글 단건과 statusCounts를 기존 형식으로 반환합니다."""
+
+    return JsonResponse(
+        {"post": serialize_post(post), "statusCounts": get_status_counts()},
+        status=status,
+    )
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -79,30 +126,14 @@ class VocPostsView(APIView):
         snake/camel 호환:
         - status 키 동일
         """
-        # -----------------------------------------------------------------------------
-        # 1) 상태 필터 검증
-        # -----------------------------------------------------------------------------
-        status_filter = request.GET.get("status")
-        if status_filter:
-            if status_filter not in STATUS_SET:
-                return JsonResponse({"error": "Invalid status value"}, status=400)
+        try:
+            status_filter = validate_status_filter(status=request.GET.get("status"))
+        except VocInputError as error:
+            return _validation_error_response(error)
 
-        # -----------------------------------------------------------------------------
-        # 2) 게시글 목록 조회/직렬화
-        # -----------------------------------------------------------------------------
         queryset = get_post_list(status=status_filter)
         posts = [serialize_post(post) for post in queryset]
-
-        # -----------------------------------------------------------------------------
-        # 3) 응답 반환
-        # -----------------------------------------------------------------------------
-        return JsonResponse(
-            {
-                "results": posts,
-                "total": len(posts),
-                "statusCounts": get_status_counts(),
-            }
-        )
+        return _post_list_response(posts)
 
     def post(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
         """게시글을 생성합니다.
@@ -130,64 +161,28 @@ class VocPostsView(APIView):
         snake/camel 호환:
         - title/content/status/app 키 동일
         """
-        # -----------------------------------------------------------------------------
-        # 1) 인증 확인
-        # -----------------------------------------------------------------------------
         if not request.user.is_authenticated:
-            return JsonResponse({"error": "Authentication required"}, status=401)
+            return _json_error("Authentication required", status=401)
 
-        # -----------------------------------------------------------------------------
-        # 2) 요청 바디 파싱
-        # -----------------------------------------------------------------------------
-        payload = parse_json_body(request)
-        if payload is None:
-            return JsonResponse({"error": "Invalid JSON body"}, status=400)
-
-        # -----------------------------------------------------------------------------
-        # 3) 입력 정규화 및 검증
-        # -----------------------------------------------------------------------------
-        title = str(payload.get("title") or "").strip()
-        content = str(payload.get("content") or "").strip()
-        status = payload.get("status") or get_default_post_status()
-        app = str(payload.get("app") or "").strip()
-
-        if not title:
-            return JsonResponse({"error": "title is required"}, status=400)
-        if len(title) > MAX_TITLE_LENGTH:
-            return JsonResponse({"error": "title is too long"}, status=400)
-        if not content:
-            return JsonResponse({"error": "content is required"}, status=400)
-        if status not in STATUS_SET:
-            return JsonResponse({"error": "Invalid status value"}, status=400)
-        if not app:
-            return JsonResponse({"error": "app is required"}, status=400)
-        if len(app) > MAX_APP_LENGTH:
-            return JsonResponse({"error": "app is too long"}, status=400)
-        if app not in APP_SET:
-            return JsonResponse({"error": "Invalid app value"}, status=400)
-
-        # -----------------------------------------------------------------------------
-        # 4) 생성 및 활동 로그 기록
-        # -----------------------------------------------------------------------------
+        payload, error_response = _parse_payload(request)
+        if error_response:
+            return error_response
         try:
-            post = create_post(
-                title=title,
-                content=content,
-                status=status,
-                app=app or get_default_post_app(),
-                author=request.user,
-            )
+            post_data = build_create_post_data(payload=payload or {})
+        except VocInputError as error:
+            return _validation_error_response(error)
+
+        try:
+            post = create_post(author=request.user, **post_data)
 
             set_activity_summary(request, "Create VOC post")
             set_activity_new_state(request, serialize_post(post))
             merge_activity_metadata(request, resource="voc_post", entryId=post.pk)
 
-            return JsonResponse(
-                {"post": serialize_post(post), "statusCounts": get_status_counts()}, status=201
-            )
+            return _post_with_counts_response(post, status=201)
         except Exception:  # 방어적 로깅: pragma: no cover
             logger.exception("Failed to create VOC post")
-            return JsonResponse({"error": "Failed to create post"}, status=500)
+            return _json_error("Failed to create post", status=500)
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -223,75 +218,24 @@ class VocPostDetailView(APIView):
         snake/camel 호환:
         - title/content/status/app 키 동일
         """
-        # -----------------------------------------------------------------------------
-        # 1) 인증 확인
-        # -----------------------------------------------------------------------------
         if not request.user.is_authenticated:
-            return JsonResponse({"error": "Authentication required"}, status=401)
+            return _json_error("Authentication required", status=401)
 
-        # -----------------------------------------------------------------------------
-        # 2) 요청 바디 파싱
-        # -----------------------------------------------------------------------------
-        payload = parse_json_body(request)
-        if payload is None:
-            return JsonResponse({"error": "Invalid JSON body"}, status=400)
+        payload, error_response = _parse_payload(request)
+        if error_response:
+            return error_response
 
-        # -----------------------------------------------------------------------------
-        # 3) 게시글 조회
-        # -----------------------------------------------------------------------------
-        try:
-            post = get_post_detail(post_id=post_id)
-        except Exception:
-            post = None
+        post = _get_mutable_post_or_none(post_id=post_id)
         if not post:
-            return JsonResponse({"error": "Post not found"}, status=404)
+            return _json_error("Post not found", status=404)
 
-        # -----------------------------------------------------------------------------
-        # 4) 권한 확인
-        # -----------------------------------------------------------------------------
         if not can_manage_post(user=request.user, post=post):
-            return JsonResponse({"error": "Forbidden"}, status=403)
+            return _json_error("Forbidden", status=403)
+        try:
+            updates = build_update_post_data(payload=payload or {})
+        except VocInputError as error:
+            return _validation_error_response(error)
 
-        # -----------------------------------------------------------------------------
-        # 5) 업데이트 데이터 구성/검증
-        # -----------------------------------------------------------------------------
-        updates = {}
-        if "title" in payload:
-            title = str(payload.get("title") or "").strip()
-            if not title:
-                return JsonResponse({"error": "title is required"}, status=400)
-            if len(title) > MAX_TITLE_LENGTH:
-                return JsonResponse({"error": "title is too long"}, status=400)
-            updates["title"] = title
-
-        if "content" in payload:
-            content = str(payload.get("content") or "").strip()
-            if not content:
-                return JsonResponse({"error": "content is required"}, status=400)
-            updates["content"] = content
-
-        if "status" in payload:
-            status = payload.get("status")
-            if status not in STATUS_SET:
-                return JsonResponse({"error": "Invalid status value"}, status=400)
-            updates["status"] = status
-
-        if "app" in payload:
-            app = str(payload.get("app") or "").strip()
-            if not app:
-                return JsonResponse({"error": "app is required"}, status=400)
-            if len(app) > MAX_APP_LENGTH:
-                return JsonResponse({"error": "app is too long"}, status=400)
-            if app not in APP_SET:
-                return JsonResponse({"error": "Invalid app value"}, status=400)
-            updates["app"] = app
-
-        if not updates:
-            return JsonResponse({"error": "No changes provided"}, status=400)
-
-        # -----------------------------------------------------------------------------
-        # 6) 업데이트 수행 및 활동 로그 기록
-        # -----------------------------------------------------------------------------
         try:
             before = serialize_post(post)
             post = update_post(post=post, updates=updates)
@@ -301,10 +245,10 @@ class VocPostDetailView(APIView):
             set_activity_new_state(request, serialize_post(post))
             merge_activity_metadata(request, resource="voc_post", entryId=post.pk)
 
-            return JsonResponse({"post": serialize_post(post), "statusCounts": get_status_counts()})
+            return _post_with_counts_response(post)
         except Exception:  # 방어적 로깅: pragma: no cover
             logger.exception("Failed to update VOC post")
-            return JsonResponse({"error": "Failed to update post"}, status=500)
+            return _json_error("Failed to update post", status=500)
 
     def delete(self, request: HttpRequest, post_id: int, *args: object, **kwargs: object) -> JsonResponse:
         """게시글을 삭제합니다.
@@ -333,31 +277,16 @@ class VocPostDetailView(APIView):
         snake/camel 호환:
         - 해당 없음(요청 바디 없음)
         """
-        # -----------------------------------------------------------------------------
-        # 1) 인증 확인
-        # -----------------------------------------------------------------------------
         if not request.user.is_authenticated:
-            return JsonResponse({"error": "Authentication required"}, status=401)
+            return _json_error("Authentication required", status=401)
 
-        # -----------------------------------------------------------------------------
-        # 2) 게시글 조회
-        # -----------------------------------------------------------------------------
-        try:
-            post = get_post_detail(post_id=post_id)
-        except Exception:
-            post = None
+        post = _get_mutable_post_or_none(post_id=post_id)
         if not post:
-            return JsonResponse({"error": "Post not found"}, status=404)
+            return _json_error("Post not found", status=404)
 
-        # -----------------------------------------------------------------------------
-        # 3) 권한 확인
-        # -----------------------------------------------------------------------------
         if not can_manage_post(user=request.user, post=post):
-            return JsonResponse({"error": "Forbidden"}, status=403)
+            return _json_error("Forbidden", status=403)
 
-        # -----------------------------------------------------------------------------
-        # 4) 삭제 수행 및 활동 로그 기록
-        # -----------------------------------------------------------------------------
         try:
             before = serialize_post(post)
             delete_post(post=post)
@@ -369,7 +298,7 @@ class VocPostDetailView(APIView):
             return JsonResponse({"success": True, "statusCounts": get_status_counts()})
         except Exception:  # 방어적 로깅: pragma: no cover
             logger.exception("Failed to delete VOC post")
-            return JsonResponse({"error": "Failed to delete post"}, status=500)
+            return _json_error("Failed to delete post", status=500)
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -404,36 +333,22 @@ class VocReplyView(APIView):
         snake/camel 호환:
         - content 키 동일
         """
-        # -----------------------------------------------------------------------------
-        # 1) 인증 확인
-        # -----------------------------------------------------------------------------
         if not request.user.is_authenticated:
-            return JsonResponse({"error": "Authentication required"}, status=401)
+            return _json_error("Authentication required", status=401)
 
-        # -----------------------------------------------------------------------------
-        # 2) 요청 바디 파싱
-        # -----------------------------------------------------------------------------
-        payload = parse_json_body(request)
-        if payload is None:
-            return JsonResponse({"error": "Invalid JSON body"}, status=400)
+        payload, error_response = _parse_payload(request)
+        if error_response:
+            return error_response
 
-        # -----------------------------------------------------------------------------
-        # 3) 내용 검증
-        # -----------------------------------------------------------------------------
-        content = str(payload.get("content") or "").strip()
-        if not content:
-            return JsonResponse({"error": "content is required"}, status=400)
+        try:
+            content = build_reply_content(payload=payload or {})
+        except VocInputError as error:
+            return _validation_error_response(error)
 
-        # -----------------------------------------------------------------------------
-        # 4) 게시글 조회
-        # -----------------------------------------------------------------------------
         post = get_post_detail(post_id=post_id)
         if not post:
-            return JsonResponse({"error": "Post not found"}, status=404)
+            return _json_error("Post not found", status=404)
 
-        # -----------------------------------------------------------------------------
-        # 5) 답변 추가 및 활동 로그 기록
-        # -----------------------------------------------------------------------------
         try:
             reply, refreshed_post = add_reply(post=post, author=request.user, content=content)
 
@@ -446,7 +361,7 @@ class VocReplyView(APIView):
             )
         except Exception:  # 방어적 로깅: pragma: no cover
             logger.exception("Failed to add VOC reply")
-            return JsonResponse({"error": "Failed to add reply"}, status=500)
+            return _json_error("Failed to add reply", status=500)
 
 
 __all__ = ["VocPostsView", "VocPostDetailView", "VocReplyView"]

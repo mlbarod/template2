@@ -35,3 +35,33 @@ export const APP_CATEGORIES = [
 ]
 
 export const DEFAULT_APP_CATEGORY = APP_CATEGORIES[0]?.value || "기타"
+
+// VOC 리치 텍스트 에디터 설정. 콘텐츠 정화/렌더링 정책은 utils/index.js에서만 관리합니다.
+export const RICH_TEXT_EDITOR_MODULES = {
+  toolbar: [
+    [{ header: [1, 2, 3, false] }],
+    ["bold", "italic", "underline", "strike"],
+    [{ color: [] }, { background: [] }],
+    [{ list: "ordered" }, { list: "bullet" }],
+    [{ align: [] }],
+    ["link", "image"],
+  ],
+  clipboard: {
+    matchVisual: false,
+  },
+}
+
+export const RICH_TEXT_EDITOR_FORMATS = [
+  "header",
+  "bold",
+  "italic",
+  "underline",
+  "strike",
+  "color",
+  "background",
+  "list",
+  "bullet",
+  "align",
+  "link",
+  "image",
+]

@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
-import { DEFAULT_APP_CATEGORY, DEFAULT_STATUS, STATUS_OPTIONS } from "../utils/constants"
+import { DEFAULT_APP_CATEGORY, DEFAULT_STATUS } from "../utils/constants"
 import { vocQueryKeys } from "../api/queryKeys"
 import {
   createVocPost,
@@ -13,51 +13,13 @@ import {
   updateVocPost,
 } from "../api/voc"
 import { hasMeaningfulContent, sanitizeContentHtml } from "../utils"
-
-const EMPTY_STATUS_COUNTS = STATUS_OPTIONS.reduce(
-  (acc, option) => ({ ...acc, [option.value]: 0 }),
-  {},
-)
-const EMPTY_POSTS = []
-
-function sanitizePost(post) {
-  if (!post || post.id == null) return null
-  const appValue = typeof post.app === "string" ? post.app.trim() : ""
-  return {
-    ...post,
-    app: appValue || DEFAULT_APP_CATEGORY,
-    content: sanitizeContentHtml(post.content),
-    replies: Array.isArray(post.replies)
-      ? post.replies
-          .map((reply) => {
-            if (!reply || reply.id == null) return null
-            return {
-              ...reply,
-              content: typeof reply.content === "string" ? reply.content.trim() : "",
-            }
-          })
-          .filter(Boolean)
-      : [],
-  }
-}
-
-function normalizePosts(rawPosts) {
-  if (!Array.isArray(rawPosts)) return []
-  return rawPosts.map(sanitizePost).filter(Boolean)
-}
-
-function buildStatusCounts(posts, providedCounts) {
-  if (providedCounts && typeof providedCounts === "object") {
-    return { ...EMPTY_STATUS_COUNTS, ...providedCounts }
-  }
-
-  return posts.reduce((acc, post) => {
-    if (post?.status && typeof acc[post.status] === "number") {
-      acc[post.status] += 1
-    }
-    return acc
-  }, { ...EMPTY_STATUS_COUNTS })
-}
+import {
+  EMPTY_POSTS,
+  buildVocStatusCounts,
+  getVocPostAuthorKey,
+  normalizeVocPosts,
+  sanitizeVocPost,
+} from "../utils/postTransforms"
 
 export function useVocBoardState({ currentUser, isAdmin }) {
   const queryClient = useQueryClient()
@@ -82,10 +44,10 @@ export function useVocBoardState({ currentUser, isAdmin }) {
     queryKey: vocQueryKeys.posts(),
     queryFn: fetchVocPosts,
     select: (payload) => {
-      const posts = normalizePosts(payload?.posts)
+      const posts = normalizeVocPosts(payload?.posts)
       return {
         posts,
-        statusCounts: buildStatusCounts(posts, payload?.statusCounts),
+        statusCounts: buildVocStatusCounts(posts, payload?.statusCounts),
       }
     },
   })
@@ -104,10 +66,9 @@ export function useVocBoardState({ currentUser, isAdmin }) {
 
   const posts = postsQuery.data?.posts ?? EMPTY_POSTS
   const currentUserId = currentUser?.id
-  const getAuthorKey = (post) => post?.author?.id || post?.author?.email || post?.author?.name
   const basePosts = isMyPostsOnly
     ? posts.filter((post) => {
-        const authorKey = getAuthorKey(post)
+        const authorKey = getVocPostAuthorKey(post)
         return Boolean(authorKey && currentUserId && authorKey === currentUserId)
       })
     : posts
@@ -115,7 +76,7 @@ export function useVocBoardState({ currentUser, isAdmin }) {
   const appScopedPosts = appFilter
     ? basePosts.filter((post) => post.app === appFilter)
     : basePosts
-  const statusCounts = buildStatusCounts(appScopedPosts)
+  const statusCounts = buildVocStatusCounts(appScopedPosts)
 
   const filteredPosts = statusFilter
     ? appScopedPosts.filter((post) => post.status === statusFilter)
@@ -169,7 +130,7 @@ export function useVocBoardState({ currentUser, isAdmin }) {
 
   const canDeletePost = (post) => {
     if (isAdmin) return true
-    const authorKey = getAuthorKey(post)
+    const authorKey = getVocPostAuthorKey(post)
     return Boolean(authorKey && currentUserId && authorKey === currentUserId)
   }
 
@@ -192,12 +153,12 @@ export function useVocBoardState({ currentUser, isAdmin }) {
   const updatePostsCache = (updater, nextStatusCounts) => {
     queryClient.setQueryData(vocQueryKeys.posts(), (previous) => {
       const base = previous?.posts ?? posts
-      const updated = normalizePosts(updater(base))
+      const updated = normalizeVocPosts(updater(base))
       const countsSource =
         nextStatusCounts && typeof nextStatusCounts === "object" ? nextStatusCounts : undefined
       return {
         posts: updated,
-        statusCounts: buildStatusCounts(updated, countsSource),
+        statusCounts: buildVocStatusCounts(updated, countsSource),
       }
     })
   }
@@ -213,7 +174,7 @@ export function useVocBoardState({ currentUser, isAdmin }) {
     },
     onSuccess: (result) => {
       if (!result?.post) return
-      const safePost = sanitizePost(result.post)
+      const safePost = sanitizeVocPost(result.post)
       if (!safePost) return
 
       updatePostsCache((prev) => [safePost, ...(prev ?? [])], result.statusCounts)
@@ -249,7 +210,7 @@ export function useVocBoardState({ currentUser, isAdmin }) {
     },
     onSuccess: (result) => {
       if (!result?.post) return
-      const safePost = sanitizePost(result.post)
+      const safePost = sanitizeVocPost(result.post)
       if (!safePost) return
 
       updatePostsCache(
@@ -267,7 +228,7 @@ export function useVocBoardState({ currentUser, isAdmin }) {
     },
     onSuccess: (result, variables) => {
       const reply = result?.reply
-      const safePost = sanitizePost(result?.post)
+      const safePost = sanitizeVocPost(result?.post)
       if (!reply && !safePost) return
       const targetId = variables.postId
 
@@ -292,7 +253,7 @@ export function useVocBoardState({ currentUser, isAdmin }) {
     if (!app) return null
     try {
       const result = await createPostMutation.mutateAsync({ title, content, status, app })
-      return result?.post ? sanitizePost(result.post) : null
+      return result?.post ? sanitizeVocPost(result.post) : null
     } catch {
       return null
     }
@@ -350,7 +311,7 @@ export function useVocBoardState({ currentUser, isAdmin }) {
         postId,
         updates: { title, content },
       })
-      return result?.post ? sanitizePost(result.post) : null
+      return result?.post ? sanitizeVocPost(result.post) : null
     } catch {
       return null
     }

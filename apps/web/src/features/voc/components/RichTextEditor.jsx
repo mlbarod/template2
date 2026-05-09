@@ -1,6 +1,11 @@
 import * as React from "react"
 import Quill from "quill"
 
+function normalizeEditorHtml(html) {
+  if (!html || html === "<p><br></p>") return ""
+  return html
+}
+
 export function RichTextEditor({
   id,
   value,
@@ -13,15 +18,12 @@ export function RichTextEditor({
   ariaLabelledby,
   ariaLabel,
 }) {
-  const normalizeHtml = (html) => {
-    if (!html || html === "<p><br></p>") return ""
-    return html
-  }
-
   const wrapperRef = React.useRef(null)
   const quillRef = React.useRef(null)
   const onChangeRef = React.useRef(onChange)
   const readOnlyRef = React.useRef(readOnly)
+  const initialValueRef = React.useRef(value)
+  const initialReadOnlyRef = React.useRef(readOnly)
 
   React.useEffect(() => {
     onChangeRef.current = onChange
@@ -46,7 +48,7 @@ export function RichTextEditor({
       placeholder,
       modules,
       formats,
-      readOnly,
+      readOnly: initialReadOnlyRef.current,
     })
 
     quillRef.current = quill
@@ -54,16 +56,16 @@ export function RichTextEditor({
     const handleTextChange = (_delta, _old, source) => {
       if (source !== Quill.sources.USER) return
       if (!onChangeRef.current || readOnlyRef.current) return
-      onChangeRef.current(normalizeHtml(quill.root.innerHTML))
+      onChangeRef.current(normalizeEditorHtml(quill.root.innerHTML))
     }
 
     quill.on("text-change", handleTextChange)
 
-    const initialValue = normalizeHtml(value || "")
+    const initialValue = normalizeEditorHtml(initialValueRef.current || "")
     if (initialValue) {
       quill.clipboard.dangerouslyPasteHTML(initialValue, Quill.sources.SILENT)
     }
-    quill.enable(!readOnly)
+    quill.enable(!initialReadOnlyRef.current)
 
     return () => {
       quill.off("text-change", handleTextChange)
@@ -87,8 +89,8 @@ export function RichTextEditor({
     const quill = quillRef.current
     if (!quill) return
 
-    const nextValue = normalizeHtml(value || "")
-    const currentValue = normalizeHtml(quill.root.innerHTML)
+    const nextValue = normalizeEditorHtml(value || "")
+    const currentValue = normalizeEditorHtml(quill.root.innerHTML)
     if (nextValue === currentValue) return
 
     quill.clipboard.dangerouslyPasteHTML(nextValue, Quill.sources.SILENT)
