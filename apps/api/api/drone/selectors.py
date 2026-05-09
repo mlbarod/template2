@@ -23,6 +23,15 @@ from .models import (
     DroneSopUserSdwtChannel,
     DroneSopUserSdwtProdMap,
 )
+from .serializers import (
+    collapse_display_values,
+    display_delivery_target,
+    normalize_chatroom_id,
+    normalize_lookup_text,
+    normalize_lookup_text_list,
+    normalize_text,
+    normalize_text_list,
+)
 from .services.table_schema import (
     DEFAULT_TABLE,
     LINE_SDWT_TABLE_NAME,
@@ -79,130 +88,6 @@ _DIMENSION_CANDIDATES = [
     "sample_type",
     "line_id",
 ]
-
-# =============================================================================
-# 공통 정규화 유틸
-# =============================================================================
-def _normalize_str(value: Any, *, allow_non_str: bool = False) -> str | None:
-    """문자열 값을 정규화합니다.
-
-    인자:
-        value: 원본 값.
-        allow_non_str: 문자열이 아닐 때 str() 변환 허용 여부.
-
-    반환:
-        정규화된 문자열 또는 None.
-
-    부작용:
-        없음. 순수 정규화입니다.
-    """
-
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        if not allow_non_str:
-            return None
-        value = str(value)
-    trimmed = value.strip()
-    return trimmed if trimmed else None
-
-
-def _display_delivery_target(value: Any) -> str | None:
-    """내부 marker target을 화면용 target 라벨로 변환합니다."""
-
-    target = _normalize_str(value)
-    if target and target.startswith("__"):
-        return "Target 미지정"
-    return target
-
-
-def _normalize_str_list(values: Sequence[Any], *, allow_non_str: bool = False) -> list[str]:
-    """문자열 리스트를 정규화합니다.
-
-    인자:
-        values: 원본 값 시퀀스.
-        allow_non_str: 문자열이 아닐 때 str() 변환 허용 여부.
-
-    반환:
-        정규화된 문자열 리스트.
-
-    부작용:
-        없음. 순수 정규화입니다.
-    """
-
-    normalized: list[str] = []
-    for value in values:
-        cleaned = _normalize_str(value, allow_non_str=allow_non_str)
-        if cleaned:
-            normalized.append(cleaned)
-    return normalized
-
-
-def _normalize_lookup_str(value: Any, *, allow_non_str: bool = False) -> str | None:
-    """대소문자 비구분 비교용 문자열 키를 정규화합니다.
-
-    인자:
-        value: 원본 값.
-        allow_non_str: 문자열이 아닐 때 str() 변환 허용 여부.
-
-    반환:
-        공백 제거 후 casefold 적용한 문자열 또는 None.
-
-    부작용:
-        없음. 순수 정규화입니다.
-    """
-
-    cleaned = _normalize_str(value, allow_non_str=allow_non_str)
-    if not cleaned:
-        return None
-    return cleaned.casefold()
-
-
-def _normalize_lookup_str_list(values: Sequence[Any], *, allow_non_str: bool = False) -> list[str]:
-    """대소문자 비구분 비교용 문자열 키 리스트를 정규화합니다.
-
-    인자:
-        values: 원본 값 시퀀스.
-        allow_non_str: 문자열이 아닐 때 str() 변환 허용 여부.
-
-    반환:
-        casefold 적용된 문자열 리스트.
-
-    부작용:
-        없음. 순수 정규화입니다.
-    """
-
-    normalized: list[str] = []
-    for value in values:
-        cleaned = _normalize_lookup_str(value, allow_non_str=allow_non_str)
-        if cleaned:
-            normalized.append(cleaned)
-    return normalized
-
-
-def _normalize_chatroom_id(value: Any) -> int | None:
-    """채팅룸 ID 값을 정수로 정규화합니다.
-
-    인자:
-        value: 원본 값.
-
-    반환:
-        양의 정수 chatroom_id 또는 None.
-
-    부작용:
-        없음. 순수 정규화입니다.
-    """
-
-    if value is None:
-        return None
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return None
-    if parsed <= 0:
-        return None
-    return parsed
-
 
 def _drone_sop_eligible_filter() -> Q:
     """Drone SOP 후보 공통 적합 조건 필터를 반환합니다."""
@@ -315,7 +200,7 @@ def get_drone_sop_needtosend_rule_by_target(
     # -----------------------------------------------------------------------------
     # 1) 입력 정규화
     # -----------------------------------------------------------------------------
-    normalized = _normalize_str(target_user_sdwt_prod, allow_non_str=True)
+    normalized = normalize_text(target_user_sdwt_prod, allow_non_str=True)
     if not normalized:
         return None
 
@@ -354,7 +239,7 @@ def list_drone_sop_user_sdwt_channels_by_targets(
     # -----------------------------------------------------------------------------
     # 1) 입력 정규화
     # -----------------------------------------------------------------------------
-    normalized_targets = _normalize_lookup_str_list(target_user_sdwt_prod_values)
+    normalized_targets = normalize_lookup_text_list(target_user_sdwt_prod_values)
     if not normalized_targets:
         return {}
 
@@ -380,16 +265,16 @@ def list_drone_sop_user_sdwt_channels_by_targets(
     )
     mapping: dict[str, dict[str, str | bool | int | None]] = {}
     for row in rows:
-        target_lookup = _normalize_lookup_str(row.get("target_user_sdwt_prod"))
+        target_lookup = normalize_lookup_text(row.get("target_user_sdwt_prod"))
         if not target_lookup:
             continue
-        chatroom_id = _normalize_chatroom_id(row.get("chatroom_id"))
+        chatroom_id = normalize_chatroom_id(row.get("chatroom_id"))
         mapping[target_lookup] = {
-            "jira_key": _normalize_str(row.get("jira_key")),
+            "jira_key": normalize_text(row.get("jira_key")),
             "chatroom_id": chatroom_id,
-            "jira_template_key": _normalize_str(row.get("jira_template_key")),
-            "mail_template_key": _normalize_str(row.get("mail_template_key")),
-            "messenger_template_key": _normalize_str(row.get("messenger_template_key")),
+            "jira_template_key": normalize_text(row.get("jira_template_key")),
+            "mail_template_key": normalize_text(row.get("mail_template_key")),
+            "messenger_template_key": normalize_text(row.get("messenger_template_key")),
             "jira_enabled": bool(row.get("jira_enabled", True)),
             "messenger_enabled": bool(row.get("messenger_enabled", True)),
             "mail_enabled": bool(row.get("mail_enabled", True)),
@@ -416,12 +301,12 @@ def list_drone_sop_jira_templates_by_target_user_sdwt_prods(
     channels = list_drone_sop_user_sdwt_channels_by_targets(
         target_user_sdwt_prod_values=target_user_sdwt_prod_values,
     )
-    normalized_targets = _normalize_str_list(target_user_sdwt_prod_values)
+    normalized_targets = normalize_text_list(target_user_sdwt_prod_values)
     result: dict[str, str | None] = {}
     for target in normalized_targets:
-        lookup_key = _normalize_lookup_str(target)
+        lookup_key = normalize_lookup_text(target)
         config = channels.get(lookup_key) if lookup_key else None
-        result[target] = _normalize_str(config.get("jira_template_key")) if config else None
+        result[target] = normalize_text(config.get("jira_template_key")) if config else None
     return result
 
 
@@ -462,7 +347,7 @@ def load_drone_sop_custom_end_step_map() -> dict[tuple[str, str], str | None]:
         main_step = row.get("main_step")
         if not isinstance(user_sdwt_prod, str) or not isinstance(main_step, str):
             continue
-        normalized_user_sdwt_prod = _normalize_lookup_str(user_sdwt_prod)
+        normalized_user_sdwt_prod = normalize_lookup_text(user_sdwt_prod)
         normalized_main_step = main_step.strip()
         if not normalized_user_sdwt_prod or not normalized_main_step:
             continue
@@ -645,7 +530,7 @@ def list_drone_sop_channel_delivery_rows_by_sop_ids(*, sop_ids: Sequence[int]) -
         sop_id = row.get("sop_id")
         if not isinstance(sop_id, int):
             continue
-        target_user_sdwt_prod = _display_delivery_target(row.get("target__target_user_sdwt_prod"))
+        target_user_sdwt_prod = display_delivery_target(row.get("target__target_user_sdwt_prod"))
         if not target_user_sdwt_prod:
             continue
         target_key = target_user_sdwt_prod.casefold()
@@ -863,7 +748,7 @@ def list_user_sdwt_prod_values_for_line(*, line_id: str) -> list[str]:
 def line_id_exists(*, line_id: str) -> bool:
     """account_affiliation에 등록된 line_id인지 확인합니다."""
 
-    normalized_line_id = _normalize_str(line_id)
+    normalized_line_id = normalize_text(line_id)
     if not normalized_line_id:
         return False
 
@@ -897,7 +782,7 @@ def list_drone_sop_notification_targets_for_line(*, line_id: str) -> list[dict[s
         없음. 읽기 전용 조회입니다.
     """
 
-    normalized_line_id = _normalize_str(line_id)
+    normalized_line_id = normalize_text(line_id)
     if not normalized_line_id:
         return []
 
@@ -913,7 +798,7 @@ def list_drone_sop_notification_targets_for_line(*, line_id: str) -> list[dict[s
         .order_by("target_user_sdwt_prod", "id")
     )
     for row in configured_rows:
-        target_value = _normalize_str(row.target_user_sdwt_prod)
+        target_value = normalize_text(row.target_user_sdwt_prod)
         if not target_value:
             continue
         targets_by_key[target_value.casefold()] = {
@@ -928,7 +813,7 @@ def list_drone_sop_notification_targets_for_line(*, line_id: str) -> list[dict[s
         }
 
     for target_value in list_user_sdwt_prod_values_for_line(line_id=normalized_line_id):
-        normalized_target = _normalize_str(target_value)
+        normalized_target = normalize_text(target_value)
         if not normalized_target:
             continue
         targets_by_key.setdefault(
@@ -952,7 +837,7 @@ def list_drone_sop_notification_targets_for_line(*, line_id: str) -> list[dict[s
         .exclude(target__target_user_sdwt_prod__exact="")
         .order_by("sdwt_prod", "user_sdwt_prod", "id")
     ):
-        target_value = _normalize_str(mapping.target_user_sdwt_prod)
+        target_value = normalize_text(mapping.target_user_sdwt_prod)
         target = targets_by_key.get(target_value.casefold())
         if target is None:
             continue
@@ -960,8 +845,8 @@ def list_drone_sop_notification_targets_for_line(*, line_id: str) -> list[dict[s
         if isinstance(mappings, list):
             mappings.append(
                 {
-                    "sdwtProd": _normalize_str(mapping.sdwt_prod),
-                    "userSdwtProd": _normalize_str(mapping.user_sdwt_prod),
+                    "sdwtProd": normalize_text(mapping.sdwt_prod),
+                    "userSdwtProd": normalize_text(mapping.user_sdwt_prod),
                 }
             )
 
@@ -993,18 +878,6 @@ def affiliation_exists_for_user_sdwt_prod(*, user_sdwt_prod: str) -> bool:
     return account_selectors.affiliation_exists_for_user_sdwt_prod(user_sdwt_prod=user_sdwt_prod)
 
 
-def _collapse_display_values(values: Sequence[Any]) -> list[str]:
-    """표시값을 유지하면서 대소문자 비구분 중복을 제거합니다."""
-
-    display_by_key: dict[str, str] = {}
-    for value in values:
-        normalized = _normalize_str(value)
-        if not normalized:
-            continue
-        display_by_key.setdefault(normalized.casefold(), normalized)
-    return sorted(display_by_key.values())
-
-
 def list_drone_sop_mapping_option_values_for_line(*, line_id: str) -> dict[str, list[str]]:
     """라인별 Drone SOP 지정 조합 드롭다운 옵션을 조회합니다.
 
@@ -1018,7 +891,7 @@ def list_drone_sop_mapping_option_values_for_line(*, line_id: str) -> dict[str, 
         없음. 읽기 전용 조회입니다.
     """
 
-    normalized_line_id = _normalize_str(line_id)
+    normalized_line_id = normalize_text(line_id)
     if not normalized_line_id:
         return {"userSdwtProds": [], "sdwtProds": []}
 
@@ -1037,8 +910,8 @@ def list_drone_sop_mapping_option_values_for_line(*, line_id: str) -> dict[str, 
     )
 
     return {
-        "userSdwtProds": _collapse_display_values(user_sdwt_values),
-        "sdwtProds": _collapse_display_values(sdwt_values),
+        "userSdwtProds": collapse_display_values(user_sdwt_values),
+        "sdwtProds": collapse_display_values(sdwt_values),
     }
 
 
@@ -1070,7 +943,7 @@ def list_drone_sop_target_user_sdwt_prod_values() -> list[str]:
         .values_list("target__target_user_sdwt_prod", flat=True)
         .distinct()
     )
-    return _collapse_display_values(values)
+    return collapse_display_values(values)
 
 
 def user_can_manage_drone_sop_recipients(*, user: Any) -> bool:
@@ -1164,7 +1037,7 @@ def _list_active_recipient_contact_values(
 ) -> list[str]:
     """채널 수신인에서 사용자 연락처 값을 중복 없이 조회합니다."""
 
-    normalized = _normalize_str(target_user_sdwt_prod)
+    normalized = normalize_text(target_user_sdwt_prod)
     if not normalized:
         return []
 
@@ -1185,7 +1058,7 @@ def _list_active_recipient_contact_values(
     normalized_values: list[str] = []
     seen: set[str] = set()
     for value in rows:
-        cleaned = _normalize_str(value)
+        cleaned = normalize_text(value)
         if not cleaned or cleaned in seen:
             continue
         seen.add(cleaned)
@@ -1215,12 +1088,12 @@ def list_drone_sop_channel_recipients(
         없음. 읽기 전용 조회입니다.
     """
 
-    normalized = _normalize_str(target_user_sdwt_prod)
+    normalized = normalize_text(target_user_sdwt_prod)
     if not normalized:
         return []
 
     target_row = get_drone_sop_channel_by_target_user_sdwt_prod(target_user_sdwt_prod=normalized)
-    response_line_id = (target_row.line_id if target_row and target_row.line_id else _normalize_str(line_id)) or ""
+    response_line_id = (target_row.line_id if target_row and target_row.line_id else normalize_text(line_id)) or ""
 
     rows = list(
         DroneSopChannelRecipient.objects.filter(
@@ -1290,7 +1163,7 @@ def get_drone_sop_channel_by_target_user_sdwt_prod(
     # -----------------------------------------------------------------------------
     # 1) 입력 유효성 확인
     # -----------------------------------------------------------------------------
-    normalized = _normalize_str(target_user_sdwt_prod)
+    normalized = normalize_text(target_user_sdwt_prod)
     if not normalized:
         return None
 
@@ -1331,7 +1204,7 @@ def list_drone_sop_jira_target_user_sdwt_prods() -> list[str]:
     # -----------------------------------------------------------------------------
     # 2) 공백 제거 및 반환
     # -----------------------------------------------------------------------------
-    return _normalize_str_list(rows)
+    return normalize_text_list(rows)
 
 
 def get_drone_sop_jira_project_key_for_target_user_sdwt_prod(*, target_user_sdwt_prod: str) -> str | None:
@@ -1350,7 +1223,7 @@ def get_drone_sop_jira_project_key_for_target_user_sdwt_prod(*, target_user_sdwt
     # -----------------------------------------------------------------------------
     # 1) 입력 유효성 확인
     # -----------------------------------------------------------------------------
-    normalized = _normalize_str(target_user_sdwt_prod)
+    normalized = normalize_text(target_user_sdwt_prod)
     if not normalized:
         return None
 
@@ -1360,7 +1233,7 @@ def get_drone_sop_jira_project_key_for_target_user_sdwt_prod(*, target_user_sdwt
     channel = get_drone_sop_channel_by_target_user_sdwt_prod(target_user_sdwt_prod=normalized)
     if channel is None:
         return None
-    return _normalize_str(channel.jira_key)
+    return normalize_text(channel.jira_key)
 
 
 def list_drone_sop_jira_project_keys_by_target_user_sdwt_prods(
@@ -1382,12 +1255,12 @@ def list_drone_sop_jira_project_keys_by_target_user_sdwt_prods(
     channels = list_drone_sop_user_sdwt_channels_by_targets(
         target_user_sdwt_prod_values=target_user_sdwt_prod_values,
     )
-    normalized_targets = _normalize_str_list(target_user_sdwt_prod_values)
+    normalized_targets = normalize_text_list(target_user_sdwt_prod_values)
     result: dict[str, str | None] = {}
     for target in normalized_targets:
-        lookup_key = _normalize_lookup_str(target)
+        lookup_key = normalize_lookup_text(target)
         config = channels.get(lookup_key) if lookup_key else None
-        result[target] = _normalize_str(config.get("jira_key")) if config else None
+        result[target] = normalize_text(config.get("jira_key")) if config else None
     return result
 
 
@@ -1407,7 +1280,7 @@ def list_line_ids_for_user_sdwt_prod(*, user_sdwt_prod: str) -> list[str]:
     # -----------------------------------------------------------------------------
     # 1) 입력 검증
     # -----------------------------------------------------------------------------
-    normalized = _normalize_str(user_sdwt_prod)
+    normalized = normalize_text(user_sdwt_prod)
     if not normalized:
         return []
 
@@ -1425,7 +1298,7 @@ def list_line_ids_for_user_sdwt_prod(*, user_sdwt_prod: str) -> list[str]:
         """.format(table=LINE_SDWT_TABLE_NAME),
         [normalized],
     )
-    return _normalize_str_list([row.get("line_id") for row in rows])
+    return normalize_text_list([row.get("line_id") for row in rows])
 
 
 def list_distinct_line_ids() -> list[str]:
@@ -1446,7 +1319,7 @@ def list_distinct_line_ids() -> list[str]:
         ORDER BY line_id
         """.format(table=LINE_SDWT_TABLE_NAME)
     )
-    return _collapse_display_values([row.get("line_id") for row in rows])
+    return collapse_display_values([row.get("line_id") for row in rows])
 
 
 def get_line_history_payload(

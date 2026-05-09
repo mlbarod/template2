@@ -5,7 +5,7 @@
 # =============================================================================
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Sequence
 
 from .models import DroneEarlyInform
 
@@ -42,6 +42,81 @@ def normalize_short_text(
     if not trimmed:
         return None
     return trimmed if len(trimmed) <= max_length else None
+
+
+def normalize_text(value: Any, *, allow_non_str: bool = False) -> str | None:
+    """문자열 값을 공백 제거 기준으로 정규화합니다."""
+
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        if not allow_non_str:
+            return None
+        value = str(value)
+    trimmed = value.strip()
+    return trimmed if trimmed else None
+
+
+def normalize_text_list(values: Sequence[Any], *, allow_non_str: bool = False) -> list[str]:
+    """문자열 리스트를 공백 제거 기준으로 정규화합니다."""
+
+    normalized: list[str] = []
+    for value in values:
+        cleaned = normalize_text(value, allow_non_str=allow_non_str)
+        if cleaned:
+            normalized.append(cleaned)
+    return normalized
+
+
+def normalize_lookup_text(value: Any, *, allow_non_str: bool = False) -> str | None:
+    """대소문자 비구분 비교용 문자열 키를 정규화합니다."""
+
+    cleaned = normalize_text(value, allow_non_str=allow_non_str)
+    return cleaned.casefold() if cleaned else None
+
+
+def normalize_lookup_text_list(values: Sequence[Any], *, allow_non_str: bool = False) -> list[str]:
+    """대소문자 비구분 비교용 문자열 키 리스트를 정규화합니다."""
+
+    normalized: list[str] = []
+    for value in values:
+        cleaned = normalize_lookup_text(value, allow_non_str=allow_non_str)
+        if cleaned:
+            normalized.append(cleaned)
+    return normalized
+
+
+def normalize_chatroom_id(value: Any) -> int | None:
+    """채팅룸 ID 값을 양의 정수로 정규화합니다."""
+
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def display_delivery_target(value: Any) -> str | None:
+    """내부 marker target을 화면용 target 라벨로 변환합니다."""
+
+    target = normalize_text(value)
+    if target and target.startswith("__"):
+        return "Target 미지정"
+    return target
+
+
+def collapse_display_values(values: Sequence[Any]) -> list[str]:
+    """표시값을 유지하면서 대소문자 비구분 중복을 제거합니다."""
+
+    display_by_key: dict[str, str] = {}
+    for value in values:
+        normalized = normalize_text(value)
+        if not normalized:
+            continue
+        display_by_key.setdefault(normalized.casefold(), normalized)
+    return sorted(display_by_key.values())
 
 
 def normalize_line_id(value: Any) -> str:
