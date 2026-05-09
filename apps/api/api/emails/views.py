@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse, JsonResponse
@@ -45,6 +45,9 @@ from .selectors import (
 from .serializers import (
     EmailAssetOcrClaimSerializer,
     EmailAssetOcrUpdateSerializer,
+    EmailRequestValidationError,
+    parse_email_id_list,
+    parse_optional_positive_limit,
     serialize_email_detail,
     serialize_email_page,
 )
@@ -91,24 +94,12 @@ def _ensure_internal_token(request: HttpRequest) -> JsonResponse | None:
         - 500: 설정에 토큰이 없을 때
         - 401: 제공된 토큰이 기대값과 다를 때
     """
-
-    # -----------------------------------------------------------------------------
-    # 1) 기대 토큰 준비
-    # -----------------------------------------------------------------------------
     expected = (getattr(settings, "EMAIL_OCR_INTERNAL_TOKEN", "") or "").strip()
     if not expected:
         return JsonResponse({"error": "EMAIL_OCR_INTERNAL_TOKEN not configured"}, status=500)
-
-    # -----------------------------------------------------------------------------
-    # 2) 제공된 토큰 추출
-    # -----------------------------------------------------------------------------
     provided = request.headers.get("X-Internal-Token") or request.META.get("HTTP_X_INTERNAL_TOKEN") or ""
     if not isinstance(provided, str):
         provided = ""
-
-    # -----------------------------------------------------------------------------
-    # 3) 비교 및 결과 반환
-    # -----------------------------------------------------------------------------
     if provided.strip() != expected:
         return JsonResponse({"error": "Unauthorized"}, status=401)
     return None
@@ -135,20 +126,12 @@ def _check_email_access(
     오류:
         없음(에러는 JsonResponse로 반환).
     """
-
-    # -----------------------------------------------------------------------------
-    # 1) 도메인 권한 판별
-    # -----------------------------------------------------------------------------
     denial = resolve_email_access_denial(
         user=request.user,
         email=email,
         is_privileged=is_privileged,
         accessible=accessible,
     )
-
-    # -----------------------------------------------------------------------------
-    # 2) HTTP 에러 응답 변환
-    # -----------------------------------------------------------------------------
     if denial == "not_found":
         return JsonResponse({"error": "Email not found"}, status=404)
     if denial == "forbidden":
@@ -170,12 +153,61 @@ def _build_email_list_response(qs: Any, page: int, page_size: int) -> JsonRespon
     오류:
         없음.
     """
-
-    # -----------------------------------------------------------------------------
-    # 1) 응답 payload 구성
-    # -----------------------------------------------------------------------------
     return JsonResponse(serialize_email_page(qs, page=page, page_size=page_size))
 
+
+def _error_response(message: str, *, status: int) -> JsonResponse:
+    """공통 에러 응답을 생성합니다."""
+
+    return JsonResponse({"error": message}, status=status)
+
+
+def _validation_error_response(exc: EmailRequestValidationError) -> JsonResponse:
+    """요청 검증 예외를 JsonResponse로 변환합니다."""
+
+    return _error_response(str(exc), status=exc.status_code)
+
+
+def _ensure_authenticated_user(request: HttpRequest) -> JsonResponse | None:
+    """요청 사용자의 로그인 여부를 확인합니다."""
+
+    user = getattr(request, "user", None)
+    if not user or not user.is_authenticated:
+        return _error_response("unauthorized", status=401)
+    return None
+
+
+def _resolve_email_access_control(
+    request: HttpRequest,
+) -> tuple[bool, set[str] | None, JsonResponse | None]:
+    """이메일 접근 컨텍스트를 계산하고 미인증 응답을 함께 반환합니다."""
+
+    is_authenticated, is_privileged, accessible = resolve_access_control(request)
+    if not is_authenticated:
+        return is_privileged, accessible, _error_response("unauthorized", status=401)
+    return is_privileged, accessible, None
+
+
+def _parse_required_json_body(request: HttpRequest) -> tuple[dict[str, Any], JsonResponse | None]:
+    """필수 JSON 본문을 dict로 파싱합니다."""
+
+    payload = parse_json_body(request)
+    if not isinstance(payload, dict):
+        return {}, _error_response("Invalid JSON body", status=400)
+    return payload, None
+
+
+def _parse_optional_json_body(request: HttpRequest) -> tuple[dict[str, Any], JsonResponse | None]:
+    """비어 있는 본문을 허용하는 JSON 본문을 dict로 파싱합니다."""
+
+    payload = parse_json_body(request)
+    if payload is None:
+        if not request.body:
+            return {}, None
+        return {}, _error_response("Invalid JSON body", status=400)
+    if not isinstance(payload, dict):
+        return {}, _error_response("Invalid JSON body", status=400)
+    return payload, None
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -209,20 +241,12 @@ class EmailInboxListView(APIView):
             - 타임존 없는 값은 Django 기본 타임존(TIME_ZONE)으로 해석 후 UTC로 변환합니다.
             - 날짜만 입력 시 date_from=해당 날짜 00:00:00, date_to=해당 날짜 23:59:59.999999로 처리됩니다.
         """
-
-        # -----------------------------------------------------------------------------
-        # 1) 인증/권한 확인
-        # -----------------------------------------------------------------------------
-        is_authenticated, is_privileged, accessible = resolve_access_control(request)
-        if not is_authenticated:
-            return JsonResponse({"error": "unauthorized"}, status=401)
+        is_privileged, accessible, auth_error = _resolve_email_access_control(request)
+        if auth_error is not None:
+            return auth_error
 
         if not is_privileged and not accessible:
-            return JsonResponse({"error": "forbidden"}, status=403)
-
-        # -----------------------------------------------------------------------------
-        # 2) 필터 파싱 및 메일함 접근 검증
-        # -----------------------------------------------------------------------------
+            return _error_response("forbidden", status=403)
         filters = build_email_filters(
             params=request.GET,
             default_page_size=DEFAULT_PAGE_SIZE,
@@ -230,18 +254,14 @@ class EmailInboxListView(APIView):
         )
         mailbox_user_sdwt_prod = filters["mailbox_user_sdwt_prod"]
         if mailbox_user_sdwt_prod == SENT_MAILBOX_ID:
-            return JsonResponse({"error": "use sent endpoint"}, status=400)
+            return _error_response("use sent endpoint", status=400)
         if not user_can_access_mailbox(
             user=request.user,
             mailbox_user_sdwt_prod=mailbox_user_sdwt_prod,
             is_privileged=is_privileged,
             accessible=accessible,
         ):
-            return JsonResponse({"error": "forbidden"}, status=403)
-
-        # -----------------------------------------------------------------------------
-        # 3) 조회 실행
-        # -----------------------------------------------------------------------------
+            return _error_response("forbidden", status=403)
         can_view_unassigned = user_can_view_unassigned(request.user)
         qs = get_filtered_emails(
             accessible_user_sdwt_prods=accessible,
@@ -254,10 +274,6 @@ class EmailInboxListView(APIView):
             date_from=filters["date_from"],
             date_to=filters["date_to"],
         )
-
-        # -----------------------------------------------------------------------------
-        # 4) 페이지네이션 응답 구성
-        # -----------------------------------------------------------------------------
         page = filters["page"]
         page_size = filters["page_size"]
 
@@ -290,30 +306,14 @@ class EmailSentListView(APIView):
             - 타임존 없는 값은 Django 기본 타임존(TIME_ZONE)으로 해석 후 UTC로 변환합니다.
             - 날짜만 입력 시 date_from=해당 날짜 00:00:00, date_to=해당 날짜 23:59:59.999999로 처리됩니다.
         """
-
-        # -----------------------------------------------------------------------------
-        # 1) 인증 확인
-        # -----------------------------------------------------------------------------
-        is_authenticated, _is_privileged, _accessible = resolve_access_control(request)
-        if not is_authenticated:
-            return JsonResponse({"error": "unauthorized"}, status=401)
-
-        # -----------------------------------------------------------------------------
-        # 2) 금지 파라미터 검증
-        # -----------------------------------------------------------------------------
+        _is_privileged, _accessible, auth_error = _resolve_email_access_control(request)
+        if auth_error is not None:
+            return auth_error
         if "knox_id" in request.GET or "knoxId" in request.GET:
-            return JsonResponse({"error": "knox_id query param is not allowed"}, status=400)
-
-        # -----------------------------------------------------------------------------
-        # 3) sender_id 확인
-        # -----------------------------------------------------------------------------
+            return _error_response("knox_id query param is not allowed", status=400)
         sender_id = _resolve_sender_id_from_user(request.user)
         if not sender_id:
-            return JsonResponse({"error": "forbidden"}, status=403)
-
-        # -----------------------------------------------------------------------------
-        # 4) 필터 파싱 및 조회
-        # -----------------------------------------------------------------------------
+            return _error_response("forbidden", status=403)
         filters = build_email_filters(
             params=request.GET,
             default_page_size=DEFAULT_PAGE_SIZE,
@@ -328,10 +328,6 @@ class EmailSentListView(APIView):
             date_from=filters["date_from"],
             date_to=filters["date_to"],
         )
-
-        # -----------------------------------------------------------------------------
-        # 5) 페이지네이션 응답 구성
-        # -----------------------------------------------------------------------------
         page = filters["page"]
         page_size = filters["page_size"]
 
@@ -359,19 +355,11 @@ class EmailMailboxListView(APIView):
         snake/camel 호환:
             해당 없음(쿼리 파라미터 없음).
         """
-
-        # -----------------------------------------------------------------------------
-        # 1) 인증/권한 확인
-        # -----------------------------------------------------------------------------
-        is_authenticated, is_privileged, accessible = resolve_access_control(request)
-        if not is_authenticated:
-            return JsonResponse({"error": "unauthorized"}, status=401)
-
-        # -----------------------------------------------------------------------------
-        # 2) 메일함 목록 구성
-        # -----------------------------------------------------------------------------
+        is_privileged, accessible, auth_error = _resolve_email_access_control(request)
+        if auth_error is not None:
+            return auth_error
         if not is_privileged and not accessible:
-            return JsonResponse({"error": "forbidden"}, status=403)
+            return _error_response("forbidden", status=403)
 
         results = list_mailboxes_for_user_access(
             user=request.user,
@@ -404,40 +392,24 @@ class EmailMailboxMembersView(APIView):
         snake/camel 호환:
             user_sdwt_prod <-> userSdwtProd 지원.
         """
-
-        # -----------------------------------------------------------------------------
-        # 1) 인증/권한 확인
-        # -----------------------------------------------------------------------------
-        is_authenticated, is_privileged, accessible = resolve_access_control(request)
-        if not is_authenticated:
-            return JsonResponse({"error": "unauthorized"}, status=401)
+        is_privileged, accessible, auth_error = _resolve_email_access_control(request)
+        if auth_error is not None:
+            return auth_error
 
         if not is_privileged and not accessible:
-            return JsonResponse({"error": "forbidden"}, status=403)
-
-        # -----------------------------------------------------------------------------
-        # 2) 메일함 파라미터 검증
-        # -----------------------------------------------------------------------------
+            return _error_response("forbidden", status=403)
         mailbox_user_sdwt_prod = parse_mailbox_user_sdwt_prod(request.GET)
         if not mailbox_user_sdwt_prod:
-            return JsonResponse({"error": "user_sdwt_prod is required"}, status=400)
+            return _error_response("user_sdwt_prod is required", status=400)
         if mailbox_user_sdwt_prod == SENT_MAILBOX_ID:
-            return JsonResponse({"error": "sent mailbox has no members"}, status=400)
-
-        # -----------------------------------------------------------------------------
-        # 3) UNASSIGNED/권한 검증
-        # -----------------------------------------------------------------------------
+            return _error_response("sent mailbox has no members", status=400)
         if not user_can_access_mailbox(
             user=request.user,
             mailbox_user_sdwt_prod=mailbox_user_sdwt_prod,
             is_privileged=is_privileged,
             accessible=accessible,
         ):
-            return JsonResponse({"error": "forbidden"}, status=403)
-
-        # -----------------------------------------------------------------------------
-        # 4) 멤버 조회 및 응답
-        # -----------------------------------------------------------------------------
+            return _error_response("forbidden", status=403)
         members = list_mailbox_members(mailbox_user_sdwt_prod=mailbox_user_sdwt_prod)
         return JsonResponse({"userSdwtProd": mailbox_user_sdwt_prod, "members": members})
 
@@ -459,8 +431,9 @@ class EmailMailboxSummaryView(APIView):
             - 401: 인증 실패
         """
 
-        if not request.user or not request.user.is_authenticated:
-            return JsonResponse({"error": "unauthorized"}, status=401)
+        auth_error = _ensure_authenticated_user(request)
+        if auth_error is not None:
+            return auth_error
 
         results = get_mailbox_access_summary_for_user(user=request.user)
         return JsonResponse({"results": results})
@@ -487,20 +460,13 @@ class EmailUnassignedSummaryView(APIView):
         snake/camel 호환:
             해당 없음(쿼리 파라미터 없음).
         """
-
-        # -----------------------------------------------------------------------------
-        # 1) 인증 확인
-        # -----------------------------------------------------------------------------
+        auth_error = _ensure_authenticated_user(request)
+        if auth_error is not None:
+            return auth_error
         user = request.user
-        if not user or not user.is_authenticated:
-            return JsonResponse({"error": "unauthorized"}, status=401)
-
-        # -----------------------------------------------------------------------------
-        # 2) sender_id 확인 및 카운트 조회
-        # -----------------------------------------------------------------------------
         sender_id = _resolve_sender_id_from_user(user)
         if not sender_id:
-            return JsonResponse({"error": "forbidden"}, status=403)
+            return _error_response("forbidden", status=403)
         count = count_unassigned_emails_for_sender_id(sender_id=sender_id)
         return JsonResponse({"mailbox": UNASSIGNED_USER_SDWT_PROD, "count": count})
 
@@ -528,31 +494,20 @@ class EmailUnassignedClaimView(APIView):
         snake/camel 호환:
             해당 없음(요청 본문 없음).
         """
-
-        # -----------------------------------------------------------------------------
-        # 1) 인증 확인
-        # -----------------------------------------------------------------------------
+        auth_error = _ensure_authenticated_user(request)
+        if auth_error is not None:
+            return auth_error
         user = request.user
-        if not user or not user.is_authenticated:
-            return JsonResponse({"error": "unauthorized"}, status=401)
-
-        # -----------------------------------------------------------------------------
-        # 2) 서비스 호출 및 예외 처리
-        # -----------------------------------------------------------------------------
         try:
             payload = claim_unassigned_emails_for_user(user=user)
         except PermissionError:
-            return JsonResponse({"error": "forbidden"}, status=403)
+            return _error_response("forbidden", status=403)
         except ValueError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
         except Exception:  # pragma: no cover  테스트 제외
             # 방어적 로깅
             logger.exception("Failed to claim UNASSIGNED emails for user_id=%s", getattr(user, "id", None))
             return JsonResponse({"error": "Failed to claim emails"}, status=500)
-
-        # -----------------------------------------------------------------------------
-        # 3) 응답 반환
-        # -----------------------------------------------------------------------------
         return JsonResponse(payload)
 
 
@@ -579,13 +534,9 @@ class EmailDetailView(APIView):
         snake/camel 호환:
             해당 없음(경로 파라미터만 사용).
         """
-
-        # -----------------------------------------------------------------------------
-        # 1) 인증/권한 확인
-        # -----------------------------------------------------------------------------
-        is_authenticated, is_privileged, accessible = resolve_access_control(request)
-        if not is_authenticated:
-            return JsonResponse({"error": "unauthorized"}, status=401)
+        is_privileged, accessible, auth_error = _resolve_email_access_control(request)
+        if auth_error is not None:
+            return auth_error
         email = get_email_by_id(email_id=email_id)
         access_error = _check_email_access(
             request=request,
@@ -595,10 +546,6 @@ class EmailDetailView(APIView):
         )
         if access_error:
             return access_error
-
-        # -----------------------------------------------------------------------------
-        # 2) 상세 응답 반환
-        # -----------------------------------------------------------------------------
         return JsonResponse(serialize_email_detail(email))
 
     def delete(self, request: HttpRequest, email_id: int, *args: object, **kwargs: object) -> JsonResponse:
@@ -621,13 +568,9 @@ class EmailDetailView(APIView):
         snake/camel 호환:
             해당 없음(경로 파라미터만 사용).
         """
-
-        # -----------------------------------------------------------------------------
-        # 1) 인증/권한 확인
-        # -----------------------------------------------------------------------------
-        is_authenticated, is_privileged, accessible = resolve_access_control(request)
-        if not is_authenticated:
-            return JsonResponse({"error": "unauthorized"}, status=401)
+        is_privileged, accessible, auth_error = _resolve_email_access_control(request)
+        if auth_error is not None:
+            return auth_error
         email = get_email_by_id(email_id=email_id)
         access_error = _check_email_access(
             request=request,
@@ -637,10 +580,6 @@ class EmailDetailView(APIView):
         )
         if access_error:
             return access_error
-
-        # -----------------------------------------------------------------------------
-        # 2) 삭제 수행 및 예외 처리
-        # -----------------------------------------------------------------------------
         try:
             delete_single_email(email_id)
             return JsonResponse({"status": "ok"})
@@ -676,13 +615,9 @@ class EmailHtmlView(APIView):
         snake/camel 호환:
             해당 없음(경로 파라미터만 사용).
         """
-
-        # -----------------------------------------------------------------------------
-        # 1) 인증/권한 확인
-        # -----------------------------------------------------------------------------
-        is_authenticated, is_privileged, accessible = resolve_access_control(request)
-        if not is_authenticated:
-            return JsonResponse({"error": "unauthorized"}, status=401)
+        is_privileged, accessible, auth_error = _resolve_email_access_control(request)
+        if auth_error is not None:
+            return auth_error
         email = get_email_by_id(email_id=email_id)
         access_error = _check_email_access(
             request=request,
@@ -692,10 +627,6 @@ class EmailHtmlView(APIView):
         )
         if access_error:
             return access_error
-
-        # -----------------------------------------------------------------------------
-        # 2) HTML 로드 및 응답
-        # -----------------------------------------------------------------------------
         try:
             html_bytes = load_email_html(email=email)
         except Exception:  # pragma: no cover  테스트 제외
@@ -743,13 +674,9 @@ class EmailAssetView(APIView):
         snake/camel 호환:
             해당 없음(경로 파라미터만 사용).
         """
-
-        # -----------------------------------------------------------------------------
-        # 1) 인증/권한 확인
-        # -----------------------------------------------------------------------------
-        is_authenticated, is_privileged, accessible = resolve_access_control(request)
-        if not is_authenticated:
-            return JsonResponse({"error": "unauthorized"}, status=401)
+        is_privileged, accessible, auth_error = _resolve_email_access_control(request)
+        if auth_error is not None:
+            return auth_error
         email = get_email_by_id(email_id=email_id)
         access_error = _check_email_access(
             request=request,
@@ -759,17 +686,9 @@ class EmailAssetView(APIView):
         )
         if access_error:
             return access_error
-
-        # -----------------------------------------------------------------------------
-        # 2) 자산 조회
-        # -----------------------------------------------------------------------------
         asset = get_email_asset_by_email_and_sequence(email_id=email_id, sequence=sequence)
         if asset is None:
             return JsonResponse({"error": "Email asset not found"}, status=404)
-
-        # -----------------------------------------------------------------------------
-        # 3) MinIO 로드 및 응답
-        # -----------------------------------------------------------------------------
         try:
             asset_bytes = load_email_asset(asset=asset)
         except Exception:  # pragma: no cover  테스트 제외
@@ -812,37 +731,18 @@ class EmailBulkDeleteView(APIView):
         snake/camel 호환:
             email_ids <-> emailIds 지원.
         """
-
-        # -----------------------------------------------------------------------------
-        # 1) 인증/권한 확인
-        # -----------------------------------------------------------------------------
-        is_authenticated, is_privileged, accessible = resolve_access_control(request)
-        if not is_authenticated:
-            return JsonResponse({"error": "unauthorized"}, status=401)
+        is_privileged, accessible, auth_error = _resolve_email_access_control(request)
+        if auth_error is not None:
+            return auth_error
         if not is_privileged and not accessible:
-            return JsonResponse({"error": "forbidden"}, status=403)
-
-        # -----------------------------------------------------------------------------
-        # 2) 요청 본문 파싱 및 id 정규화
-        # -----------------------------------------------------------------------------
-        payload = parse_json_body(request)
-        if payload is None:
-            return JsonResponse({"error": "Invalid JSON body"}, status=400)
-
-        email_ids = payload.get("email_ids") or payload.get("emailIds")
-        if not isinstance(email_ids, list) or not email_ids:
-            return JsonResponse({"error": "email_ids must be a non-empty list"}, status=400)
-
-        normalized_ids: List[int] = []
-        for raw in email_ids:
-            try:
-                normalized_ids.append(int(raw))
-            except (TypeError, ValueError):
-                return JsonResponse({"error": "email_ids must contain numeric values"}, status=400)
-
-        # -----------------------------------------------------------------------------
-        # 3) 권한 검증
-        # -----------------------------------------------------------------------------
+            return _error_response("forbidden", status=403)
+        payload, payload_error = _parse_required_json_body(request)
+        if payload_error is not None:
+            return payload_error
+        try:
+            normalized_ids = parse_email_id_list(payload)
+        except EmailRequestValidationError as exc:
+            return _validation_error_response(exc)
         if not is_privileged:
             sender_id = _resolve_sender_id_from_user(request.user)
             if not user_can_bulk_delete_emails(
@@ -850,16 +750,12 @@ class EmailBulkDeleteView(APIView):
                 accessible_user_sdwt_prods=accessible,
                 sender_id=sender_id,
             ):
-                return JsonResponse({"error": "forbidden"}, status=403)
+                return _error_response("forbidden", status=403)
         else:
             if not user_can_view_unassigned(request.user) and contains_unassigned_emails(
                 email_ids=normalized_ids
             ):
-                return JsonResponse({"error": "forbidden"}, status=403)
-
-        # -----------------------------------------------------------------------------
-        # 4) 삭제 수행 및 결과 반환
-        # -----------------------------------------------------------------------------
+                return _error_response("forbidden", status=403)
         try:
             deleted_count = bulk_delete_emails(normalized_ids)
             return JsonResponse({"deleted": deleted_count})
@@ -897,42 +793,20 @@ class EmailMoveView(APIView):
         snake/camel 호환:
             email_ids <-> emailIds, to_user_sdwt_prod <-> toUserSdwtProd 지원.
         """
-
-        # -----------------------------------------------------------------------------
-        # 1) 인증 확인
-        # -----------------------------------------------------------------------------
+        auth_error = _ensure_authenticated_user(request)
+        if auth_error is not None:
+            return auth_error
         user = request.user
-        if not user or not user.is_authenticated:
-            return JsonResponse({"error": "unauthorized"}, status=401)
-
-        # -----------------------------------------------------------------------------
-        # 2) 요청 본문 파싱 및 id 정규화
-        # -----------------------------------------------------------------------------
-        payload = parse_json_body(request)
-        if payload is None:
-            return JsonResponse({"error": "Invalid JSON body"}, status=400)
-
-        email_ids = payload.get("email_ids") or payload.get("emailIds")
-        if not isinstance(email_ids, list) or not email_ids:
-            return JsonResponse({"error": "email_ids must be a non-empty list"}, status=400)
-
-        normalized_ids: List[int] = []
-        for raw in email_ids:
-            try:
-                normalized_ids.append(int(raw))
-            except (TypeError, ValueError):
-                return JsonResponse({"error": "email_ids must contain numeric values"}, status=400)
-
-        # -----------------------------------------------------------------------------
-        # 3) 대상 메일함 검증
-        # -----------------------------------------------------------------------------
+        payload, payload_error = _parse_required_json_body(request)
+        if payload_error is not None:
+            return payload_error
+        try:
+            normalized_ids = parse_email_id_list(payload)
+        except EmailRequestValidationError as exc:
+            return _validation_error_response(exc)
         target_user_sdwt_prod = payload.get("to_user_sdwt_prod") or payload.get("toUserSdwtProd")
         if not isinstance(target_user_sdwt_prod, str) or not target_user_sdwt_prod.strip():
-            return JsonResponse({"error": "to_user_sdwt_prod is required"}, status=400)
-
-        # -----------------------------------------------------------------------------
-        # 4) 이동 처리 및 결과 반환
-        # -----------------------------------------------------------------------------
+            return _error_response("to_user_sdwt_prod is required", status=400)
         try:
             result = move_emails_for_user(
                 user=user,
@@ -943,7 +817,7 @@ class EmailMoveView(APIView):
         except ValueError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
         except PermissionError:
-            return JsonResponse({"error": "forbidden"}, status=403)
+            return _error_response("forbidden", status=403)
         except Exception:  # pragma: no cover  테스트 제외
             # 방어적 로깅
             logger.exception("Failed to move emails")
@@ -976,10 +850,6 @@ class EmailIngestTriggerView(APIView):
         snake/camel 호환:
             해당 없음(요청 본문 없음).
         """
-
-        # -----------------------------------------------------------------------------
-        # 1) 토큰/인증 검증
-        # -----------------------------------------------------------------------------
         expected_token = getattr(settings, "AIRFLOW_TRIGGER_TOKEN", "") or ""
         provided_token = extract_bearer_token(request)
 
@@ -988,10 +858,6 @@ class EmailIngestTriggerView(APIView):
                 return JsonResponse({"error": "Unauthorized"}, status=401)
         elif not request.user.is_authenticated:
             return JsonResponse({"error": "로그인이 필요합니다."}, status=401)
-
-        # -----------------------------------------------------------------------------
-        # 2) 수집 실행 및 결과 반환
-        # -----------------------------------------------------------------------------
         try:
             result = run_pop3_ingest_from_env() or {}
             return JsonResponse({"deleted": result.get("deleted", 0), "reindexed": result.get("reindexed", 0)})
@@ -1030,17 +896,9 @@ class EmailOutboxProcessTriggerView(APIView):
         snake/camel 호환:
             해당 없음(limit 키만 사용).
         """
-
-        # -----------------------------------------------------------------------------
-        # 1) Airflow 토큰 검증
-        # -----------------------------------------------------------------------------
         auth_response = ensure_airflow_token(request)
         if auth_response is not None:
             return auth_response
-
-        # -----------------------------------------------------------------------------
-        # 2) limit 파라미터 파싱
-        # -----------------------------------------------------------------------------
         content_type = request.META.get("CONTENT_TYPE", "")
         if content_type.startswith("application/json"):
             payload, payload_error = parse_json_body_or_error_when_present(request)
@@ -1048,22 +906,13 @@ class EmailOutboxProcessTriggerView(APIView):
                 return payload_error
         else:
             payload = {}
-        raw_limit = payload.get("limit")
-        if raw_limit is None:
-            raw_limit = request.GET.get("limit")
-
-        limit = None
-        if raw_limit is not None:
-            try:
-                limit = int(raw_limit)
-            except (TypeError, ValueError):
-                return JsonResponse({"error": "limit must be an integer"}, status=400)
-            if limit <= 0:
-                limit = None
-
-        # -----------------------------------------------------------------------------
-        # 3) 처리 실행 및 결과 반환
-        # -----------------------------------------------------------------------------
+        try:
+            limit = parse_optional_positive_limit(
+                body_value=payload.get("limit"),
+                query_value=request.GET.get("limit"),
+            )
+        except EmailRequestValidationError as exc:
+            return _validation_error_response(exc)
         try:
             if limit is None:
                 result = process_email_outbox_batch()
@@ -1104,31 +953,16 @@ class EmailAssetOcrClaimView(APIView):
         snake/camel 호환:
             snake_case만 사용합니다.
         """
-
-        # -----------------------------------------------------------------------------
-        # 1) 내부 토큰 검증
-        # -----------------------------------------------------------------------------
         auth_response = _ensure_internal_token(request)
         if auth_response is not None:
             return auth_response
-
-        # -----------------------------------------------------------------------------
-        # 2) 요청 본문 파싱 및 검증
-        # -----------------------------------------------------------------------------
-        payload = parse_json_body(request)
-        if payload is None:
-            if not request.body:
-                payload = {}
-            else:
-                return JsonResponse({"error": "Invalid JSON body"}, status=400)
+        payload, payload_error = _parse_optional_json_body(request)
+        if payload_error is not None:
+            return payload_error
 
         serializer = EmailAssetOcrClaimSerializer(data=payload)
         if not serializer.is_valid():
             return JsonResponse(serializer.errors, status=400)
-
-        # -----------------------------------------------------------------------------
-        # 3) 기본값 준비
-        # -----------------------------------------------------------------------------
         default_limit = getattr(settings, "EMAIL_OCR_CLAIM_LIMIT", 50) or 50
         default_lease_seconds = getattr(settings, "EMAIL_OCR_LEASE_SECONDS", 1800) or 1800
         max_attempts = getattr(settings, "EMAIL_OCR_MAX_ATTEMPTS", 3) or 3
@@ -1136,10 +970,6 @@ class EmailAssetOcrClaimView(APIView):
         limit = serializer.validated_data.get("limit") or default_limit
         lease_seconds = serializer.validated_data.get("lease_seconds") or default_lease_seconds
         worker_id = serializer.validated_data.get("worker_id")
-
-        # -----------------------------------------------------------------------------
-        # 4) 서비스 호출 및 결과 반환
-        # -----------------------------------------------------------------------------
         tasks = claim_email_asset_ocr_tasks(
             limit=limit,
             lease_seconds=lease_seconds,
@@ -1185,28 +1015,16 @@ class EmailAssetOcrUpdateView(APIView):
         snake/camel 호환:
             snake_case만 사용합니다.
         """
-
-        # -----------------------------------------------------------------------------
-        # 1) 내부 토큰 검증
-        # -----------------------------------------------------------------------------
         auth_response = _ensure_internal_token(request)
         if auth_response is not None:
             return auth_response
-
-        # -----------------------------------------------------------------------------
-        # 2) 요청 본문 파싱 및 검증
-        # -----------------------------------------------------------------------------
-        payload = parse_json_body(request)
-        if payload is None:
-            return JsonResponse({"error": "Invalid JSON body"}, status=400)
+        payload, payload_error = _parse_required_json_body(request)
+        if payload_error is not None:
+            return payload_error
 
         serializer = EmailAssetOcrUpdateSerializer(data=payload)
         if not serializer.is_valid():
             return JsonResponse(serializer.errors, status=400)
-
-        # -----------------------------------------------------------------------------
-        # 3) 서비스 호출 및 결과 반환
-        # -----------------------------------------------------------------------------
         max_attempts = getattr(settings, "EMAIL_OCR_MAX_ATTEMPTS", 3) or 3
         results = serializer.validated_data.get("results") or []
         result = update_email_asset_ocr_results(results=results, max_attempts=max_attempts)

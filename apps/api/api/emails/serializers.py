@@ -14,6 +14,49 @@ from rest_framework import serializers
 from .models import EmailAsset
 
 
+class EmailRequestValidationError(ValueError):
+    """Email API 요청 검증 실패를 표현하는 예외입니다."""
+
+    def __init__(self, message: str, *, status_code: int = 400) -> None:
+        """응답 상태 코드와 메시지를 함께 보관합니다."""
+
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def parse_email_id_list(payload: dict[str, Any]) -> list[int]:
+    """email_ids/emailIds 값을 양의 정수 리스트로 파싱합니다."""
+
+    email_ids = payload.get("email_ids") or payload.get("emailIds")
+    if not isinstance(email_ids, list) or not email_ids:
+        raise EmailRequestValidationError("email_ids must be a non-empty list")
+
+    normalized_ids: list[int] = []
+    for raw in email_ids:
+        try:
+            email_id = int(raw)
+        except (TypeError, ValueError) as exc:
+            raise EmailRequestValidationError("email_ids must contain numeric values") from exc
+        if email_id <= 0:
+            raise EmailRequestValidationError("email_ids must contain numeric values")
+        normalized_ids.append(email_id)
+    return normalized_ids
+
+
+def parse_optional_positive_limit(*, body_value: Any, query_value: Any) -> int | None:
+    """본문 또는 query string의 limit 값을 양의 정수로 파싱합니다."""
+
+    raw_limit = body_value if body_value is not None else query_value
+    if raw_limit is None:
+        return None
+
+    try:
+        limit = int(raw_limit)
+    except (TypeError, ValueError) as exc:
+        raise EmailRequestValidationError("limit must be an integer") from exc
+    return limit if limit > 0 else None
+
+
 def serialize_email_summary(email: Any) -> Dict[str, Any]:
     """Email 인스턴스를 목록 응답용 dict로 직렬화합니다.
 
@@ -145,6 +188,9 @@ __all__ = [
     "EmailAssetOcrClaimSerializer",
     "EmailAssetOcrUpdateSerializer",
     "EmailAssetOcrUpdateItemSerializer",
+    "EmailRequestValidationError",
+    "parse_email_id_list",
+    "parse_optional_positive_limit",
     "serialize_email_detail",
     "serialize_email_page",
     "serialize_email_summary",
