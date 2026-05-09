@@ -1,0 +1,13 @@
+담당 scope: 전체 리팩토링 결과 통합 검토. 직접 수정은 최소화.
+
+목표:
+- 각 feature agent의 변경이 feature boundary, import rule, public facade rule을 지키는지 확인한다.
+- 중복으로 수정된 공통 파일/route/env/doc 변경 충돌을 식별한다.
+- 테스트 실행 계획을 backend/frontend로 나눠 정리한다.
+- API contract, DB migration, 권한 정책, UI behavior 변경 의심 항목을 risk list로 만든다.
+
+출력:
+- merge 순서 권장안
+- conflict 예상 파일
+- 반드시 실행할 테스트 명령
+- 승인 필요한 behavior/schema 변경 목록

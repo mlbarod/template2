@@ -1,0 +1,11 @@
+담당 scope: auth 기능. Backend `api.auth`, frontend `features/auth`.
+
+리팩토링 목표:
+- OIDC login/callback/logout/me 흐름의 책임을 view/service/selector로 명확히 분리한다.
+- state/nonce/token claim 검증 로직을 읽기 쉬운 작은 함수로 정리한다.
+- frontend auth provider, guard, login UI, onboarding/reconfirm dialog 연동 코드의 중복 fetch/state 처리를 줄인다.
+- redirect target 검증, session 처리, knox_id 필수 정책은 절대 바꾸지 않는다.
+
+주의:
+- OIDC callback path, session contract, `/api/v1/auth/me` 응답 shape 변경 금지.
+- account feature 내부 직접 import 금지. 필요한 경우 기존 facade/selector 경계를 따른다.

@@ -1,0 +1,12 @@
+담당 scope: timeline 기능. Backend `api.timeline`, frontend `features/timeline`.
+
+리팩토링 목표:
+- line/sdwt/prc/equipment/log 조회 selector를 데이터 소스별로 정리한다.
+- raw SQL/query helper 사용부의 중복 validation/normalization을 줄인다.
+- frontend timeline components 중 큰 detail/timeline/list 파일을 역할별로 분리한다.
+- vis-timeline 연동 hook과 데이터 변환 utils의 책임을 명확히 한다.
+
+주의:
+- timeline 전용 DB query 결과 shape 변경 금지.
+- Jira/Drone 로그 결합 방식 변경 금지.
+- timeline CSS/class contract를 바꿀 경우 UI regression 리스크를 명시한다.

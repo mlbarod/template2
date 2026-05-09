@@ -1,418 +1,73 @@
-# 🧭 agents.md — Ultra-Optimized Constitution for LLM Agents
-aaa
-### (Strict, Unambiguous, Machine-Executable Rules)
+# Tailwind 프로젝트 안내
 
-이 문서는 LLM 에이전트가 반드시 따라야 하는 **절대 규칙(Constitution)**을 정의한다.
-모든 규칙은 모호함 없이 실행 가능해야 하며, 생성되는 아키텍처가 항상 일관되고 재현 가능하도록 한다.
+이 저장소는 React 웹앱과 Django API를 함께 관리하는 업무용 모듈형 모놀리스입니다. 화면은 `apps/web`, 서버 API는 `apps/api`, 로컬 개발용 더미 외부 시스템은 `apps/adfs_dummy`에 있습니다.
 
-LLM 에이전트는 **이 문서의 모든 규칙을 100% 준수해야 한다.**
-조금이라도 불확실한 경우, 에이전트는 반드시 인간에게 질문해야 한다.
+## 한눈에 보기
 
----
+| 영역 | 경로 | 역할 |
+| --- | --- | --- |
+| Web | `apps/web` | React 19 + Vite SPA |
+| API | `apps/api` | Django 5.1 API 서버 |
+| Dummy 외부계 | `apps/adfs_dummy` | 로컬 ADFS/RAG/LLM/메일/Jira 대체 서버 |
+| Docs | `docs` | 앱 전체 기능/API/운영/연동 문서 |
+| Env | `env` | Docker Compose 환경 변수 |
+| Proxy | `deploy/nginx` | 로컬 통합 진입점 |
 
-# 1. Global Execution Rules
+## 로컬에서 실행하기
 
-## 1-1. Deterministic Behavior
+개발 환경은 Docker Compose 기준입니다.
 
-LLM 에이전트는 반드시:
-
-* 모든 규칙을 정확히 따르고, 추측이나 창작을 하지 않는다.
-* 폴더 경로, 컴포넌트 구조, 네이밍을 일관되게 유지한다.
-* 명시되지 않은 패턴을 새로 발명하지 않는다.
-* 세부사항이 불분명하면 무조건 질문한다.
-
-## 1-2. Output Format Rules
-
-* 코드는 항상 문법적으로 유효해야 한다.
-* 파일 경로는 반드시 `/` 를 사용한다.
-* import 경로는 실제로 존재해야 한다.
-* 컴포넌트: PascalCase
-* 훅(hook): camelCase
-* 유틸 함수: camelCase
-* Feature export는 항상 해당 feature의 `index.js`를 통한다.
-
----
-
-# 2. Architectural Rules (LLM-Strict)
-
-## 2-1. Vertical Slice Isolation
-
-모든 기능은 완전한 Vertical Slice로 구성해야 한다.
-
-### Feature Path
-
-```
-apps/web/src/features/<feature>
+```bash
+docker compose -f docker-compose.dev.yml up -d
 ```
 
-### Allowed Subfolders
+실행 후 주로 보는 주소는 다음과 같습니다.
 
-```
-pages/
-components/
-hooks/
-api/
-store/
-utils/
-routes.jsx
-index.js
-```
+- Web: `http://localhost:3000`
+- API: `http://localhost:8000`
+- 통합 진입점: `http://localhost`
+- 더미 ADFS/RAG/LLM/메일/Jira: `http://localhost:9102`
+- MinIO: `http://localhost:9000`, `http://localhost:9001`
 
-### MUST obey
+## 자주 쓰는 명령
 
-* 새로운 폴더는 생성 불가.
-* 2단계보다 깊은 폴더 구조는 금지.
-* 다른 feature 내부 경로로 import 금지.
-
-### Allowed Imports
-
-* `apps/web/src/components/ui/*`
-* `apps/web/src/components/layout/*`
-* `apps/web/src/components/common/*`
-* `apps/web/src/lib/*`
-* `apps/web/src/features/<otherFeature>/index.js` (최상위만)
-
-그 외 import는 **INVALID**.
-
----
-
-# 3. UI Stack Rules
-
-## 3-1. Immutable UI Layer
-
-LLM 에이전트는 다음 경로를 절대 수정할 수 없다:
-
-```
-apps/web/src/components/ui/**/*
+```bash
+npm run web:dev
+npm run web:build
+npm run web:lint
+docker compose -f docker-compose.dev.yml exec -T api python manage.py check
+docker compose -f docker-compose.dev.yml exec -T api python manage.py test
+docker compose -f docker-compose.dev.yml exec -T api python manage.py makemigrations --check --dry-run
 ```
 
-새로운 UI primitive는 반드시 shadcn CLI를 사용해 추가한다.
-
-## 3-2. UI Assembly Hierarchy
-
-UI는 반드시 아래 계층 구조를 따른다.
-
-1. UI primitives (`components/ui/*`)
-2. Layout components (`components/layout/*`)
-3. Common shared components (`components/common/*`)
-4. Feature-specific UI (`features/<feature>/components/*`)
-
-이 계층 구조를 바꾸는 것은 금지한다.
-
----
-
-# 4. Routing Rules
-
-## 4-1. Feature Route Export
-
-각 feature는 반드시 `routes.jsx`를 포함하고 route 설정을 export해야 한다.
-
-## 4-2. Global Routes
-
-전역 라우팅은 오직:
-
-```
-apps/web/src/routes/*
-```
-
-에만 존재한다.
-
-## 4-3. No Business Logic in Routes
-
-Routes는 다음만 가능:
-
-* 구조 정의
-* element 지정
-* param validation
-* redirect
-
-Routes 내부에 다음은 **절대 금지**:
-
-* 비즈니스 로직
-* 데이터 로직
-* UI 상태 계산
-
----
-
-# 5. State & Data Rules
-
-## 5-1. React Query
-
-React Query는 유일한 서버 데이터 출처이다.
-
-LLM MUST:
-
-* 배열 기반 Query Key 사용
-* 중복된 키 사용 금지
-* 최소 단위 invalidation
-* Zustand에 서버 데이터 저장 금지
-
-## 5-2. Zustand
-
-Zustand는 다음 목적에만 사용 가능:
-
-* UI 상태
-* Interaction Flow
-* Multi-step form
-* 임시 공유 상태
-
-Zustand에 다음은 금지:
-
-* 서버 데이터
-* Redux 스타일 mega-store
-* 전역 비즈니스 상태
-
-Store path 규칙:
-
-```
-apps/web/src/features/<feature>/store/useSomethingStore.js
-```
-
----
-
-# 6. Coding Rules
-
-## 6-1. Naming
-
-* Components → PascalCase
-* Hooks → camelCase
-* Utilities → camelCase
-* Zustand store → useSomethingStore
-* Pages → PascalCase
-* API modules → camelCase
-
-## 6-2. Styling
-
-LLM MUST:
-
-* Tailwind classnames 사용
-* design tokens (`text-primary`, `bg-muted` 등)만 사용
-* dark mode는 `dark:` prefix
-
-LLM MUST NOT:
-
-* 임의의 HEX 값 사용
-* inline 스타일 사용 (필요 시 예외)
-
----
-
-# 7. React 19 Rules
-
-LLM MUST NOT:
-
-* 불필요한 useMemo
-* 불필요한 useCallback
-* 불필요한 React.memo
-
-Allowed only when:
-
-* 무거운 계산이 존재함
-* 라이브러리가 stable identity 요구
-
----
-
-# 8. Backend / Django Rules
-
-LLM MUST:
-
-* API prefix는 `/api/v1/<feature>`
-* 앱 간 모델 import 금지
-* 도메인 로직은 service 계층에 존재해야 함
-* 모든 timestamp는 UTC
-
----
-
-# 9. File Generation Rules
-
-새 파일 생성 시:
-
-1. 전체 경로 출력
-2. 파일 내용 전체 출력
-3. import 유효성 보장
-4. 아키텍처 규칙 준수
-5. 일관된 naming 적용
-
-기존 파일 수정 시:
-
-* 구조 보존
-* export 유지
-* 요청 범위 외 변경 금지
-
----
-
-# 10. LLM Error Handling Rules
-
-LLM MUST ask for clarification when:
-
-* 폴더명 모호
-* 파일 위치 불명확
-* API schema 없음
-* 복수 해석 가능
-
-LLM MUST NOT guess.
-
----
-
-# 11. Layout Rules (Strict for All Features)
-
-## 11-1. Layout Philosophy
-
-레이아웃은 다음 두 원칙을 따른다:
-
-1. 바깥 컨테이너는 고정 높이 또는 구조적 Flex/Grid를 제공한다.
-2. **스크롤은 한 축에서 단 하나의 요소에서만 발생한다.**
-
-스크롤이 여러 곳에서 동시에 발생하면 INVALID.
-
----
-
-## 11-2. Global Page Skeleton Rule
-
-모든 페이지는 다음 기본 골격을 따라야 한다:
-
-```tsx
-<div class="h-screen flex flex-col">
-  <header class="h-14 shrink-0"> ... </header>
-
-  <main class="flex-1 min-h-0 overflow-hidden">
-    {children}
-  </main>
-</div>
-```
-
-LLM MUST:
-
-* `h-screen flex flex-col` 사용
-* Header는 고정 높이 + `shrink-0`
-* Content는 `flex-1 min-h-0 overflow-hidden`
-* 스크롤은 main 내부에서만 발생
-
----
-
-## 11-3. Flex vs Grid Rules
-
-### Flex MUST be used for:
-
-* 단방향 정렬 (row/col)
-* 버튼·툴바 정렬
-* 가운데 정렬
-* 작은 UI 구성
-
-### Grid MUST be used for:
-
-* 2~3개 영역 분리 (리스트/상세)
-* 상단 고정 + 아래 스크롤 분리
-* 고정/비율 row 구성
-
----
-
-## 11-4. Scroll Rules
-
-### Rule A — 스크롤은 한 요소에서만 발생
-
-```tsx
-<div class="min-h-0 overflow-y-auto">...</div>
-```
-
-### Rule B — 스크롤 부모는 반드시 min-h-0
-
-### Rule C — 위는 고정, 아래는 스크롤 패턴은 아래만 허용
-
-```tsx
-<div class="grid h-full min-h-0 grid-rows-[auto,1fr]">
-  <div>고정영역</div>
-  <div class="min-h-0 overflow-y-auto">스크롤영역</div>
-</div>
-```
-
----
-
-## 11-5. Two-Pane Layout Rule
-
-(왼쪽 리스트 + 오른쪽 상세)
-
-```tsx
-<div class="grid flex-1 min-h-0 gap-4 md:grid-cols-2">
-  <div class="grid min-h-0 grid-rows-[auto,1fr] gap-2">
-    <div class="h-[고정높이 또는 auto] overflow-hidden">{filters}</div>
-    <div class="min-h-0 overflow-y-auto">{list}</div>
-  </div>
-
-  <div class="min-h-0 overflow-y-auto">{detail}</div>
-</div>
-```
-
-LLM MUST:
-
-* 필터는 고정 or auto 높이
-* 리스트는 반드시 단독 스크롤
-* 상세뷰도 단독 스크롤
-
----
-
-## 11-6. Padding Responsibility Rules (상·하위 패딩 규칙)
-
-### Layout(상위 컨테이너)의 책임
-
-* 페이지 전체 좌우 padding (`px-4 md:px-6`)
-* 섹션 간 gap
-* 전체 스크롤 구조
-* 작업 공간 여백 (work area padding)
-
-### Component(하위 컴포넌트)의 책임
-
-* 자체 내부 콘텐츠 padding (`p-4`, `p-3` 등)
-* 컴포넌트 내부 spacing
-
-### STRICT RULES
-
-LLM MUST NOT:
-
-* 상위가 하위 내부 padding을 조절하게 만들지 말 것
-* 하위가 페이지 전체 padding을 설정하지 말 것
-* 여러 레벨에서 padding이 중복되게 만들지 말 것
-
-**상위는 외부 여백, 하위는 내부 여백.**
-섞이면 INVALID.
-
----
-
-## 11-7. Spacing Rules
-
-* Page padding: `p-4 md:p-6`
-* Section gaps: `gap-4`
-* Internal component spacing: `gap-2` or `gap-3`
-* 대형 레이아웃 구분: `gap-6`
-
-임의 spacing 값 사용은 금지.
-
----
-
-## 11-8. Layout Componentization Rule
-
-레이아웃 패턴이 2회 이상 반복되면, LLM MUST 생성:
-
-```
-apps/web/src/components/layout/<LayoutName>.jsx
-```
-
-Feature 내부에는 레이아웃 컴포넌트를 절대 생성하지 않는다.
-
----
-
-## 11-9. Layout & Feature Boundary
-
-LLM MUST:
-
-* 레이아웃 → `components/layout/*`
-* 공용 UI → `components/common/*`
-* 개별 feature UI → `features/<feature>/components/*`
-
-레이아웃과 feature UI가 결합되면 INVALID.
-
----
-
-# ✔ End of Ultra-Optimized LLM Constitution
-
-이 문서는 프로젝트 전체의 헌법이며,
-LLM은 코드를 생성하거나 수정할 때 **항상 이 규칙을 기반으로 수행해야 한다.**
+## 주요 API 영역
+
+모든 업무 API는 `/api/v1/` 아래에 있습니다. 예외적으로 OIDC 콜백만 `/auth/google/callback/`을 사용합니다.
+
+| Prefix | 설명 |
+| --- | --- |
+| `/api/v1/auth/` | 로그인, 로그아웃, 현재 사용자 |
+| `/api/v1/account/` | 소속, 접근 권한, 사용자 검색 |
+| `/api/v1/emails/` | 메일함, 메일 조회/이동/삭제, OCR, RAG Outbox |
+| `/api/v1/assistant/` | RAG 기반 채팅 |
+| `/api/v1/line-dashboard/` | Drone SOP, 라인 대시보드, 알림 |
+| `/api/v1/timeline/` | 라인/설비/로그 조회 |
+| `/api/v1/appstore/` | 내부 앱 등록/댓글/좋아요 |
+| `/api/v1/activity/` | 활동 로그 조회 |
+| `/api/v1/voc/` | VOC 게시글/답변 |
+| `/api/v1/health/` | 서버 상태 확인 |
+
+## 문서 읽는 순서
+
+1. 전체 구조는 이 파일을 봅니다.
+2. 백엔드 실행/설정은 `apps/api/README.md`를 봅니다.
+3. 프론트엔드 실행/구조는 `apps/web/README.md`를 봅니다.
+4. API 공통 규칙은 `docs/api/README.md`, 모듈별 호출 방식은 `docs/api/*.md`를 봅니다.
+5. 소속/권한 정책은 `docs/modules/account.md`를 봅니다.
+
+## 작업할 때 지켜야 할 큰 원칙
+
+- 프론트엔드는 feature 외부에서 `apps/web/src/features/<feature>/index.js`만 import합니다.
+- 백엔드는 다른 feature를 직접 파고들지 않고 selector 또는 service facade를 통해 의존합니다.
+- 서버 데이터는 React Query가 기준이고, Zustand에는 UI 상태만 둡니다.
+- 인증/RAG/assistant/mail 계약을 바꾸면 `docker-compose.dev.yml`, `env/api.dev.env`, `apps/adfs_dummy`도 함께 맞춥니다.

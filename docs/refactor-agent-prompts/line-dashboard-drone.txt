@@ -1,0 +1,12 @@
+담당 scope: line-dashboard + drone SOP. Backend `api.drone`, frontend `features/line-dashboard`.
+
+리팩토링 목표:
+- SOP POP3 ingest, SOP parsing, notification target, recipient, channel delivery, table ops를 책임별로 분리한다.
+- Jira/Messenger/Mail channel 처리 중복을 줄이고 상태 저장 흐름을 명확히 한다.
+- table update 검증, allowed column, activity logging 흐름을 읽기 쉽게 정리한다.
+- frontend dashboard table, quick filters, settings pages, column renderers를 더 작은 단위로 나눈다.
+
+주의:
+- notification delivery 상태값, retry semantics, Airflow trigger contract 변경 금지.
+- 허용 table/column 검증 약화 금지.
+- migration/model 변경은 반드시 보고만 하고 승인 전 적용 금지.

@@ -1,0 +1,12 @@
+담당 scope: assistant + rag client. Backend `api.assistant`, `api.rag`, frontend `features/assistant`.
+
+리팩토링 목표:
+- RAG index/permission group 검증, chat memory, prompt/reply parsing, LLM 호출 책임을 명확히 분리한다.
+- RAG client의 search/insert/delete/config/error logging 코드를 작은 함수로 정리한다.
+- frontend chat session, room state, widget bounds, source normalization 로직을 hook/utils로 분리한다.
+- 중복된 index/permission normalization을 제거한다.
+
+주의:
+- `/api/v1/assistant/chat` 응답 shape(reply/contexts/sources/segments/meta) 변경 금지.
+- permission group 제한 완화 금지.
+- 외부 RAG/LLM env contract 변경 금지.

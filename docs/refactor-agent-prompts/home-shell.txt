@@ -1,0 +1,11 @@
+담당 scope: frontend `features/home`, `features/errors`, `features/teamstaff`, layout composition 관련 feature-local 코드.
+
+리팩토링 목표:
+- home page의 큰 presentational component를 sections/cards로 정리한다.
+- navbar/profile/notification UI에서 중복 className과 상수 데이터를 줄인다.
+- error pages와 teamstaff 보조 화면의 불필요한 코드와 dead import를 제거한다.
+- layout은 `h-screen flex flex-col`, `flex-1 min-h-0 overflow-hidden` 원칙을 유지한다.
+
+주의:
+- 공통 `components/ui` 직접 수정 금지.
+- global route 변경은 필요 시 coordination needed로 보고한다.

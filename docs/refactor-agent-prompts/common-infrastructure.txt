@@ -1,0 +1,10 @@
+담당 scope: backend common helpers, storage, mail/messenger client, schema/db/request helpers.
+
+리팩토링 목표:
+- 공통 helper의 중복 env parsing/request parsing/error handling을 줄인다.
+- MinIO storage, Mail API, Messenger client의 timeout/error/response normalization을 명확히 한다.
+- 여러 feature가 쓰는 public facade는 최대한 유지하고 내부 구현만 정리한다.
+
+주의:
+- 이 agent는 cross-feature 영향이 크다. public function signature 변경은 하지 말고, 필요하면 coordination needed로 보고한다.
+- auth/RAG/assistant/mail contract 변경 시 `docker-compose.dev.yml`, `env`, `apps/adfs_dummy` 동기화 필요 여부를 보고한다.

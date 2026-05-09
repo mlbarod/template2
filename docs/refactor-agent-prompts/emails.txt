@@ -1,0 +1,12 @@
+담당 scope: emails 기능. Backend `api.emails`, frontend `features/emails`.
+
+리팩토링 목표:
+- 메일 수집, mailbox 조회, move/delete, OCR, RAG outbox 책임을 파일 단위로 명확히 분리한다.
+- Email HTML/asset 처리, query filter, pagination, permission check 중복을 줄인다.
+- view는 HTTP parsing/response만 남기고 read는 selector, write는 service로 이동한다.
+- frontend inbox/detail/list/filter/action hook의 상태 흐름을 단순화한다.
+
+주의:
+- 메일 접근 권한, UNASSIGNED 정책, RAG outbox 생성 시점 변경 금지.
+- POP3 ingest endpoint, OCR claim/update contract 변경 금지.
+- MinIO object key/asset URL contract 변경 금지.

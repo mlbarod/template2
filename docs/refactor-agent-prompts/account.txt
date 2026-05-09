@@ -1,0 +1,12 @@
+담당 scope: account/affiliation/permission 기능. Backend `api.account`, frontend `features/account`.
+
+리팩토링 목표:
+- 큰 selector/service 파일을 “소속 조회”, “권한 조회”, “변경 요청”, “외부 동기화”, “overview” 책임으로 더 명확히 정리한다.
+- 중복된 user_sdwt_prod 정규화/비교/표시 로직을 하나의 내부 helper로 모은다.
+- approval/reconfirm/onboarding 흐름의 조건문을 읽기 쉬운 순서로 정리한다.
+- frontend account page/card/hook의 데이터 가공 로직을 hook/utils로 분리한다.
+
+주의:
+- role semantics(viewer/member/manager), approval 조건, auto-apply 조건 변경 금지.
+- migration 없이 model field/constraint 변경 금지.
+- Emails/Assistant/Drone이 의존하는 permission 계산 결과 변경 금지.
