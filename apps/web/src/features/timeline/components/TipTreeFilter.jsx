@@ -1,38 +1,15 @@
 // src/features/timeline/components/TipTreeFilter.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { ChevronRightIcon, ChevronDownIcon } from "@heroicons/react/20/solid";
+import TipTreeNode from "./filters/TipTreeNode";
 import { buildTipGroupTree } from "../utils/tipTreeUtils";
-
-function getAllPpidKeys(tree) {
-  const ppids = [];
-  Object.values(tree).forEach((lineNode) => {
-    Object.values(lineNode.children).forEach((processNode) => {
-      Object.values(processNode.children).forEach((stepNode) => {
-        Object.values(stepNode.children).forEach((ppidNode) => {
-          ppids.push(ppidNode.key);
-        });
-      });
-    });
-  });
-  return ppids;
-}
-
-function getPwqPpidKeys(tree) {
-  const pwqPpids = [];
-  Object.values(tree).forEach((lineNode) => {
-    Object.values(lineNode.children).forEach((processNode) => {
-      Object.values(processNode.children).forEach((stepNode) => {
-        Object.values(stepNode.children).forEach((ppidNode) => {
-          // ppid name이 pwq로 시작하는지 확인
-          if (ppidNode.name.toLowerCase().startsWith("pwq")) {
-            pwqPpids.push(ppidNode.key);
-          }
-        });
-      });
-    });
-  });
-  return pwqPpids;
-}
+import {
+  TIP_FILTER_ALL,
+  buildFilterValue,
+  getAllPpidKeys,
+  getNodePpidKeys,
+  getPwqPpidKeys,
+  hasPwqPpid,
+} from "./filters/tipTreeFilterUtils";
 
 /**
  * TIP 그룹 필터 트리
@@ -54,30 +31,26 @@ export default function TipTreeFilter({
 
   // 초기 선택 상태를 selectedTipGroups 기반으로 설정
   const [selectedPpids, setSelectedPpids] = useState(() => {
-    if (selectedTipGroups.includes("__ALL__")) {
+    if (selectedTipGroups.includes(TIP_FILTER_ALL)) {
       return new Set();
     }
     return new Set(selectedTipGroups);
   });
 
   const [isAllSelected, setIsAllSelected] = useState(() => {
-    return selectedTipGroups.includes("__ALL__");
+    return selectedTipGroups.includes(TIP_FILTER_ALL);
   });
 
   // selectedTipGroups prop이 변경될 때 내부 상태 업데이트
   useEffect(() => {
-    if (selectedTipGroups.includes("__ALL__")) {
+    if (selectedTipGroups.includes(TIP_FILTER_ALL)) {
       setIsAllSelected(true);
       setSelectedPpids(new Set());
       setExcludePwq(false);
     } else {
       setIsAllSelected(false);
       setSelectedPpids(new Set(selectedTipGroups));
-      // PWQ 항목이 선택되어 있는지 확인
-      const pwqKeys = getPwqPpidKeys(tree);
-      const hasPwqSelected = pwqKeys.some((key) =>
-        selectedTipGroups.includes(key)
-      );
+      const hasPwqSelected = hasPwqPpid(tree, selectedTipGroups);
       setExcludePwq(!hasPwqSelected && selectedTipGroups.length > 0);
     }
   }, [selectedTipGroups, tree]);
@@ -125,14 +98,7 @@ export default function TipTreeFilter({
     setSelectedPpids(newSelectedPpids);
     setIsAllSelected(newIsAllSelected);
 
-    // 부모 컴포넌트에 알림
-    if (newIsAllSelected) {
-      onFilterChange(["__ALL__"]);
-    } else if (newSelectedPpids.size === 0) {
-      onFilterChange([]);
-    } else {
-      onFilterChange(Array.from(newSelectedPpids));
-    }
+    onFilterChange(buildFilterValue(newIsAllSelected, newSelectedPpids));
   };
 
   // 노드 확장/축소
@@ -169,50 +135,11 @@ export default function TipTreeFilter({
         newSelectedPpids.delete(node.key);
       }
     } else {
-      // 상위 노드 선택 시 하위 ppid들 처리
-      const ppidsToToggle = [];
-
-      if (node.level === "line") {
-        Object.values(node.children).forEach((processNode) => {
-          Object.values(processNode.children).forEach((stepNode) => {
-            Object.values(stepNode.children).forEach((ppidNode) => {
-              ppidsToToggle.push(ppidNode.key);
-            });
-          });
-        });
-      } else if (node.level === "process") {
-        Object.values(node.children).forEach((stepNode) => {
-          Object.values(stepNode.children).forEach((ppidNode) => {
-            ppidsToToggle.push(ppidNode.key);
-          });
-        });
-      } else if (node.level === "step") {
-        Object.values(node.children).forEach((ppidNode) => {
-          ppidsToToggle.push(ppidNode.key);
-        });
-      }
+      const ppidsToToggle = getNodePpidKeys(node);
 
       if (checked && !isAllSelected) {
         ppidsToToggle.forEach((key) => newSelectedPpids.add(key));
-        // PWQ 항목이 포함되면 excludePwq 해제
-        const hasPwq = ppidsToToggle.some((key) => {
-          const ppidNodes = [];
-          Object.values(tree).forEach((lineNode) => {
-            Object.values(lineNode.children).forEach((processNode) => {
-              Object.values(processNode.children).forEach((stepNode) => {
-                Object.values(stepNode.children).forEach((ppidNode) => {
-                  if (ppidNode.key === key) {
-                    ppidNodes.push(ppidNode);
-                  }
-                });
-              });
-            });
-          });
-          return ppidNodes.some((node) =>
-            node.name.toLowerCase().startsWith("pwq")
-          );
-        });
-        if (hasPwq) {
+        if (hasPwqPpid(tree, ppidsToToggle)) {
           newExcludePwq = false;
         }
       } else {
@@ -231,14 +158,7 @@ export default function TipTreeFilter({
     setIsAllSelected(newIsAllSelected);
     setExcludePwq(newExcludePwq);
 
-    // 부모 컴포넌트에 알림
-    if (newIsAllSelected) {
-      onFilterChange(["__ALL__"]);
-    } else if (newSelectedPpids.size === 0) {
-      onFilterChange([]);
-    } else {
-      onFilterChange(Array.from(newSelectedPpids));
-    }
+    onFilterChange(buildFilterValue(newIsAllSelected, newSelectedPpids));
   };
 
   // 노드의 선택 상태 확인
@@ -255,30 +175,11 @@ export default function TipTreeFilter({
       return { checked: true, indeterminate: false };
     }
 
-    let childPpids = [];
-
     if (node.level === "ppid") {
       return { checked: selectedPpids.has(node.key), indeterminate: false };
-    } else if (node.level === "line") {
-      Object.values(node.children).forEach((processNode) => {
-        Object.values(processNode.children).forEach((stepNode) => {
-          Object.values(stepNode.children).forEach((ppidNode) => {
-            childPpids.push(ppidNode.key);
-          });
-        });
-      });
-    } else if (node.level === "process") {
-      Object.values(node.children).forEach((stepNode) => {
-        Object.values(stepNode.children).forEach((ppidNode) => {
-          childPpids.push(ppidNode.key);
-        });
-      });
-    } else if (node.level === "step") {
-      Object.values(node.children).forEach((ppidNode) => {
-        childPpids.push(ppidNode.key);
-      });
     }
 
+    const childPpids = getNodePpidKeys(node);
     const selectedCount = childPpids.filter((key) =>
       selectedPpids.has(key)
     ).length;
@@ -298,97 +199,9 @@ export default function TipTreeFilter({
     } else {
       setSelectedPpids(new Set());
       setIsAllSelected(true);
-      onFilterChange(["__ALL__"]);
+      onFilterChange([TIP_FILTER_ALL]);
     }
     setExcludePwq(false);
-  };
-
-  // 레벨별 스타일
-  const getLevelStyle = (level) => {
-    const styles = {
-      line: {
-        color: "text-primary",
-        indent: 0,
-        icon: "📍",
-      },
-      process: {
-        color: "text-primary",
-        indent: 10,
-        icon: "⚙️",
-      },
-      step: {
-        color: "text-primary",
-        indent: 20,
-        icon: "📋",
-      },
-      ppid: {
-        color: "text-primary",
-        indent: 30,
-        icon: "🔧",
-      },
-    };
-    return styles[level] || { color: "", indent: 0, icon: "" };
-  };
-
-  // 트리 노드 렌더링
-  const renderTreeNode = (node) => {
-    const hasChildren = Object.keys(node.children || {}).length > 0;
-    const isExpanded = expandedNodes.has(node.key);
-    const checkState = getNodeCheckState(node);
-    const levelStyle = getLevelStyle(node.level);
-
-    return (
-      <div key={node.key} className="select-none">
-        <div
-          className="flex items-center gap-1 rounded px-2 py-1.5 hover:bg-muted"
-          style={{ paddingLeft: `${levelStyle.indent + 8}px` }}
-        >
-          {hasChildren ? (
-            <button
-              onClick={() => toggleExpand(node.key)}
-              className="rounded p-0.5 hover:bg-muted"
-            >
-              {isExpanded ? (
-                <ChevronDownIcon className="w-4 h-4" />
-              ) : (
-                <ChevronRightIcon className="w-4 h-4" />
-              )}
-            </button>
-          ) : (
-            <div className="w-5" />
-          )}
-
-          <label className="flex items-center gap-2 flex-1 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={checkState.checked}
-              ref={(input) => {
-                if (input) {
-                  input.indeterminate = checkState.indeterminate;
-                }
-              }}
-              onChange={(e) => handleNodeSelect(node, e.target.checked)}
-              className="rounded text-primary"
-            />
-            <span
-              className={`text-sm ${levelStyle.color} flex items-center gap-1`}
-            >
-              <span>{levelStyle.icon}</span>
-              <span>{node.name}</span>
-              <span className="text-xs text-muted-foreground ml-1">
-                ({node.count})
-              </span>
-            </span>
-          </label>
-        </div>
-
-        {hasChildren && isExpanded && (
-          <div className="ml-2 border-l-2 border-border">
-            {Object.values(node.children).map((child) => renderTreeNode(child))}
-          </div>
-        )}
-      </div>
-    );
   };
 
   return (
@@ -426,7 +239,16 @@ export default function TipTreeFilter({
       </div>
 
       <div className="max-h-96 overflow-y-auto ml-0">
-        {Object.values(tree).map((lineNode) => renderTreeNode(lineNode))}
+        {Object.values(tree).map((lineNode) => (
+          <TipTreeNode
+            key={lineNode.key}
+            node={lineNode}
+            expandedNodes={expandedNodes}
+            onToggleExpand={toggleExpand}
+            onNodeSelect={handleNodeSelect}
+            getNodeCheckState={getNodeCheckState}
+          />
+        ))}
       </div>
     </div>
   );

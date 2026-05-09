@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timedelta
 import re
 from typing import Dict, List, Sequence
@@ -23,6 +24,9 @@ TIMELINE_DB_PORT = "8010"
 TIMELINE_DB_CONN_MAX_AGE = 60
 TIMELINE_QUERY_DAYS = 30
 
+Row = Dict[str, object]
+LogRows = List[Dict[str, object]]
+
 
 # =============================================================================
 # 내부 헬퍼
@@ -39,6 +43,7 @@ def _period_date(days: int = TIMELINE_QUERY_DAYS) -> str:
     """조회 기준일(YYYY-MM-DD)을 반환합니다."""
 
     return datetime.strftime(datetime.now() - timedelta(days=days), "%Y-%m-%d")
+
 
 def _get_timeline_connection():
     """타임라인 DB 연결 설정을 갱신하고 연결 객체를 반환합니다."""
@@ -59,7 +64,7 @@ def _get_timeline_connection():
     return connection
 
 
-def _fetch_all(query: str, params: Sequence[object] | None = None) -> List[Dict[str, object]]:
+def _fetch_all(query: str, params: Sequence[object] | None = None) -> List[Row]:
     """타임라인 DB에서 조회 결과를 dict 리스트로 반환합니다."""
 
     with _get_timeline_connection().cursor() as cursor:
@@ -70,7 +75,7 @@ def _fetch_all(query: str, params: Sequence[object] | None = None) -> List[Dict[
     return [dict(zip(columns, row)) for row in rows]
 
 
-def _fetch_all_on_default(query: str, params: Sequence[object] | None = None) -> List[Dict[str, object]]:
+def _fetch_all_on_default(query: str, params: Sequence[object] | None = None) -> List[Row]:
     """기본 DB에서 조회 결과를 dict 리스트로 반환합니다."""
 
     with connections["default"].cursor() as cursor:
@@ -81,15 +86,30 @@ def _fetch_all_on_default(query: str, params: Sequence[object] | None = None) ->
     return [dict(zip(columns, row)) for row in rows]
 
 
-def _fetch_one(query: str, params: Sequence[object] | None = None) -> Dict[str, object] | None:
+def _fetch_one(query: str, params: Sequence[object] | None = None) -> Row | None:
     """단일 행 조회를 반환합니다(없으면 None)."""
 
     rows = _fetch_all(query, params)
     return rows[0] if rows else None
 
 
+def _normalize_filters(**values: str | None) -> Dict[str, str]:
+    """조회 필터 값을 같은 규칙으로 정규화합니다."""
+
+    return {key: normalize_id(value) for key, value in values.items()}
+
+
+def _build_text_record(row: Row, field_map: Sequence[tuple[str, str]]) -> Dict[str, str]:
+    """행 데이터를 응답 필드명 기준 문자열 dict로 변환합니다."""
+
+    return {
+        target_field: _safe_text(row.get(source_field))
+        for target_field, source_field in field_map
+    }
+
+
 # =============================================================================
-# 공개 함수
+# 공개 정규화 함수
 # =============================================================================
 
 
@@ -110,6 +130,11 @@ def normalize_id(value: str | None) -> str:
     """
 
     return (value or "").strip().upper()
+
+
+# =============================================================================
+# timeline DB 기준 정보 조회
+# =============================================================================
 
 
 def list_lines() -> List[Dict[str, str]]:
@@ -137,17 +162,11 @@ def list_lines() -> List[Dict[str, str]]:
         order by name
         """
     )
-    results: List[Dict[str, str]] = []
-    for row in rows:
-        if row.get("id") is None:
-            continue
-        results.append(
-            {
-                "id": _safe_text(row.get("id")),
-                "name": _safe_text(row.get("name")),
-            }
-        )
-    return results
+    return [
+        _build_text_record(row, (("id", "id"), ("name", "name")))
+        for row in rows
+        if row.get("id") is not None
+    ]
 
 
 def list_sdwt_for_line(*, line_id: str) -> List[Dict[str, str]]:
@@ -166,7 +185,8 @@ def list_sdwt_for_line(*, line_id: str) -> List[Dict[str, str]]:
     - DB 연결 실패 시 예외
     """
 
-    line_key = normalize_id(line_id)
+    filters = _normalize_filters(line_id=line_id)
+    line_key = filters["line_id"]
     rows = _fetch_all(
         """
         select distinct
@@ -179,18 +199,14 @@ def list_sdwt_for_line(*, line_id: str) -> List[Dict[str, str]]:
         [line_key],
     )
 
-    results: List[Dict[str, str]] = []
-    for row in rows:
-        if row.get("id") is None:
-            continue
-        results.append(
-            {
-                "id": _safe_text(row.get("id")),
-                "lineId": line_key,
-                "name": _safe_text(row.get("id")),
-            }
-        )
-    return results
+    return [
+        {
+            **_build_text_record(row, (("id", "id"), ("name", "id"))),
+            "lineId": line_key,
+        }
+        for row in rows
+        if row.get("id") is not None
+    ]
 
 
 def list_prc_groups(*, line_id: str, sdwt_id: str) -> List[Dict[str, str]]:
@@ -210,8 +226,9 @@ def list_prc_groups(*, line_id: str, sdwt_id: str) -> List[Dict[str, str]]:
     - DB 연결 실패 시 예외
     """
 
-    line_key = normalize_id(line_id)
-    sdwt_key = normalize_id(sdwt_id)
+    filters = _normalize_filters(line_id=line_id, sdwt_id=sdwt_id)
+    line_key = filters["line_id"]
+    sdwt_key = filters["sdwt_id"]
     rows = _fetch_all(
         """
         select distinct
@@ -225,20 +242,19 @@ def list_prc_groups(*, line_id: str, sdwt_id: str) -> List[Dict[str, str]]:
         [line_key, sdwt_key],
     )
 
-    results: List[Dict[str, str]] = []
-    for row in rows:
-        if row.get("id") is None:
-            continue
-        results.append(
-            {
-                "id": _safe_text(row.get("id")),
-                "name": _safe_text(row.get("id")),
-            }
-        )
-    return results
+    return [
+        _build_text_record(row, (("id", "id"), ("name", "id")))
+        for row in rows
+        if row.get("id") is not None
+    ]
 
 
-def list_equipments(*, line_id: str, sdwt_id: str, prc_group: str) -> List[Dict[str, str]]:
+def list_equipments(
+    *,
+    line_id: str,
+    sdwt_id: str,
+    prc_group: str,
+) -> List[Dict[str, str]]:
     """라인/SDWT/PRC 조합 기준 설비 목록을 반환합니다.
 
     입력:
@@ -256,9 +272,14 @@ def list_equipments(*, line_id: str, sdwt_id: str, prc_group: str) -> List[Dict[
     - DB 연결 실패 시 예외
     """
 
-    line_key = normalize_id(line_id)
-    sdwt_key = normalize_id(sdwt_id)
-    prc_key = normalize_id(prc_group)
+    filters = _normalize_filters(
+        line_id=line_id,
+        sdwt_id=sdwt_id,
+        prc_group=prc_group,
+    )
+    line_key = filters["line_id"]
+    sdwt_key = filters["sdwt_id"]
+    prc_key = filters["prc_group"]
     sql = """
         select distinct
             eqp_cb as id,
@@ -282,20 +303,20 @@ def list_equipments(*, line_id: str, sdwt_id: str, prc_group: str) -> List[Dict[
     sql += " order by eqp_cb"
     rows = _fetch_all(sql, params)
 
-    results: List[Dict[str, str]] = []
-    for row in rows:
-        if row.get("id") is None:
-            continue
-        results.append(
-            {
-                "id": _safe_text(row.get("id")),
-                "lineId": _safe_text(row.get("line_id")),
-                "sdwtId": _safe_text(row.get("sdwt_prod")),
-                "prcGroup": _safe_text(row.get("prc_group")),
-                "name": _safe_text(row.get("id")),
-            }
+    return [
+        _build_text_record(
+            row,
+            (
+                ("id", "id"),
+                ("lineId", "line_id"),
+                ("sdwtId", "sdwt_prod"),
+                ("prcGroup", "prc_group"),
+                ("name", "id"),
+            ),
         )
-    return results
+        for row in rows
+        if row.get("id") is not None
+    ]
 
 
 def get_equipment_info(*, eqp_id: str) -> Dict[str, str] | None:
@@ -314,7 +335,8 @@ def get_equipment_info(*, eqp_id: str) -> Dict[str, str] | None:
     - DB 연결 실패 시 예외
     """
 
-    eqp_key = normalize_id(eqp_id)
+    filters = _normalize_filters(eqp_id=eqp_id)
+    eqp_key = filters["eqp_id"]
     row = _fetch_one(
         """
         select distinct
@@ -332,12 +354,20 @@ def get_equipment_info(*, eqp_id: str) -> Dict[str, str] | None:
     if not row:
         return None
 
-    return {
-        "id": _safe_text(row.get("id")),
-        "lineId": _safe_text(row.get("line_id")),
-        "sdwtId": _safe_text(row.get("sdwt_prod")),
-        "prcGroup": _safe_text(row.get("prc_group")),
-    }
+    return _build_text_record(
+        row,
+        (
+            ("id", "id"),
+            ("lineId", "line_id"),
+            ("sdwtId", "sdwt_prod"),
+            ("prcGroup", "prc_group"),
+        ),
+    )
+
+
+# =============================================================================
+# timeline DB 로그 조회
+# =============================================================================
 
 
 def _fetch_eqp_logs(*, eqp_id: str) -> List[Dict[str, object]]:
@@ -511,29 +541,45 @@ def _fetch_racb_logs(*, eqp_id: str) -> List[Dict[str, object]]:
     ]
 
 
+# =============================================================================
+# default DB Drone/Jira 로그 조회
+# =============================================================================
+
+
+def _unique_sequence(values: Sequence[str]) -> List[str]:
+    """입력 순서를 유지하면서 중복 문자열을 제거합니다."""
+
+    seen: set[str] = set()
+    return [
+        value
+        for value in values
+        if value and not (value in seen or seen.add(value))
+    ]
+
+
+def _build_drone_chamber_filters(eqp_id: str) -> tuple[str, str, List[object]]:
+    """Drone 조회용 기본 설비 ID와 chamber 조건을 구성합니다."""
+
+    if "-" not in eqp_id:
+        return eqp_id, "", []
+
+    base_eqp, suffix = eqp_id.split("-", 1)
+    digits = re.findall(r"\d", suffix)
+    chamber_candidates = _unique_sequence(digits or list(suffix.strip()))
+    if not chamber_candidates:
+        return base_eqp, "", []
+
+    like_clauses = " or ".join(["chamber_ids like %s"] * len(chamber_candidates))
+    return (
+        base_eqp,
+        f" and ({like_clauses})",
+        [f"%{ch}%" for ch in chamber_candidates],
+    )
+
+
 def _fetch_drone_logs(*, eqp_id: str) -> List[Dict[str, object]]:
     period = _period_date()
-    base_eqp = eqp_id
-    chamber_candidates: List[str] = []
-    if "-" in eqp_id:
-        base_eqp, suffix = eqp_id.split("-", 1)
-        digits = re.findall(r"\d", suffix)
-        if digits:
-            seen = set()
-            chamber_candidates = [d for d in digits if not (d in seen or seen.add(d))]
-        else:
-            seen = set()
-            chamber_candidates = [
-                ch for ch in suffix.strip() if ch and not (ch in seen or seen.add(ch))
-            ]
-
-    if chamber_candidates:
-        like_clauses = " or ".join(["chamber_ids like %s"] * len(chamber_candidates))
-        match_clause = f" and ({like_clauses})"
-        match_params: List[object] = [f"%{ch}%" for ch in chamber_candidates]
-    else:
-        match_clause = ""
-        match_params = []
+    base_eqp, match_clause, match_params = _build_drone_chamber_filters(eqp_id)
 
     rows = _fetch_all_on_default(
         f"""
@@ -573,6 +619,33 @@ def _fetch_drone_logs(*, eqp_id: str) -> List[Dict[str, object]]:
     ]
 
 
+TIMELINE_LOG_FETCHERS: Dict[str, Callable[[str], LogRows]] = {
+    "eqp": lambda eqp_key: _fetch_eqp_logs(eqp_id=eqp_key),
+    "tip": lambda eqp_key: _fetch_tip_logs(eqp_id=eqp_key),
+    "ctttm": lambda eqp_key: _fetch_ctttm_logs(eqp_id=eqp_key),
+    "racb": lambda eqp_key: _fetch_racb_logs(eqp_id=eqp_key),
+    "jira": lambda eqp_key: _fetch_drone_logs(eqp_id=eqp_key),
+}
+TIMELINE_LOG_KEYS = ("eqp", "tip", "ctttm", "racb", "jira", "event")
+
+
+def _fetch_logs_by_type_normalized(*, eqp_key: str, type_key: str) -> LogRows:
+    """정규화가 끝난 설비 ID로 타입별 로그를 조회합니다."""
+
+    if type_key == "event":
+        return []
+
+    fetcher = TIMELINE_LOG_FETCHERS.get(type_key)
+    if fetcher is None:
+        return []
+    return fetcher(eqp_key)
+
+
+# =============================================================================
+# 공개 로그 조합 함수
+# =============================================================================
+
+
 def get_logs_for_equipment(*, eqp_id: str) -> Dict[str, List[Dict[str, object]]]:
     """설비 로그(타입별)를 반환합니다.
 
@@ -591,12 +664,8 @@ def get_logs_for_equipment(*, eqp_id: str) -> Dict[str, List[Dict[str, object]]]
 
     eqp_key = normalize_id(eqp_id)
     return {
-        "eqp": _fetch_eqp_logs(eqp_id=eqp_key),
-        "tip": _fetch_tip_logs(eqp_id=eqp_key),
-        "ctttm": _fetch_ctttm_logs(eqp_id=eqp_key),
-        "racb": _fetch_racb_logs(eqp_id=eqp_key),
-        "jira": _fetch_drone_logs(eqp_id=eqp_key),
-        "event": [],
+        key: _fetch_logs_by_type_normalized(eqp_key=eqp_key, type_key=key)
+        for key in TIMELINE_LOG_KEYS
     }
 
 
@@ -619,19 +688,7 @@ def get_logs_by_type(*, eqp_id: str, log_key: str) -> List[Dict[str, object]]:
 
     eqp_key = normalize_id(eqp_id)
     type_key = (log_key or "").strip().lower()
-
-    if type_key == "eqp":
-        return _fetch_eqp_logs(eqp_id=eqp_key)
-    if type_key == "tip":
-        return _fetch_tip_logs(eqp_id=eqp_key)
-    if type_key == "ctttm":
-        return _fetch_ctttm_logs(eqp_id=eqp_key)
-    if type_key == "racb":
-        return _fetch_racb_logs(eqp_id=eqp_key)
-    if type_key == "jira":
-        return _fetch_drone_logs(eqp_id=eqp_key)
-
-    return []
+    return _fetch_logs_by_type_normalized(eqp_key=eqp_key, type_key=type_key)
 
 
 def get_merged_logs(*, eqp_id: str) -> List[Dict[str, object]]:
@@ -652,8 +709,8 @@ def get_merged_logs(*, eqp_id: str) -> List[Dict[str, object]]:
 
     eqp_key = normalize_id(eqp_id)
     merged: List[Dict[str, object]] = []
-    for key in ("eqp", "tip", "ctttm", "racb", "jira", "event"):
-        merged.extend(get_logs_by_type(eqp_id=eqp_key, log_key=key))
+    for key in TIMELINE_LOG_KEYS:
+        merged.extend(_fetch_logs_by_type_normalized(eqp_key=eqp_key, type_key=key))
 
     merged.sort(key=lambda log: str(log.get("eventTime") or ""))
     return merged

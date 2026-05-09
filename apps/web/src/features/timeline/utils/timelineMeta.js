@@ -20,8 +20,6 @@ export const groupConfig = {
       DOING: "timeline-color-tip-open",
 
       L1_TIP: "timeline-color-tip-close",
-      L1_TIP: "timeline-color-tip-close",
-      L1_TIP: "timeline-color-tip-close",
     },
   },
   RACB: {

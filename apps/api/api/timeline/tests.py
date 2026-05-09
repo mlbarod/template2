@@ -6,66 +6,141 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from django.test import TestCase
 from django.urls import reverse
+
+TIMELINE_VIEW_SELECTORS = "api.timeline.views.selectors"
 
 
 class TimelineEndpointTests(TestCase):
     def test_timeline_lines_returns_list(self) -> None:
-        response = self.client.get(reverse("timeline-lines"))
+        with patch(f"{TIMELINE_VIEW_SELECTORS}.list_lines", return_value=[]) as selector:
+            response = self.client.get(reverse("timeline-lines"))
+
         self.assertEqual(response.status_code, 200)
         self.assertTrue(isinstance(response.json(), list))
+        selector.assert_called_once_with()
 
     def test_timeline_sdwts_requires_line(self) -> None:
         response = self.client.get(reverse("timeline-sdwts"))
         self.assertEqual(response.status_code, 400)
 
     def test_timeline_sdwts_returns_results(self) -> None:
-        response = self.client.get(reverse("timeline-sdwts"), {"lineId": "LINE-A"})
+        with patch(
+            f"{TIMELINE_VIEW_SELECTORS}.list_sdwt_for_line",
+            return_value=[],
+        ) as selector:
+            response = self.client.get(
+                reverse("timeline-sdwts"),
+                {"lineId": "LINE-A"},
+            )
+
         self.assertEqual(response.status_code, 200)
         self.assertTrue(isinstance(response.json(), list))
+        selector.assert_called_once_with(line_id="LINE-A")
 
     def test_timeline_prc_groups_returns_results(self) -> None:
-        response = self.client.get(
-            reverse("timeline-prc-groups"),
-            {"lineId": "LINE-A", "sdwtId": "SD-10"},
-        )
+        with patch(
+            f"{TIMELINE_VIEW_SELECTORS}.list_prc_groups",
+            return_value=[],
+        ) as selector:
+            response = self.client.get(
+                reverse("timeline-prc-groups"),
+                {"lineId": "LINE-A", "sdwtId": "SD-10"},
+            )
+
         self.assertEqual(response.status_code, 200)
         self.assertTrue(isinstance(response.json(), list))
+        selector.assert_called_once_with(line_id="LINE-A", sdwt_id="SD-10")
 
     def test_timeline_prc_groups_is_case_insensitive(self) -> None:
-        response = self.client.get(
-            reverse("timeline-prc-groups"),
-            {"lineId": "line-a", "sdwtId": "sd-10"},
-        )
+        with patch(
+            f"{TIMELINE_VIEW_SELECTORS}.list_prc_groups",
+            return_value=[],
+        ) as selector:
+            response = self.client.get(
+                reverse("timeline-prc-groups"),
+                {"lineId": "line-a", "sdwtId": "sd-10"},
+            )
+
         self.assertEqual(response.status_code, 200)
         self.assertTrue(isinstance(response.json(), list))
+        selector.assert_called_once_with(line_id="LINE-A", sdwt_id="SD-10")
 
     def test_timeline_equipments_returns_results(self) -> None:
-        response = self.client.get(
-            reverse("timeline-equipments"),
-            {"lineId": "LINE-A", "sdwtId": "SD-10", "prcGroup": "ETCH"},
-        )
+        with patch(
+            f"{TIMELINE_VIEW_SELECTORS}.list_equipments",
+            return_value=[],
+        ) as selector:
+            response = self.client.get(
+                reverse("timeline-equipments"),
+                {"lineId": "LINE-A", "sdwtId": "SD-10", "prcGroup": "ETCH"},
+            )
+
         self.assertEqual(response.status_code, 200)
         self.assertTrue(isinstance(response.json(), list))
+        selector.assert_called_once_with(
+            line_id="LINE-A",
+            sdwt_id="SD-10",
+            prc_group="ETCH",
+        )
 
     def test_timeline_equipments_is_case_insensitive(self) -> None:
-        response = self.client.get(
-            reverse("timeline-equipments"),
-            {"lineId": "line-a", "sdwtId": "sd-10", "prcGroup": "etch"},
-        )
+        with patch(
+            f"{TIMELINE_VIEW_SELECTORS}.list_equipments",
+            return_value=[],
+        ) as selector:
+            response = self.client.get(
+                reverse("timeline-equipments"),
+                {"lineId": "line-a", "sdwtId": "sd-10", "prcGroup": "etch"},
+            )
+
         self.assertEqual(response.status_code, 200)
         self.assertTrue(isinstance(response.json(), list))
+        selector.assert_called_once_with(
+            line_id="LINE-A",
+            sdwt_id="SD-10",
+            prc_group="ETCH",
+        )
 
     def test_timeline_equipment_info_returns_result(self) -> None:
-        response = self.client.get(reverse("timeline-equipment-info", kwargs={"eqp_id": "EQP-ALPHA"}))
+        payload = {
+            "id": "EQP-ALPHA",
+            "lineId": "LINE-A",
+            "sdwtId": "SD-10",
+            "prcGroup": "ETCH",
+        }
+        with patch(
+            f"{TIMELINE_VIEW_SELECTORS}.get_equipment_info",
+            return_value=payload,
+        ):
+            response = self.client.get(
+                reverse("timeline-equipment-info", kwargs={"eqp_id": "EQP-ALPHA"})
+            )
+
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["id"], "EQP-ALPHA")
 
     def test_timeline_equipment_info_with_line_scope(self) -> None:
-        response = self.client.get(
-            reverse("timeline-equipment-info-line", kwargs={"line_id": "LINE-A", "eqp_id": "EQP-ALPHA"})
-        )
+        payload = {
+            "id": "EQP-ALPHA",
+            "lineId": "LINE-A",
+            "sdwtId": "SD-10",
+            "prcGroup": "ETCH",
+        }
+        with patch(
+            f"{TIMELINE_VIEW_SELECTORS}.get_equipment_info",
+            return_value=payload,
+        ):
+            response = self.client.get(
+                reverse(
+                    "timeline-equipment-info-line",
+                    kwargs={"line_id": "LINE-A", "eqp_id": "EQP-ALPHA"},
+                )
+            )
+
         self.assertEqual(response.status_code, 200)
 
     def test_timeline_logs_requires_eqp_id(self) -> None:
@@ -73,26 +148,71 @@ class TimelineEndpointTests(TestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_timeline_eqp_logs_returns_results(self) -> None:
-        response = self.client.get(reverse("timeline-logs-eqp"), {"eqpId": "EQP-ALPHA"})
+        with patch(
+            f"{TIMELINE_VIEW_SELECTORS}.get_logs_by_type",
+            return_value=[],
+        ) as selector:
+            response = self.client.get(
+                reverse("timeline-logs-eqp"),
+                {"eqpId": "EQP-ALPHA"},
+            )
+
         self.assertEqual(response.status_code, 200)
         self.assertTrue(isinstance(response.json(), list))
+        selector.assert_called_once_with(eqp_id="EQP-ALPHA", log_key="eqp")
 
     def test_timeline_tip_logs_returns_results(self) -> None:
-        response = self.client.get(reverse("timeline-logs-tip"), {"eqpId": "EQP-ALPHA"})
+        with patch(
+            f"{TIMELINE_VIEW_SELECTORS}.get_logs_by_type",
+            return_value=[],
+        ) as selector:
+            response = self.client.get(
+                reverse("timeline-logs-tip"),
+                {"eqpId": "EQP-ALPHA"},
+            )
+
         self.assertEqual(response.status_code, 200)
         self.assertTrue(isinstance(response.json(), list))
+        selector.assert_called_once_with(eqp_id="EQP-ALPHA", log_key="tip")
 
     def test_timeline_ctttm_logs_returns_results(self) -> None:
-        response = self.client.get(reverse("timeline-logs-ctttm"), {"eqpId": "EQP-ALPHA"})
+        with patch(
+            f"{TIMELINE_VIEW_SELECTORS}.get_logs_by_type",
+            return_value=[],
+        ) as selector:
+            response = self.client.get(
+                reverse("timeline-logs-ctttm"),
+                {"eqpId": "EQP-ALPHA"},
+            )
+
         self.assertEqual(response.status_code, 200)
         self.assertTrue(isinstance(response.json(), list))
+        selector.assert_called_once_with(eqp_id="EQP-ALPHA", log_key="ctttm")
 
     def test_timeline_racb_logs_returns_results(self) -> None:
-        response = self.client.get(reverse("timeline-logs-racb"), {"eqpId": "EQP-ALPHA"})
+        with patch(
+            f"{TIMELINE_VIEW_SELECTORS}.get_logs_by_type",
+            return_value=[],
+        ) as selector:
+            response = self.client.get(
+                reverse("timeline-logs-racb"),
+                {"eqpId": "EQP-ALPHA"},
+            )
+
         self.assertEqual(response.status_code, 200)
         self.assertTrue(isinstance(response.json(), list))
+        selector.assert_called_once_with(eqp_id="EQP-ALPHA", log_key="racb")
 
     def test_timeline_jira_logs_returns_results(self) -> None:
-        response = self.client.get(reverse("timeline-logs-jira"), {"eqpId": "EQP-ALPHA"})
+        with patch(
+            f"{TIMELINE_VIEW_SELECTORS}.get_logs_by_type",
+            return_value=[],
+        ) as selector:
+            response = self.client.get(
+                reverse("timeline-logs-jira"),
+                {"eqpId": "EQP-ALPHA"},
+            )
+
         self.assertEqual(response.status_code, 200)
         self.assertTrue(isinstance(response.json(), list))
+        selector.assert_called_once_with(eqp_id="EQP-ALPHA", log_key="jira")

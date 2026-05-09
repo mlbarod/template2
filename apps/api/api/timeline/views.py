@@ -13,6 +13,31 @@ from rest_framework.views import APIView
 from . import selectors
 
 
+def _query_id(request: HttpRequest, key: str) -> str:
+    """query string ID 값을 동일한 규칙으로 정규화합니다."""
+
+    return selectors.normalize_id(request.GET.get(key))
+
+
+def _missing_query_response(message: str) -> JsonResponse:
+    """필수 query 누락 응답을 생성합니다."""
+
+    return JsonResponse({"error": message}, status=400)
+
+
+def _required_query_id(
+    request: HttpRequest,
+    key: str,
+    message: str,
+) -> tuple[str, JsonResponse | None]:
+    """필수 query ID를 정규화하고 누락 응답을 함께 반환합니다."""
+
+    value = _query_id(request, key)
+    if not value:
+        return "", _missing_query_response(message)
+    return value, None
+
+
 class TimelineLinesView(APIView):
     """더미 라인 목록을 반환합니다."""
 
@@ -66,9 +91,13 @@ class TimelineSdwtView(APIView):
         snake/camel 호환:
         - lineId만 지원(snake_case 미지원)
         """
-        line_id = selectors.normalize_id(request.GET.get("lineId"))
-        if not line_id:
-            return JsonResponse({"error": "lineId is required"}, status=400)
+        line_id, error_response = _required_query_id(
+            request,
+            "lineId",
+            "lineId is required",
+        )
+        if error_response:
+            return error_response
 
         return JsonResponse(selectors.list_sdwt_for_line(line_id=line_id), safe=False)
 
@@ -98,11 +127,11 @@ class TimelinePrcGroupView(APIView):
         snake/camel 호환:
         - lineId/sdwtId만 지원(snake_case 미지원)
         """
-        line_id = selectors.normalize_id(request.GET.get("lineId"))
-        sdwt_id = selectors.normalize_id(request.GET.get("sdwtId"))
+        line_id = _query_id(request, "lineId")
+        sdwt_id = _query_id(request, "sdwtId")
 
         if not line_id or not sdwt_id:
-            return JsonResponse({"error": "lineId and sdwtId are required"}, status=400)
+            return _missing_query_response("lineId and sdwtId are required")
 
         return JsonResponse(selectors.list_prc_groups(line_id=line_id, sdwt_id=sdwt_id), safe=False)
 
@@ -134,15 +163,22 @@ class TimelineEquipmentsView(APIView):
         snake/camel 호환:
         - lineId/sdwtId/prcGroup만 지원(snake_case 미지원)
         """
-        line_id = selectors.normalize_id(request.GET.get("lineId"))
-        sdwt_id = selectors.normalize_id(request.GET.get("sdwtId"))
-        prc_group = selectors.normalize_id(request.GET.get("prcGroup"))
-
-        if not line_id:
-            return JsonResponse({"error": "lineId is required"}, status=400)
+        line_id, error_response = _required_query_id(
+            request,
+            "lineId",
+            "lineId is required",
+        )
+        if error_response:
+            return error_response
+        sdwt_id = _query_id(request, "sdwtId")
+        prc_group = _query_id(request, "prcGroup")
 
         return JsonResponse(
-            selectors.list_equipments(line_id=line_id, sdwt_id=sdwt_id, prc_group=prc_group),
+            selectors.list_equipments(
+                line_id=line_id,
+                sdwt_id=sdwt_id,
+                prc_group=prc_group,
+            ),
             safe=False,
         )
 
@@ -188,7 +224,7 @@ class TimelineEquipmentInfoView(APIView):
         # -----------------------------------------------------------------------------
         eqp_key = selectors.normalize_id(eqp_id)
         if not eqp_key:
-            return JsonResponse({"error": "eqpId is required"}, status=400)
+            return _missing_query_response("eqpId is required")
 
         # -----------------------------------------------------------------------------
         # 2) 설비 메타데이터 조회
@@ -236,9 +272,9 @@ class _TimelineLogsByTypeView(APIView):
         snake/camel 호환:
         - eqpId만 지원(snake_case 미지원)
         """
-        eqp_id = selectors.normalize_id(request.GET.get("eqpId"))
-        if not eqp_id:
-            return JsonResponse({"error": "eqpId is required"}, status=400)
+        eqp_id, error_response = _required_query_id(request, "eqpId", "eqpId is required")
+        if error_response:
+            return error_response
 
         return JsonResponse(selectors.get_logs_by_type(eqp_id=eqp_id, log_key=self.log_key), safe=False)
 
@@ -270,9 +306,9 @@ class TimelineLogsView(_TimelineLogsByTypeView):
         snake/camel 호환:
         - eqpId만 지원(snake_case 미지원)
         """
-        eqp_id = selectors.normalize_id(request.GET.get("eqpId"))
-        if not eqp_id:
-            return JsonResponse({"error": "eqpId is required"}, status=400)
+        eqp_id, error_response = _required_query_id(request, "eqpId", "eqpId is required")
+        if error_response:
+            return error_response
 
         return JsonResponse(selectors.get_merged_logs(eqp_id=eqp_id), safe=False)
 

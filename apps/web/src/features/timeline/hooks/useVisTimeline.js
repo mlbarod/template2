@@ -1,8 +1,15 @@
 // src/features/timeline/hooks/useVisTimeline.js (일부 수정)
 import { useEffect, useRef } from "react";
-import { DataSet } from "vis-data";
 import { useTimelineSelectionStore } from "../store/useTimelineSelectionStore";
 import { useTimelineStore } from "../store/useTimelineStore";
+import {
+  applyTimelineSelection,
+  createVisTimeline,
+  loadVisTimelineConstructor,
+  redrawTimelineWithRange,
+  replaceTimelineItems,
+  setTimelineGroups,
+} from "../utils/visTimelineAdapter";
 
 /**
  * vis-timeline 라이프사이클을 래핑하는 훅.
@@ -26,16 +33,18 @@ export function useVisTimeline({ containerRef, groups, items, options }) {
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const { Timeline } = await import("vis-timeline/standalone");
+      const Timeline = await loadVisTimelineConstructor();
       if (!mounted || !containerRef.current) return;
 
-      datasetRef.current = new DataSet(itemsRef.current ?? []);
-      tlRef.current = new Timeline(
-        containerRef.current,
-        datasetRef.current,
-        groupsRef.current,
-        optionsRef.current
-      );
+      const { timeline, dataset } = createVisTimeline({
+        Timeline,
+        container: containerRef.current,
+        items: itemsRef.current,
+        groups: groupsRef.current,
+        options: optionsRef.current,
+      });
+      datasetRef.current = dataset;
+      tlRef.current = timeline;
 
       register(tlRef.current);
 
@@ -73,23 +82,13 @@ export function useVisTimeline({ containerRef, groups, items, options }) {
   // 2. 아이템 배열이 바뀌면 데이터셋 업데이트
   useEffect(() => {
     itemsRef.current = items;
-    if (tlRef.current && datasetRef.current) {
-      datasetRef.current.clear();
-      datasetRef.current.add(items);
-      tlRef.current.setItems(datasetRef.current);
-    }
+    replaceTimelineItems(tlRef.current, datasetRef.current, items);
   }, [items]);
 
   // 3. 그룹 정보 변경 시 갱신
   useEffect(() => {
     groupsRef.current = groups;
-    if (tlRef.current && groups) {
-      const updatedGroups = groups.map((g) => ({
-        ...g,
-        visible: g.visible !== false,
-      }));
-      tlRef.current.setGroups(updatedGroups);
-    }
+    setTimelineGroups(tlRef.current, groups);
   }, [groups]);
 
   // 4. 옵션 변경 시 업데이트 (특히 높이)
@@ -104,16 +103,7 @@ export function useVisTimeline({ containerRef, groups, items, options }) {
         previousHeightRef.current = options.height;
 
         setTimeout(() => {
-          if (tlRef.current) {
-            tlRef.current.redraw();
-            if (currentRangeRef.current) {
-              tlRef.current.setWindow(
-                currentRangeRef.current.start,
-                currentRangeRef.current.end,
-                { animation: false }
-              );
-            }
-          }
+          redrawTimelineWithRange(tlRef.current, currentRangeRef.current);
         }, 100);
       }
     }
@@ -121,26 +111,9 @@ export function useVisTimeline({ containerRef, groups, items, options }) {
 
   // 5. 외부에서 선택된 행을 타임라인에 반영
   useEffect(() => {
-    if (tlRef.current) {
-      if (selectedRow && tlRef.current.itemsData.get(selectedRow)) {
-        const currentWindow = tlRef.current.getWindow();
-        currentRangeRef.current = {
-          start: currentWindow.start,
-          end: currentWindow.end,
-        };
-
-        tlRef.current.setSelection([selectedRow]);
-
-        if (currentRangeRef.current) {
-          tlRef.current.setWindow(
-            currentRangeRef.current.start,
-            currentRangeRef.current.end,
-            { animation: false }
-          );
-        }
-      } else {
-        tlRef.current.setSelection([]);
-      }
+    const selectedRange = applyTimelineSelection(tlRef.current, selectedRow);
+    if (selectedRange) {
+      currentRangeRef.current = selectedRange;
     }
   }, [selectedRow]);
 

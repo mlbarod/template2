@@ -3,7 +3,8 @@ import React from "react";
 import BaseTimeline from "./BaseTimeline";
 import TimelineLegend from "./TimelineLegend";
 import TimelineEmptyState from "./TimelineEmptyState";
-import { buildFixedHeightOptions, processData } from "../utils/timelineUtils";
+import { buildFixedHeightOptions } from "../utils/timelineUtils";
+import { processData } from "../utils/visTimelineItems";
 import { makeGroupLabel } from "../utils/groupLabel";
 import { timelineLegends } from "../utils/timelineLegends";
 
