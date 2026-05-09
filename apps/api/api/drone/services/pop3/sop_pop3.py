@@ -104,6 +104,24 @@ def _upsert_drone_sop_row_or_zero(*, row: dict[str, Any], error_label: str) -> i
         return 0
 
 
+def _post_sidecar_and_upsert_row(
+    *,
+    row: dict[str, Any],
+    config: DroneSopPop3Config,
+    error_label: str,
+) -> int:
+    """defectmap sidecar 전송 후 row upsert 결과를 반환합니다."""
+
+    # 임시 부가기능: defectmap 전송(실패해도 메인 수집 흐름은 계속 진행합니다).
+    post_defect_png_sidecar_if_needed(
+        row=row,
+        config=config,
+        scanned_at=timezone.now(),
+        error_label=error_label,
+    )
+    return _upsert_drone_sop_row_or_zero(row=row, error_label=error_label)
+
+
 def _run_dummy_mode_ingest(
     *,
     config: DroneSopPop3Config,
@@ -139,18 +157,12 @@ def _run_dummy_mode_ingest(
         if not parsed:
             continue
 
-        # 임시 부가기능: defectmap 전송(실패해도 메인 수집 흐름은 계속 진행합니다).
-        post_defect_png_sidecar_if_needed(
+        upserted_count = _post_sidecar_and_upsert_row(
             row=parsed,
             config=config,
-            scanned_at=timezone.now(),
             error_label=f"dummy mail id={message.get('id')} subject={subject!r}",
         )
         matched += 1
-        upserted_count = _upsert_drone_sop_row_or_zero(
-            row=parsed,
-            error_label=f"dummy mail id={message.get('id')} subject={subject!r}",
-        )
         upserted += upserted_count
         if upserted_count <= 0:
             continue
@@ -221,18 +233,12 @@ def _run_pop3_mode_ingest(
             if not parsed:
                 continue
 
-            # 임시 부가기능: defectmap 전송(실패해도 메인 수집 흐름은 계속 진행합니다).
-            post_defect_png_sidecar_if_needed(
+            upserted_count = _post_sidecar_and_upsert_row(
                 row=parsed,
                 config=config,
-                scanned_at=timezone.now(),
                 error_label=f"POP3 message #{msg_num} subject={subject!r}",
             )
             matched += 1
-            upserted_count = _upsert_drone_sop_row_or_zero(
-                row=parsed,
-                error_label=f"POP3 message #{msg_num} subject={subject!r}",
-            )
             upserted += upserted_count
             if upserted_count <= 0:
                 continue
