@@ -1,6 +1,6 @@
 # =============================================================================
 # 모듈: Drone SOP 채널 설정 서비스
-# 주요 함수: upsert_drone_sop_user_sdwt_channel, ensure_drone_sop_notification_target
+# 주요 함수: get_or_create_drone_sop_target_by_name, upsert_drone_sop_user_sdwt_channel
 # 주요 가정: target_user_sdwt_prod 단위로 단일 알림 target을 관리합니다.
 # =============================================================================
 """Drone SOP 채널 설정 갱신 서비스 모음."""
@@ -9,16 +9,232 @@ from __future__ import annotations
 
 from typing import Any
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 
 from ... import selectors
-from ...models import DroneSopTarget
+from ...models import DroneSopNeedToSendRule, DroneSopTarget, DroneSopTargetChannelConfig
 from .normalization import UNSET as _UNSET, same_text as _same_text
 from .user_sdwt_upsert import (
-    apply_user_sdwt_channel_field_updates,
     normalize_user_sdwt_channel_target,
     normalize_user_sdwt_channel_upsert_fields,
+    UserSdwtChannelUpsertFields,
 )
+
+
+def _set_value_if_changed(*, instance: object, field_name: str, value: object, update_fields: list[str]) -> None:
+    """모델 필드 값이 실제로 바뀐 경우에만 저장 대상 필드에 추가합니다."""
+
+    if value is _UNSET:
+        return
+    if getattr(instance, field_name) != value:
+        setattr(instance, field_name, value)
+        update_fields.append(field_name)
+
+
+def _get_or_create_channel_config(
+    *,
+    target: DroneSopTarget,
+    channel: str,
+) -> tuple[DroneSopTargetChannelConfig, bool]:
+    """target/channel 설정 row를 잠금 기준으로 조회하거나 생성합니다."""
+
+    config = (
+        DroneSopTargetChannelConfig.objects.select_for_update()
+        .filter(target=target, channel=channel)
+        .order_by("id")
+        .first()
+    )
+    if config is not None:
+        return config, False
+    try:
+        # unique 충돌이 발생하면 savepoint만 롤백하고 외부 transaction은 유지합니다.
+        with transaction.atomic():
+            return DroneSopTargetChannelConfig.objects.create(target=target, channel=channel), True
+    except IntegrityError:
+        concurrent = (
+            DroneSopTargetChannelConfig.objects.select_for_update()
+            .filter(target=target, channel=channel)
+            .order_by("id")
+            .first()
+        )
+        if concurrent is None:
+            raise
+        return concurrent, False
+
+
+def _lock_target_by_name(*, normalized_target: str) -> DroneSopTarget | None:
+    """대소문자 비구분 target row를 잠금 상태로 조회합니다."""
+
+    return (
+        DroneSopTarget.objects.select_for_update()
+        .filter(target_user_sdwt_prod__iexact=normalized_target)
+        .order_by("id")
+        .first()
+    )
+
+
+def _create_target_or_reselect(*, normalized_target: str, line_id: str) -> tuple[DroneSopTarget, bool]:
+    """동시 생성 충돌 시 기존 target을 다시 잠금 조회합니다."""
+
+    try:
+        # unique 충돌이 발생하면 savepoint만 롤백하고 외부 transaction은 유지합니다.
+        with transaction.atomic():
+            return (
+                DroneSopTarget.objects.create(
+                    target_user_sdwt_prod=normalized_target,
+                    line_id=line_id,
+                ),
+                True,
+            )
+    except IntegrityError:
+        concurrent = _lock_target_by_name(normalized_target=normalized_target)
+        if concurrent is None:
+            raise
+        return concurrent, False
+
+
+def get_or_create_drone_sop_target_by_name(
+    *,
+    target_user_sdwt_prod: str,
+    line_id: str = "",
+) -> DroneSopTarget:
+    """target 이름으로 target row를 조회하거나 생성합니다.
+
+    입력:
+    - target_user_sdwt_prod: target 식별자
+    - line_id: 신규 target 생성 시 저장할 라인 ID
+
+    반환:
+    - DroneSopTarget: 기존 또는 신규 target row
+
+    부작용:
+    - target이 없으면 DroneSopTarget row를 생성합니다.
+
+    오류:
+    - ValueError: target_user_sdwt_prod가 비어 있을 때
+    """
+
+    normalized_target = normalize_user_sdwt_channel_target(target_user_sdwt_prod)
+    normalized_line_id = str(line_id or "")
+    with transaction.atomic():
+        target = _lock_target_by_name(normalized_target=normalized_target)
+        if target is not None:
+            return target
+        target, _ = _create_target_or_reselect(
+            normalized_target=normalized_target,
+            line_id=normalized_line_id,
+        )
+        return target
+
+
+def _apply_single_channel_config(
+    *,
+    target: DroneSopTarget,
+    channel: str,
+    enabled: bool | object = _UNSET,
+    template_key: str | None | object = _UNSET,
+    jira_project_key: str | None | object = _UNSET,
+    chatroom_id: int | None | object = _UNSET,
+) -> bool:
+    """채널별 설정 필드를 별도 config row에 반영합니다."""
+
+    if enabled is _UNSET and template_key is _UNSET and jira_project_key is _UNSET and chatroom_id is _UNSET:
+        return False
+
+    config, created = _get_or_create_channel_config(target=target, channel=channel)
+    update_fields: list[str] = []
+    _set_value_if_changed(instance=config, field_name="enabled", value=enabled, update_fields=update_fields)
+    _set_value_if_changed(instance=config, field_name="template_key", value=template_key, update_fields=update_fields)
+    _set_value_if_changed(
+        instance=config,
+        field_name="jira_project_key",
+        value=jira_project_key,
+        update_fields=update_fields,
+    )
+    _set_value_if_changed(instance=config, field_name="chatroom_id", value=chatroom_id, update_fields=update_fields)
+    if update_fields:
+        config.save(update_fields=[*update_fields, "updated_at"])
+    return created or bool(update_fields)
+
+
+def _apply_channel_config_updates(
+    *,
+    target: DroneSopTarget,
+    fields: UserSdwtChannelUpsertFields,
+) -> bool:
+    """정규화된 입력을 jira/messenger/mail 채널 설정으로 분배합니다."""
+
+    changed = False
+    changed = _apply_single_channel_config(
+        target=target,
+        channel=DroneSopTargetChannelConfig.Channels.JIRA,
+        enabled=fields.jira_enabled,
+        template_key=fields.jira_template_key,
+        jira_project_key=fields.jira_key,
+    ) or changed
+
+    messenger_template_key = fields.messenger_template_key
+    existing_messenger = target._get_channel_config(channel=DroneSopTargetChannelConfig.Channels.MESSENGER)
+    if (
+        messenger_template_key is _UNSET
+        and fields.jira_template_key is not _UNSET
+        and not (existing_messenger.template_key if existing_messenger else None)
+    ):
+        messenger_template_key = fields.jira_template_key
+
+    changed = _apply_single_channel_config(
+        target=target,
+        channel=DroneSopTargetChannelConfig.Channels.MESSENGER,
+        enabled=fields.messenger_enabled,
+        template_key=messenger_template_key,
+        chatroom_id=fields.chatroom_id,
+    ) or changed
+    changed = _apply_single_channel_config(
+        target=target,
+        channel=DroneSopTargetChannelConfig.Channels.MAIL,
+        enabled=fields.mail_enabled,
+        template_key=fields.mail_template_key,
+    ) or changed
+    return changed
+
+
+def _apply_needtosend_rule_updates(
+    *,
+    target: DroneSopTarget,
+    fields: UserSdwtChannelUpsertFields,
+) -> bool:
+    """target별 needtosend 규칙을 별도 rule row에 반영합니다."""
+
+    if (
+        fields.needtosend_comment_last_at is _UNSET
+        and fields.needtosend_ignore_sample_type is _UNSET
+        and fields.needtosend_enabled is _UNSET
+    ):
+        return False
+
+    rule, created = DroneSopNeedToSendRule.objects.select_for_update().get_or_create(target=target)
+    update_fields: list[str] = []
+    _set_value_if_changed(
+        instance=rule,
+        field_name="comment_keyword",
+        value=fields.needtosend_comment_last_at,
+        update_fields=update_fields,
+    )
+    _set_value_if_changed(
+        instance=rule,
+        field_name="ignore_sample_type",
+        value=fields.needtosend_ignore_sample_type,
+        update_fields=update_fields,
+    )
+    _set_value_if_changed(
+        instance=rule,
+        field_name="enabled",
+        value=fields.needtosend_enabled,
+        update_fields=update_fields,
+    )
+    if update_fields:
+        rule.save(update_fields=[*update_fields, "updated_at"])
+    return created or bool(update_fields)
 
 
 def upsert_drone_sop_user_sdwt_channel(
@@ -100,17 +316,15 @@ def upsert_drone_sop_user_sdwt_channel(
     # 2) 행 조회/생성 및 업데이트
     # -----------------------------------------------------------------------------
     with transaction.atomic():
-        channel = (
-            DroneSopTarget.objects.select_for_update()
-            .filter(target_user_sdwt_prod__iexact=normalized_target)
-            .order_by("id")
-            .first()
-        )
+        channel = _lock_target_by_name(normalized_target=normalized_target)
         created = channel is None
         if channel is None:
-            if fields.line_id is _UNSET:
+            if fields.line_id is _UNSET or not fields.line_id:
                 raise ValueError("line_id is required for new target")
-            channel = DroneSopTarget(target_user_sdwt_prod=normalized_target)
+            channel, created = _create_target_or_reselect(
+                normalized_target=normalized_target,
+                line_id=fields.line_id,
+            )
         update_fields: list[str] = []
 
         if fields.line_id is not _UNSET:
@@ -122,21 +336,22 @@ def upsert_drone_sop_user_sdwt_channel(
                 if channel.line_id != fields.line_id:
                     channel.line_id = fields.line_id
                     update_fields.append("line_id")
-        apply_user_sdwt_channel_field_updates(
-            channel=channel,
-            fields=fields,
-            update_fields=update_fields,
-        )
-
         if update_fields:
             if created:
                 channel.save()
             else:
                 channel.save(update_fields=[*update_fields, "updated_at"])
-            return channel, 1
-
-        if created:
+        elif created:
             channel.save()
+
+        config_changed = _apply_channel_config_updates(target=channel, fields=fields)
+        rule_changed = _apply_needtosend_rule_updates(target=channel, fields=fields)
+        if created or update_fields or config_changed or rule_changed:
+            channel = (
+                DroneSopTarget.objects.prefetch_related("channel_configs", "needtosend_rule")
+                .filter(pk=channel.pk)
+                .get()
+            )
             return channel, 1
 
     return channel, 0
@@ -177,5 +392,6 @@ def ensure_drone_sop_notification_target(
 
 __all__ = [
     "ensure_drone_sop_notification_target",
+    "get_or_create_drone_sop_target_by_name",
     "upsert_drone_sop_user_sdwt_channel",
 ]

@@ -1,12 +1,12 @@
 # =============================================================================
 # 모듈: 드론 SOP/조기 알림 모델
-# 주요 구성: DroneSOP, DroneSopTarget, DroneSopTargetDispatch, DroneSopDelivery, DroneEarlyInform
+# 주요 구성: DroneSOP, DroneSopTarget, DroneSopTargetChannelConfig, DroneSopDelivery, DroneEarlyInform
 # 주요 가정: sop_key는 필드 조합으로 생성합니다.
 # =============================================================================
 from __future__ import annotations
 
 from django.conf import settings
-from django.db import IntegrityError, models
+from django.db import models
 from django.db.models import Q
 from django.db.models.functions import Lower, Now
 
@@ -60,18 +60,6 @@ def build_sop_key(
 class DroneSOP(models.Model):
     """Drone SOP 관련 데이터(알림/상태/지라 연동 등)를 저장하는 모델입니다."""
 
-    _LEGACY_DELIVERY_SEED_KEYS = {
-        "send_jira",
-        "send_messenger",
-        "send_mail",
-        "jira_reason",
-        "messenger_reason",
-        "mail_reason",
-        "inform_step",
-        "jira_key",
-        "informed_at",
-    }
-
     sop_key = models.CharField(max_length=300, unique=True)
     line_id = models.CharField(max_length=50, null=True, blank=True)
     sdwt_prod = models.CharField(max_length=64, null=True, blank=True)
@@ -97,17 +85,6 @@ class DroneSOP(models.Model):
     custom_end_step = models.CharField(max_length=50, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_default=Now())
     updated_at = models.DateTimeField(auto_now=True, db_default=Now())
-
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        """legacy delivery 입력값을 runtime 호환 seed로 분리합니다."""
-
-        legacy_seed = {
-            key: kwargs.pop(key)
-            for key in list(kwargs.keys())
-            if key in self._LEGACY_DELIVERY_SEED_KEYS
-        }
-        super().__init__(*args, **kwargs)
-        self._legacy_delivery_seed = legacy_seed
 
     class Meta:
         db_table = "drone_sop"
@@ -151,127 +128,6 @@ class DroneSOP(models.Model):
         # 2) 저장 호출
         # -------------------------------------------------------------------------
         super().save(*args, **kwargs)
-        self._seed_legacy_delivery_rows()
-
-    def _seed_legacy_delivery_rows(self) -> None:
-        """legacy kwargs로 들어온 delivery 상태를 delivery row로 변환합니다."""
-
-        seed = getattr(self, "_legacy_delivery_seed", None)
-        if not isinstance(seed, dict) or not seed or not self.pk:
-            return
-
-        targets = self._resolve_legacy_delivery_seed_targets(seed=seed)
-        if not targets:
-            self._legacy_delivery_seed = {}
-            return
-        if not self.target_user_sdwt_prod:
-            self.target_user_sdwt_prod = targets[0]
-            type(self).objects.filter(pk=self.pk).update(target_user_sdwt_prod=targets[0])
-        target_code = targets[0]
-        target = DroneSopTarget.objects.filter(target_user_sdwt_prod__iexact=target_code).order_by("id").first()
-        dispatch, _ = DroneSopTargetDispatch.objects.get_or_create(
-            sop_id=int(self.pk),
-            target_code_snapshot=target_code,
-            defaults={
-                "target": target,
-                "target_display_snapshot": target_code,
-                "resolution_status": "resolved",
-                "dispatch_type": DroneSopTargetDispatch.DispatchTypes.AUTO,
-                "status": DroneSopTargetDispatch.Statuses.PENDING,
-            },
-        )
-
-        channel_specs = (
-            (DroneSopDelivery.Channels.JIRA, "send_jira", "jira_reason"),
-            (DroneSopDelivery.Channels.MESSENGER, "send_messenger", "messenger_reason"),
-            (DroneSopDelivery.Channels.MAIL, "send_mail", "mail_reason"),
-        )
-        for channel, send_key, reason_key in channel_specs:
-            raw_status = seed.get(send_key, 0)
-            try:
-                numeric_status = int(raw_status or 0)
-            except (TypeError, ValueError):
-                numeric_status = 0
-
-            status = DroneSopDelivery.Statuses.PENDING
-            reason = None
-            external_key = None
-            sent_at = None
-            if numeric_status > 0:
-                status = DroneSopDelivery.Statuses.SUCCESS
-                sent_at = seed.get("informed_at")
-                if channel == DroneSopDelivery.Channels.JIRA:
-                    external_key = seed.get("jira_key")
-            elif numeric_status < 0:
-                status = DroneSopDelivery.Statuses.FAILED
-                reason = seed.get(reason_key) or "send_failed"
-
-            DroneSopDelivery.objects.update_or_create(
-                dispatch=dispatch,
-                channel=channel,
-                defaults={
-                    "sop_id": int(self.pk),
-                    "status": status,
-                    "reason": reason,
-                    "external_key": external_key,
-                    "sent_at": sent_at,
-                    "sent_step": seed.get("inform_step"),
-                },
-            )
-        self._legacy_delivery_seed = {}
-
-    @staticmethod
-    def _normalize_seed_text(value: object) -> str | None:
-        """legacy seed 문자열을 공백 제거 기준으로 정규화합니다."""
-
-        if not isinstance(value, str):
-            return None
-        cleaned = value.strip()
-        return cleaned if cleaned else None
-
-    def _resolve_legacy_delivery_seed_targets(self, *, seed: dict[str, object]) -> list[str]:
-        """legacy target seed 또는 현재 매핑으로 delivery target을 해석합니다."""
-
-        explicit_target = self._normalize_seed_text(self.target_user_sdwt_prod)
-        if explicit_target:
-            return [explicit_target]
-
-        sdwt_prod = self._normalize_seed_text(self.sdwt_prod)
-        user_sdwt_prod = self._normalize_seed_text(self.user_sdwt_prod)
-        if sdwt_prod and user_sdwt_prod:
-            pair_targets = list(
-                DroneSopTargetMapping.objects.filter(sdwt_prod__iexact=sdwt_prod, user_sdwt_prod__iexact=user_sdwt_prod)
-                .select_related("target")
-                .exclude(target__target_user_sdwt_prod="")
-                .values_list("target__target_user_sdwt_prod", flat=True)
-                .order_by("id")
-            )
-            if pair_targets:
-                return [target for target in pair_targets if isinstance(target, str) and target.strip()][:1]
-        if sdwt_prod:
-            sdwt_targets = list(
-                DroneSopTargetMapping.objects.filter(sdwt_prod__iexact=sdwt_prod)
-                .filter(Q(user_sdwt_prod__isnull=True) | Q(user_sdwt_prod=""))
-                .select_related("target")
-                .exclude(target__target_user_sdwt_prod="")
-                .values_list("target__target_user_sdwt_prod", flat=True)
-                .order_by("id")
-            )
-            if sdwt_targets:
-                return [target for target in sdwt_targets if isinstance(target, str) and target.strip()][:1]
-        if user_sdwt_prod:
-            user_targets = list(
-                DroneSopTargetMapping.objects.filter(user_sdwt_prod__iexact=user_sdwt_prod)
-                .filter(Q(sdwt_prod__isnull=True) | Q(sdwt_prod=""))
-                .select_related("target")
-                .exclude(target__target_user_sdwt_prod="")
-                .values_list("target__target_user_sdwt_prod", flat=True)
-                .order_by("id")
-            )
-            if user_targets:
-                return [target for target in user_targets if isinstance(target, str) and target.strip()][:1]
-        fallback = user_sdwt_prod or sdwt_prod
-        return [fallback] if fallback else []
 
     def _first_successful_jira_delivery(self) -> "DroneSopDelivery | None":
         """성공한 첫 번째 Jira delivery를 반환합니다."""
@@ -395,10 +251,10 @@ class DroneSOP(models.Model):
 
 
 class DroneSopTarget(models.Model):
-    """Drone SOP 알림 target 기준 채널 설정을 저장하는 모델입니다.
+    """Drone SOP 알림 target의 식별자와 소유 라인을 저장하는 모델입니다.
 
-    target_user_sdwt_prod는 알림 묶음의 고유 식별자이며, line_id는 해당 target이
-    어느 라인 설정 화면에서 관리되는지 나타내는 소유 라인입니다.
+    target_user_sdwt_prod는 기존 API 호환을 위해 유지하는 이름이며, 실제 의미는
+    알림 target code입니다. 채널별 설정과 needtosend 규칙은 별도 모델에서 관리합니다.
     """
 
     class Sources(models.TextChoices):
@@ -408,17 +264,6 @@ class DroneSopTarget(models.Model):
 
     target_user_sdwt_prod = models.CharField(max_length=64)
     line_id = models.CharField(max_length=50, blank=True, default="")
-    jira_key = models.CharField(max_length=64, null=True, blank=True)
-    chatroom_id = models.BigIntegerField(null=True, blank=True)
-    jira_template_key = models.CharField(max_length=50, null=True, blank=True)
-    mail_template_key = models.CharField(max_length=50, null=True, blank=True)
-    messenger_template_key = models.CharField(max_length=50, null=True, blank=True)
-    jira_enabled = models.BooleanField(default=True)
-    messenger_enabled = models.BooleanField(default=True)
-    mail_enabled = models.BooleanField(default=True)
-    needtosend_comment_last_at = models.CharField(max_length=64, null=True, blank=True)
-    needtosend_ignore_sample_type = models.BooleanField(default=False)
-    needtosend_enabled = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True, db_default=Now())
     updated_at = models.DateTimeField(auto_now=True, db_default=Now())
 
@@ -426,37 +271,131 @@ class DroneSopTarget(models.Model):
         db_table = "drone_sop_target"
         constraints = [
             models.UniqueConstraint(
-                fields=["target_user_sdwt_prod"],
-                name="uniq_dro_sop_target",
+                Lower("target_user_sdwt_prod"),
+                name="uniq_dro_sop_tgt_key",
             ),
         ]
         indexes = [
             models.Index(fields=["line_id"], name="idx_dro_sop_tgt_line"),
         ]
 
+    def _get_channel_config(self, *, channel: str) -> "DroneSopTargetChannelConfig | None":
+        """prefetch/cache를 우선 사용해 target 채널 설정을 조회합니다."""
+
+        prefetched = getattr(self, "_prefetched_objects_cache", {}).get("channel_configs")
+        if prefetched is not None:
+            for config in prefetched:
+                if getattr(config, "channel", None) == channel:
+                    return config
+            return None
+        if not self.pk:
+            return None
+        cached = getattr(self, "_channel_config_by_channel_cache", None)
+        if cached is None:
+            cached = {config.channel: config for config in self.channel_configs.all()}
+            self._channel_config_by_channel_cache = cached
+        return cached.get(channel)
+
+    def _get_needtosend_rule(self) -> "DroneSopNeedToSendRule | None":
+        """prefetch/cache를 고려해 needtosend 규칙을 조회합니다."""
+
+        cached = getattr(self, "_needtosend_rule_cache", None)
+        if cached is not None:
+            return cached
+        if hasattr(self, "needtosend_rule"):
+            return self.needtosend_rule
+        return None
+
+    @property
+    def jira_key(self) -> str | None:
+        """Jira 채널의 project key를 legacy 호환 속성으로 반환합니다."""
+
+        config = self._get_channel_config(channel=DroneSopTargetChannelConfig.Channels.JIRA)
+        return config.jira_project_key if config else None
+
+    @property
+    def chatroom_id(self) -> int | None:
+        """메신저 채널의 chatroom_id를 legacy 호환 속성으로 반환합니다."""
+
+        config = self._get_channel_config(channel=DroneSopTargetChannelConfig.Channels.MESSENGER)
+        return config.chatroom_id if config else None
+
+    @property
+    def jira_template_key(self) -> str | None:
+        """Jira 채널 template key를 legacy 호환 속성으로 반환합니다."""
+
+        config = self._get_channel_config(channel=DroneSopTargetChannelConfig.Channels.JIRA)
+        return config.template_key if config else None
+
+    @property
+    def mail_template_key(self) -> str | None:
+        """메일 채널 template key를 legacy 호환 속성으로 반환합니다."""
+
+        config = self._get_channel_config(channel=DroneSopTargetChannelConfig.Channels.MAIL)
+        return config.template_key if config else None
+
+    @property
+    def messenger_template_key(self) -> str | None:
+        """메신저 채널 template key를 legacy 호환 속성으로 반환합니다."""
+
+        config = self._get_channel_config(channel=DroneSopTargetChannelConfig.Channels.MESSENGER)
+        return config.template_key if config else None
+
+    def _channel_enabled(self, *, channel: str) -> bool:
+        """채널 설정이 없으면 기존 동작과 동일하게 활성으로 간주합니다."""
+
+        config = self._get_channel_config(channel=channel)
+        return bool(config.enabled) if config else True
+
+    @property
+    def jira_enabled(self) -> bool:
+        """Jira 채널 활성 여부를 legacy 호환 속성으로 반환합니다."""
+
+        return self._channel_enabled(channel=DroneSopTargetChannelConfig.Channels.JIRA)
+
+    @property
+    def messenger_enabled(self) -> bool:
+        """메신저 채널 활성 여부를 legacy 호환 속성으로 반환합니다."""
+
+        return self._channel_enabled(channel=DroneSopTargetChannelConfig.Channels.MESSENGER)
+
+    @property
+    def mail_enabled(self) -> bool:
+        """메일 채널 활성 여부를 legacy 호환 속성으로 반환합니다."""
+
+        return self._channel_enabled(channel=DroneSopTargetChannelConfig.Channels.MAIL)
+
+    @property
+    def needtosend_comment_last_at(self) -> str | None:
+        """needtosend keyword를 legacy 호환 속성으로 반환합니다."""
+
+        rule = self._get_needtosend_rule()
+        return rule.comment_keyword if rule else None
+
+    @property
+    def needtosend_ignore_sample_type(self) -> bool:
+        """needtosend 샘플 타입 무시 여부를 legacy 호환 속성으로 반환합니다."""
+
+        rule = self._get_needtosend_rule()
+        return bool(rule.ignore_sample_type) if rule else False
+
+    @property
+    def needtosend_enabled(self) -> bool:
+        """needtosend 규칙 활성 여부를 legacy 호환 속성으로 반환합니다."""
+
+        rule = self._get_needtosend_rule()
+        return bool(rule.enabled) if rule else False
+
     @classmethod
     def get_or_create_by_name(cls, *, target_user_sdwt_prod: str, line_id: str = "") -> "DroneSopTarget":
-        """target 이름으로 target row를 조회하거나 생성합니다."""
+        """기존 호출부 호환을 위해 service의 target 생성 함수를 호출합니다."""
 
-        normalized = target_user_sdwt_prod.strip() if isinstance(target_user_sdwt_prod, str) else ""
-        if not normalized:
-            raise ValueError("target_user_sdwt_prod is required")
-        existing = cls.objects.filter(target_user_sdwt_prod__iexact=normalized).order_by("id").first()
-        if existing is not None:
-            return existing
-        try:
-            target, _ = cls.objects.get_or_create(
-                target_user_sdwt_prod=normalized,
-                defaults={
-                    "line_id": line_id,
-                },
-            )
-            return target
-        except IntegrityError:
-            concurrent = cls.objects.filter(target_user_sdwt_prod__iexact=normalized).order_by("id").first()
-            if concurrent is None:
-                raise
-            return concurrent
+        from .services.channels import get_or_create_drone_sop_target_by_name
+
+        return get_or_create_drone_sop_target_by_name(
+            target_user_sdwt_prod=target_user_sdwt_prod,
+            line_id=line_id,
+        )
 
     def __str__(self) -> str:  # 관리자/디버깅용 문자열 표현(커버리지 제외): pragma: no cover
         """관리자/디버깅용 문자열 표현을 반환합니다."""
@@ -464,6 +403,93 @@ class DroneSopTarget(models.Model):
         chatroom_display = self.chatroom_id if self.chatroom_id is not None else "-"
         line_display = self.line_id or "-"
         return f"{line_display} / {self.target_user_sdwt_prod} (jira={self.jira_key or '-'}, msg={chatroom_display})"
+
+
+class DroneSopTargetChannelConfig(models.Model):
+    """Drone SOP target의 채널별 발송 설정을 저장하는 모델입니다."""
+
+    class Channels(models.TextChoices):
+        JIRA = "jira", "Jira"
+        MAIL = "mail", "Mail"
+        MESSENGER = "messenger", "Messenger"
+
+    target = models.ForeignKey(
+        DroneSopTarget,
+        on_delete=models.CASCADE,
+        related_name="channel_configs",
+    )
+    channel = models.CharField(max_length=16, choices=Channels.choices)
+    enabled = models.BooleanField(default=True)
+    template_key = models.CharField(max_length=50, null=True, blank=True)
+    jira_project_key = models.CharField(max_length=64, null=True, blank=True)
+    chatroom_id = models.BigIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_default=Now())
+    updated_at = models.DateTimeField(auto_now=True, db_default=Now())
+
+    class Meta:
+        db_table = "drone_sop_target_channel_config"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["target", "channel"],
+                name="uniq_dro_tgt_ch_cfg",
+            ),
+            models.CheckConstraint(
+                check=Q(channel__in=["jira", "mail", "messenger"]),
+                name="chk_dro_tgt_ch_cfg_ch",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["channel", "enabled"], name="idx_dro_tgt_ch_cfg"),
+        ]
+
+    def __str__(self) -> str:  # 관리자/디버깅용 문자열 표현(커버리지 제외): pragma: no cover
+        """관리자/디버깅용 문자열 표현을 반환합니다."""
+
+        return f"{self.target_id} / {self.channel} / enabled={self.enabled}"
+
+
+class DroneSopNeedToSendRule(models.Model):
+    """Drone SOP target의 자동 발송 필요 여부 계산 규칙을 저장하는 모델입니다."""
+
+    target = models.OneToOneField(
+        DroneSopTarget,
+        on_delete=models.CASCADE,
+        related_name="needtosend_rule",
+    )
+    enabled = models.BooleanField(default=False)
+    comment_keyword = models.CharField(max_length=64, null=True, blank=True)
+    ignore_sample_type = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True, db_default=Now())
+    updated_at = models.DateTimeField(auto_now=True, db_default=Now())
+
+    class Meta:
+        db_table = "drone_sop_needtosend_rule"
+        indexes = [
+            models.Index(fields=["enabled"], name="idx_dro_nts_rule_en"),
+        ]
+
+    @property
+    def needtosend_comment_last_at(self) -> str | None:
+        """기존 rule 필드명을 사용하는 호출부와 호환되는 keyword를 반환합니다."""
+
+        return self.comment_keyword
+
+    @property
+    def needtosend_ignore_sample_type(self) -> bool:
+        """기존 rule 필드명을 사용하는 호출부와 호환되는 샘플 타입 정책을 반환합니다."""
+
+        return self.ignore_sample_type
+
+    @property
+    def needtosend_enabled(self) -> bool:
+        """기존 rule 필드명을 사용하는 호출부와 호환되는 활성 여부를 반환합니다."""
+
+        return self.enabled
+
+    def __str__(self) -> str:  # 관리자/디버깅용 문자열 표현(커버리지 제외): pragma: no cover
+        """관리자/디버깅용 문자열 표현을 반환합니다."""
+
+        return f"{self.target_id} / enabled={self.enabled}"
 
 
 class DroneSopTargetMapping(models.Model):
@@ -731,30 +757,6 @@ class DroneSopDelivery(models.Model):
 
         return f"{self.sop_id} / {self.channel} / {self.status}"
 
-    def save(self, *args: object, **kwargs: object) -> None:
-        """legacy 직접 생성 경로에서 dispatch가 없으면 자동 보강합니다."""
-
-        if not self.dispatch_id and self.sop_id:
-            target_code = "__TARGET_MISSING__"
-            if self.sop_id and getattr(self, "sop", None) is not None:
-                target_code = (self.sop.target_user_sdwt_prod or "").strip() or target_code
-            target = None
-            if not target_code.startswith("__"):
-                target = DroneSopTarget.objects.filter(target_user_sdwt_prod__iexact=target_code).order_by("id").first()
-            dispatch, _ = DroneSopTargetDispatch.objects.get_or_create(
-                sop_id=self.sop_id,
-                target_code_snapshot=target_code,
-                defaults={
-                    "target": target,
-                    "target_display_snapshot": target_code,
-                    "resolution_status": "target_missing" if target_code.startswith("__") else "resolved",
-                    "dispatch_type": DroneSopTargetDispatch.DispatchTypes.AUTO,
-                    "status": DroneSopTargetDispatch.Statuses.PENDING,
-                },
-            )
-            self.dispatch = dispatch
-        super().save(*args, **kwargs)
-
 
 class DroneSopDeliveryAttempt(models.Model):
     """Drone SOP delivery의 실제 외부 발송 시도 1회를 기록하는 모델입니다."""
@@ -835,7 +837,9 @@ __all__ = [
     "DroneSOP",
     "DroneSopDeliveryAttempt",
     "DroneSopDelivery",
+    "DroneSopNeedToSendRule",
     "DroneSopTarget",
+    "DroneSopTargetChannelConfig",
     "DroneSopTargetDispatch",
     "DroneSopTargetMapping",
     "DroneSopTargetRecipient",

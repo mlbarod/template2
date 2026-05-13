@@ -59,8 +59,8 @@ def get_needtosend_rule_for_target(
         return None
 
     rule = NeedToSendRule(
-        comment_last_at=str(rule_model.needtosend_comment_last_at or "").strip(),
-        ignore_sample_type=bool(rule_model.needtosend_ignore_sample_type),
+        comment_last_at=str(rule_model.comment_keyword or "").strip(),
+        ignore_sample_type=bool(rule_model.ignore_sample_type),
     )
     cache[lookup_key] = rule
     return rule

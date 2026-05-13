@@ -19,7 +19,9 @@ from .models import (
     DroneEarlyInform,
     DroneSOP,
     DroneSopDelivery,
+    DroneSopNeedToSendRule,
     DroneSopTarget,
+    DroneSopTargetChannelConfig,
     DroneSopTargetMapping,
     DroneSopTargetRecipient,
 )
@@ -184,14 +186,14 @@ def list_drone_sop_user_sdwt_maps() -> list[dict[str, Any]]:
 def get_drone_sop_needtosend_rule_by_target(
     *,
     target_user_sdwt_prod: str,
-) -> DroneSopTarget | None:
+) -> DroneSopNeedToSendRule | None:
     """target_user_sdwt_prod 기준 needtosend 채널 설정을 조회합니다.
 
     인자:
         target_user_sdwt_prod: 대상 소속 문자열.
 
     반환:
-        needtosend 설정이 있는 DroneSopTarget 또는 None.
+        needtosend 설정이 있는 DroneSopNeedToSendRule 또는 None.
 
     부작용:
         없음. 읽기 전용 조회입니다.
@@ -208,12 +210,13 @@ def get_drone_sop_needtosend_rule_by_target(
     # 2) 채널 설정의 needtosend 규칙 조회
     # -----------------------------------------------------------------------------
     return (
-        DroneSopTarget.objects.filter(
-            target_user_sdwt_prod__iexact=normalized,
-            needtosend_enabled=True,
+        DroneSopNeedToSendRule.objects.select_related("target")
+        .filter(
+            target__target_user_sdwt_prod__iexact=normalized,
+            enabled=True,
         )
-        .exclude(needtosend_comment_last_at__isnull=True)
-        .exclude(needtosend_comment_last_at__exact="")
+        .exclude(comment_keyword__isnull=True)
+        .exclude(comment_keyword__exact="")
         .order_by("id")
         .first()
     )
@@ -245,35 +248,30 @@ def list_drone_sop_user_sdwt_channels_by_targets(
     # -----------------------------------------------------------------------------
     # 2) 채널 설정 조회 및 매핑 구성
     # -----------------------------------------------------------------------------
-    rows = DroneSopTarget.objects.annotate(target_user_sdwt_prod_lookup=Lower("target_user_sdwt_prod")).filter(
-        target_user_sdwt_prod_lookup__in=normalized_targets,
-    ).values(
-        "target_user_sdwt_prod",
-        "target_user_sdwt_prod_lookup",
-        "jira_key",
-        "chatroom_id",
-        "jira_template_key",
-        "mail_template_key",
-        "messenger_template_key",
-        "jira_enabled",
-        "messenger_enabled",
-        "mail_enabled",
+    rows = (
+        DroneSopTarget.objects.annotate(target_user_sdwt_prod_lookup=Lower("target_user_sdwt_prod"))
+        .filter(target_user_sdwt_prod_lookup__in=normalized_targets)
+        .prefetch_related("channel_configs")
     )
     mapping: dict[str, dict[str, str | bool | int | None]] = {}
     for row in rows:
-        target_lookup = normalize_lookup_text(row.get("target_user_sdwt_prod"))
+        target_lookup = normalize_lookup_text(row.target_user_sdwt_prod)
         if not target_lookup:
             continue
-        chatroom_id = normalize_chatroom_id(row.get("chatroom_id"))
+        config_by_channel = {config.channel: config for config in row.channel_configs.all()}
+        jira_config = config_by_channel.get(DroneSopTargetChannelConfig.Channels.JIRA)
+        messenger_config = config_by_channel.get(DroneSopTargetChannelConfig.Channels.MESSENGER)
+        mail_config = config_by_channel.get(DroneSopTargetChannelConfig.Channels.MAIL)
+        chatroom_id = normalize_chatroom_id(messenger_config.chatroom_id if messenger_config else None)
         mapping[target_lookup] = {
-            "jira_key": normalize_text(row.get("jira_key")),
+            "jira_key": normalize_text(jira_config.jira_project_key if jira_config else None),
             "chatroom_id": chatroom_id,
-            "jira_template_key": normalize_text(row.get("jira_template_key")),
-            "mail_template_key": normalize_text(row.get("mail_template_key")),
-            "messenger_template_key": normalize_text(row.get("messenger_template_key")),
-            "jira_enabled": bool(row.get("jira_enabled", True)),
-            "messenger_enabled": bool(row.get("messenger_enabled", True)),
-            "mail_enabled": bool(row.get("mail_enabled", True)),
+            "jira_template_key": normalize_text(jira_config.template_key if jira_config else None),
+            "mail_template_key": normalize_text(mail_config.template_key if mail_config else None),
+            "messenger_template_key": normalize_text(messenger_config.template_key if messenger_config else None),
+            "jira_enabled": bool(jira_config.enabled) if jira_config else True,
+            "messenger_enabled": bool(messenger_config.enabled) if messenger_config else True,
+            "mail_enabled": bool(mail_config.enabled) if mail_config else True,
         }
     return mapping
 
@@ -800,6 +798,7 @@ def list_drone_sop_notification_targets_for_line(*, line_id: str) -> list[dict[s
         DroneSopTarget.objects.filter(line_id__iexact=normalized_line_id)
         .exclude(target_user_sdwt_prod__isnull=True)
         .exclude(target_user_sdwt_prod__exact="")
+        .prefetch_related("channel_configs", "needtosend_rule")
         .order_by("target_user_sdwt_prod", "id")
     )
     for row in configured_rows:
@@ -1172,7 +1171,11 @@ def get_drone_sop_channel_by_target_user_sdwt_prod(
     # -----------------------------------------------------------------------------
     # 2) 채널 설정 조회
     # -----------------------------------------------------------------------------
-    return DroneSopTarget.objects.filter(target_user_sdwt_prod__iexact=normalized).first()
+    return (
+        DroneSopTarget.objects.filter(target_user_sdwt_prod__iexact=normalized)
+        .prefetch_related("channel_configs", "needtosend_rule")
+        .first()
+    )
 
 
 def list_drone_sop_jira_target_user_sdwt_prods() -> list[str]:

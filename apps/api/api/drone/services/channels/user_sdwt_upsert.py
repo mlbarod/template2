@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ...models import DroneSopTarget
 from .normalization import (
     UNSET as _UNSET,
     normalize_optional_template_key,
@@ -114,79 +113,8 @@ def normalize_user_sdwt_channel_upsert_fields(
     )
 
 
-def set_channel_field_if_changed(
-    *,
-    channel: DroneSopTarget,
-    update_fields: list[str],
-    field_name: str,
-    value: Any,
-) -> None:
-    """지정 필드가 변경된 경우 모델 값과 update_fields를 갱신합니다."""
-
-    if value is _UNSET:
-        return
-    if getattr(channel, field_name) != value:
-        setattr(channel, field_name, value)
-        update_fields.append(field_name)
-
-
-def apply_user_sdwt_channel_field_updates(
-    *,
-    channel: DroneSopTarget,
-    fields: UserSdwtChannelUpsertFields,
-    update_fields: list[str],
-) -> None:
-    """정규화된 upsert 필드를 channel 모델에 반영합니다."""
-
-    field_values = (
-        ("jira_key", fields.jira_key),
-        ("chatroom_id", fields.chatroom_id),
-        ("jira_template_key", fields.jira_template_key),
-        ("mail_template_key", fields.mail_template_key),
-    )
-    for field_name, value in field_values:
-        set_channel_field_if_changed(
-            channel=channel,
-            update_fields=update_fields,
-            field_name=field_name,
-            value=value,
-        )
-
-    resolved_messenger_template_key = fields.messenger_template_key
-    if (
-        resolved_messenger_template_key is _UNSET
-        and fields.jira_template_key is not _UNSET
-        and not channel.messenger_template_key
-    ):
-        resolved_messenger_template_key = fields.jira_template_key
-    set_channel_field_if_changed(
-        channel=channel,
-        update_fields=update_fields,
-        field_name="messenger_template_key",
-        value=resolved_messenger_template_key,
-    )
-
-    rule_field_values = (
-        ("jira_enabled", fields.jira_enabled),
-        ("messenger_enabled", fields.messenger_enabled),
-        ("mail_enabled", fields.mail_enabled),
-        ("needtosend_comment_last_at", fields.needtosend_comment_last_at),
-        ("needtosend_ignore_sample_type", fields.needtosend_ignore_sample_type),
-        ("needtosend_enabled", fields.needtosend_enabled),
-    )
-    for field_name, value in rule_field_values:
-        set_channel_field_if_changed(
-            channel=channel,
-            update_fields=update_fields,
-            field_name=field_name,
-            value=value,
-        )
-
-
 __all__ = [
     "UserSdwtChannelUpsertFields",
-    "apply_user_sdwt_channel_field_updates",
     "normalize_user_sdwt_channel_target",
     "normalize_user_sdwt_channel_upsert_fields",
-    "set_channel_field_if_changed",
 ]

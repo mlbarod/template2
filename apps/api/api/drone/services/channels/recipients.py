@@ -23,7 +23,10 @@ from .recipient_normalization import (
     normalize_target_user_sdwt_prod as _normalize_target_user_sdwt_prod,
     normalize_user_ids as _normalize_user_ids,
 )
-from .user_sdwt_channel import ensure_drone_sop_notification_target
+from .user_sdwt_channel import (
+    ensure_drone_sop_notification_target,
+    get_or_create_drone_sop_target_by_name,
+)
 
 
 def _get_or_create_recipient_row(
@@ -40,7 +43,7 @@ def _get_or_create_recipient_row(
         normalized_target = _normalize_target_user_sdwt_prod(target_user_sdwt_prod)
         if not normalized_target:
             raise ValueError("targetUserSdwtProd is required")
-        target = DroneSopTarget.get_or_create_by_name(target_user_sdwt_prod=normalized_target)
+        target = get_or_create_drone_sop_target_by_name(target_user_sdwt_prod=normalized_target)
 
     try:
         with transaction.atomic():

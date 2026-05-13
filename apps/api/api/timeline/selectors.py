@@ -549,7 +549,7 @@ def _build_drone_chamber_filters(eqp_id: str) -> tuple[str, str, List[object]]:
     if not chamber_candidates:
         return base_eqp, "", []
 
-    like_clauses = " or ".join(["chamber_ids like %s"] * len(chamber_candidates))
+    like_clauses = " or ".join(["sop.chamber_ids like %s"] * len(chamber_candidates))
     return (
         base_eqp,
         f" and ({like_clauses})",
@@ -564,20 +564,31 @@ def _fetch_drone_logs(*, eqp_id: str) -> List[Dict[str, object]]:
     rows = _fetch_all_on_default(
         f"""
         select
-            id as id,
-            sample_type as event_type,
-            created_at as event_time,
-            user_sdwt_prod as operator,
-            status as status,
-            comment as comment,
-            jira_key as jira_key,
-            line_id as line_id,
-            eqp_id as eqp_id
-        from drone_sop
-        where created_at > %s
-          and eqp_id = %s
+            sop.id as id,
+            sop.sample_type as event_type,
+            sop.created_at as event_time,
+            sop.user_sdwt_prod as operator,
+            sop.status as status,
+            sop.comment as comment,
+            jira_delivery.external_key as jira_key,
+            sop.line_id as line_id,
+            sop.eqp_id as eqp_id
+        from drone_sop as sop
+        left join lateral (
+            select delivery.external_key
+            from drone_sop_target_dispatch as dispatch
+            join drone_sop_delivery as delivery
+              on delivery.dispatch_id = dispatch.id
+            where dispatch.sop_id = sop.id
+              and delivery.channel = 'jira'
+              and delivery.status = 'success'
+            order by delivery.sent_at desc nulls last, delivery.id desc
+            limit 1
+        ) as jira_delivery on true
+        where sop.created_at > %s
+          and sop.eqp_id = %s
           {match_clause}
-        order by created_at
+        order by sop.created_at
         """,
         [period, base_eqp, *match_params],
     )

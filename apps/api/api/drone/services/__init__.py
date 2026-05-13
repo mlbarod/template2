@@ -46,12 +46,15 @@ from .channels import (
     DroneSopTargetMappingDuplicateError,
     create_drone_sop_target_mapping,
     ensure_drone_sop_notification_target,
+    get_or_create_drone_sop_target_by_name,
     normalize_recipient_channel,
     replace_drone_sop_channel_recipients,
     upsert_drone_sop_user_sdwt_channel,
 )
 from .pop3.config import DroneSopPop3Config, DroneSopPop3IngestResult, NeedToSendRule
 from .pop3.sop_pop3 import run_drone_sop_pop3_ingest_from_env
+from .shared.delivery_state import create_channel_delivery_with_dispatch
+from .shared.legacy_delivery import pop_legacy_delivery_seed, seed_legacy_delivery_rows
 from .table_ops import (
     TableNotFoundError,
     TableRecordNotFoundError,
@@ -78,17 +81,21 @@ __all__ = [
     "NeedToSendRule",
     "create_early_inform_entry",
     "create_drone_sop_target_mapping",
+    "create_channel_delivery_with_dispatch",
     "delete_early_inform_entry",
     "ensure_drone_sop_notification_target",
     "enqueue_drone_sop_jira_instant_inform",
     "get_table_list_payload",
+    "get_or_create_drone_sop_target_by_name",
     "has_drone_sop_pipeline_candidates",
     "normalize_recipient_channel",
+    "pop_legacy_delivery_seed",
     "replace_drone_sop_channel_recipients",
     "retry_drone_sop_channel",
     "run_drone_sop_jira_create_from_env",
     "run_drone_sop_pipeline_from_env",
     "run_drone_sop_pop3_ingest_from_env",
+    "seed_legacy_delivery_rows",
     "upsert_drone_sop_user_sdwt_channel",
     "update_early_inform_entry",
     "update_table_record",

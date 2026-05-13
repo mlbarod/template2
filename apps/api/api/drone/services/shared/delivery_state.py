@@ -175,6 +175,28 @@ def get_or_prepare_channel_delivery(
     return delivery
 
 
+def create_channel_delivery_with_dispatch(
+    *,
+    sop: DroneSOP,
+    channel: str,
+    status: str = DroneSopDelivery.Statuses.PENDING,
+    reason: str | None = None,
+    target_user_sdwt_prod: str | None = None,
+) -> DroneSopDelivery:
+    """명시적인 service 경로로 dispatch가 연결된 delivery row를 생성합니다."""
+
+    target_code = _normalize_string_value(target_user_sdwt_prod) or _normalize_string_value(sop.target_user_sdwt_prod)
+    delivery = get_or_prepare_channel_delivery(
+        sop_id=int(sop.id),
+        target_user_sdwt_prod=target_code or "__TARGET_MISSING__",
+        channel=channel,
+    )
+    delivery.status = status
+    delivery.reason = reason
+    delivery.save(update_fields=["status", "reason", "updated_at"])
+    return delivery
+
+
 def ensure_channel_delivery_snapshots_for_rows(
     *,
     rows: list[dict[str, Any]],
@@ -311,6 +333,7 @@ def filter_delivery_ids_for_config_failure(*, delivery_ids: Sequence[int]) -> li
 
 __all__ = [
     "DeliverySnapshotResult",
+    "create_channel_delivery_with_dispatch",
     "ensure_channel_delivery_snapshots_for_rows",
     "filter_delivery_ids_for_config_failure",
     "get_or_prepare_channel_delivery",

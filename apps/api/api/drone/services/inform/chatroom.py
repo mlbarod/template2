@@ -70,7 +70,7 @@ def get_or_create_chatroom_id(
 
     부작용:
         - Knox API로 userID 조회/채팅방 생성 호출이 발생합니다.
-        - 생성 성공 시 drone_sop_user_sdwt_channel.chatroom_id를 갱신합니다.
+        - 생성 성공 시 target channel config의 chatroom_id를 갱신합니다.
     """
 
     # -----------------------------------------------------------------------------

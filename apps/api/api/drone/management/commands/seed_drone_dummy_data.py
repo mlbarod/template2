@@ -15,10 +15,10 @@ from django.db import transaction
 from django.utils import timezone
 
 from api.account import services as account_services
+from api.drone import services as drone_services
 from api.drone.models import (
     DroneEarlyInform,
     DroneSOP,
-    DroneSopDelivery,
     DroneSopTarget,
     DroneSopTargetMapping,
     build_sop_key,
@@ -98,7 +98,9 @@ def _seed_maps(*, prefix: str, targets: list[str]) -> dict[str, int]:
     created = 0
     updated = 0
     for spec in specs:
-        target = DroneSopTarget.get_or_create_by_name(target_user_sdwt_prod=str(spec["target_user_sdwt_prod"]))
+        target = drone_services.get_or_create_drone_sop_target_by_name(
+            target_user_sdwt_prod=str(spec["target_user_sdwt_prod"])
+        )
         _, was_created = DroneSopTargetMapping.objects.update_or_create(
             sdwt_prod=spec["sdwt_prod"],
             user_sdwt_prod=spec["user_sdwt_prod"],
@@ -110,12 +112,13 @@ def _seed_maps(*, prefix: str, targets: list[str]) -> dict[str, int]:
     return {"created": created, "updated": updated}
 
 
-def _seed_channels(*, targets: list[str]) -> dict[str, int]:
+def _seed_channels(*, prefix: str, targets: list[str]) -> dict[str, int]:
     """target 기준 채널 설정 샘플을 업서트합니다."""
 
     specs = [
         {
             "target_user_sdwt_prod": targets[0],
+            "line_id": f"{prefix}-L1",
             "jira_key": "DRA",
             "chatroom_id": 100001,
             "jira_template_key": "common",
@@ -127,6 +130,7 @@ def _seed_channels(*, targets: list[str]) -> dict[str, int]:
         },
         {
             "target_user_sdwt_prod": targets[1],
+            "line_id": f"{prefix}-L2",
             "jira_key": "DRB",
             "chatroom_id": 100002,
             "jira_template_key": "h1",
@@ -138,6 +142,7 @@ def _seed_channels(*, targets: list[str]) -> dict[str, int]:
         },
         {
             "target_user_sdwt_prod": targets[2],
+            "line_id": f"{prefix}-L3",
             "jira_key": "DRC",
             "chatroom_id": 100003,
             "jira_template_key": "common",
@@ -149,6 +154,7 @@ def _seed_channels(*, targets: list[str]) -> dict[str, int]:
         },
         {
             "target_user_sdwt_prod": targets[3],
+            "line_id": f"{prefix}-L4",
             "jira_key": "DRD",
             "chatroom_id": 100004,
             "jira_template_key": "h1",
@@ -163,13 +169,21 @@ def _seed_channels(*, targets: list[str]) -> dict[str, int]:
     updated = 0
     for spec in specs:
         target = str(spec["target_user_sdwt_prod"])
-        defaults = {key: value for key, value in spec.items() if key != "target_user_sdwt_prod"}
-        _, was_created = DroneSopTarget.objects.update_or_create(
+        target_row = DroneSopTarget.objects.filter(target_user_sdwt_prod__iexact=target).first()
+        _, was_updated = drone_services.upsert_drone_sop_user_sdwt_channel(
             target_user_sdwt_prod=target,
-            defaults=defaults,
+            line_id=str(spec.get("line_id") or ""),
+            jira_key=spec.get("jira_key"),
+            chatroom_id=spec.get("chatroom_id"),
+            jira_template_key=spec.get("jira_template_key"),
+            mail_template_key=spec.get("mail_template_key"),
+            messenger_template_key=spec.get("messenger_template_key"),
+            jira_enabled=bool(spec.get("jira_enabled", True)),
+            messenger_enabled=bool(spec.get("messenger_enabled", True)),
+            mail_enabled=bool(spec.get("mail_enabled", True)),
         )
-        created += int(was_created)
-        updated += int(not was_created)
+        created += int(target_row is None)
+        updated += int(bool(was_updated) and target_row is not None)
     return {"created": created, "updated": updated}
 
 
@@ -186,16 +200,16 @@ def _seed_rules(*, targets: list[str]) -> dict[str, int]:
     updated = 0
     for spec in specs:
         target = str(spec["target_user_sdwt_prod"])
-        _, was_created = DroneSopTarget.objects.update_or_create(
+        target_row = DroneSopTarget.objects.filter(target_user_sdwt_prod__iexact=target).first()
+        _, was_updated = drone_services.upsert_drone_sop_user_sdwt_channel(
             target_user_sdwt_prod=target,
-            defaults={
-                "needtosend_comment_last_at": spec["comment_last_at"],
-                "needtosend_ignore_sample_type": spec["ignore_sample_type"],
-                "needtosend_enabled": spec["enabled"],
-            },
+            line_id=(target_row.line_id if target_row else ""),
+            needtosend_comment_last_at=spec["comment_last_at"],
+            needtosend_ignore_sample_type=spec["ignore_sample_type"],
+            needtosend_enabled=spec["enabled"],
         )
-        created += int(was_created)
-        updated += int(not was_created)
+        created += int(target_row is None)
+        updated += int(bool(was_updated) and target_row is not None)
     return {"created": created, "updated": updated}
 
 
@@ -472,34 +486,20 @@ def _seed_sop_rows(*, prefix: str, targets: list[str]) -> dict[str, int]:
             defaults=row_defaults,
         )
         sop = DroneSOP.objects.get(sop_key=sop_key)
-        if isinstance(target_user_sdwt_prod, str) and target_user_sdwt_prod.strip():
-            for channel, raw_status in send_values.items():
-                status_value = int(raw_status or 0)
-                status = DroneSopDelivery.Statuses.PENDING
-                reason = None
-                external_key = None
-                sent_at = None
-                sent_step = None
-                if status_value > 0:
-                    status = DroneSopDelivery.Statuses.SUCCESS
-                    sent_at = informed_at
-                    sent_step = inform_step
-                    if channel == DroneSopDelivery.Channels.JIRA:
-                        external_key = jira_key
-                elif status_value < 0:
-                    status = DroneSopDelivery.Statuses.FAILED
-                    reason = reason_values.get(channel) or "send_failed"
-                DroneSopDelivery.objects.update_or_create(
-                    sop=sop,
-                    channel=channel,
-                    defaults={
-                        "status": status,
-                        "reason": reason,
-                        "external_key": external_key,
-                        "sent_step": sent_step,
-                        "sent_at": sent_at,
-                    },
-                )
+        drone_services.seed_legacy_delivery_rows(
+            sop=sop,
+            seed={
+                "send_jira": send_values["jira"],
+                "send_messenger": send_values["messenger"],
+                "send_mail": send_values["mail"],
+                "jira_reason": reason_values["jira"],
+                "messenger_reason": reason_values["messenger"],
+                "mail_reason": reason_values["mail"],
+                "jira_key": jira_key,
+                "inform_step": inform_step,
+                "informed_at": informed_at,
+            },
+        )
         created += int(was_created)
         updated += int(not was_created)
     return {"created": created, "updated": updated}
@@ -548,7 +548,7 @@ class Command(BaseCommand):
 
             affiliation_count = _seed_affiliations(prefix=prefix, targets=targets)
             map_result = _seed_maps(prefix=prefix, targets=targets)
-            channel_result = _seed_channels(targets=targets)
+            channel_result = _seed_channels(prefix=prefix, targets=targets)
             rule_result = _seed_rules(targets=targets)
             early_result = _seed_early_inform(prefix=prefix)
             sop_result = _seed_sop_rows(prefix=prefix, targets=targets)
