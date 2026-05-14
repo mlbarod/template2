@@ -20,7 +20,7 @@ export function NeedToSendCommentRuleCard({
   const ignoreSampleTypeCheckboxId = "needtosend-rule-ignore-sample-type"
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col gap-3 rounded-lg border bg-background p-4 shadow-sm">
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-hidden rounded-lg border bg-background p-4 shadow-sm">
       <div className="shrink-0 space-y-1">
         <h2 className="text-base font-medium">자동 예약 코멘트 규칙</h2>
         <p className="text-xs text-muted-foreground">
@@ -38,7 +38,7 @@ export function NeedToSendCommentRuleCard({
         </p>
       )}
 
-      <form className="grid gap-3" onSubmit={onSave}>
+      <form className="grid min-h-0 gap-3 overflow-y-auto pr-1" onSubmit={onSave}>
         <div className="space-y-1">
           <label className="text-xs font-medium text-muted-foreground" htmlFor="needtosend-comment-keyword-input">
             포함 키워드

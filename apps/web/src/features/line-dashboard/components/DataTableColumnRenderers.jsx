@@ -1,5 +1,6 @@
 // 파일 경로: src/features/line-dashboard/components/DataTableColumnRenderers.jsx
 // 컬럼별로 서로 다른 UI 표현을 담당하는 렌더러 모음입니다.
+import * as React from "react"
 import { ExternalLink } from "lucide-react"
 import { toast } from "sonner"
 
@@ -58,39 +59,55 @@ function showLotIdCopyFailedToast() {
   })
 }
 
-function DefectUrlCell({ value }) {
-  const links = parseDefectUrls(value)
-  if (!links.length) return null
+function DefectUrlHoverList({ links }) {
+  const [open, setOpen] = React.useState(false)
+  const closeTimerRef = React.useRef(null)
 
-  if (links.length === 1) {
-    const [link] = links
-    return (
-      <a
-        href={link.href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-border px-1 text-xs font-medium text-primary transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary/80"
-        aria-label="Open defect URL in a new tab"
-        title={`${link.label}: ${link.href}`}
-      >
-        <ExternalLink className="h-4 w-4" />
-      </a>
-    )
-  }
+  const clearCloseTimer = React.useCallback(() => {
+    if (!closeTimerRef.current) return
+    window.clearTimeout(closeTimerRef.current)
+    closeTimerRef.current = null
+  }, [])
+
+  const openList = React.useCallback(() => {
+    clearCloseTimer()
+    setOpen(true)
+  }, [clearCloseTimer])
+
+  const scheduleClose = React.useCallback(() => {
+    clearCloseTimer()
+    closeTimerRef.current = window.setTimeout(() => {
+      setOpen(false)
+      closeTimerRef.current = null
+    }, 120)
+  }, [clearCloseTimer])
+
+  React.useEffect(() => () => clearCloseTimer(), [clearCloseTimer])
 
   return (
-    <DropdownMenu modal={false}>
+    <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
           className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-border px-1.5 text-xs font-medium text-primary transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           aria-label={`${links.length} defect URLs`}
           title={`${links.length} defect URLs`}
+          onMouseEnter={openList}
+          onMouseLeave={scheduleClose}
+          onFocus={openList}
+          onBlur={scheduleClose}
+          onPointerDown={(event) => event.preventDefault()}
         >
           {links.length}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="center" className="w-52 p-1">
+      <DropdownMenuContent
+        align="center"
+        className="w-52 p-1"
+        onMouseEnter={openList}
+        onMouseLeave={scheduleClose}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+      >
         {links.map((link, index) => (
           <DropdownMenuItem key={`${link.href}:${index}`} asChild>
             <a
@@ -109,6 +126,29 @@ function DefectUrlCell({ value }) {
       </DropdownMenuContent>
     </DropdownMenu>
   )
+}
+
+function DefectUrlCell({ value }) {
+  const links = parseDefectUrls(value)
+  if (!links.length) return null
+
+  if (links.length === 1) {
+    const [link] = links
+    return (
+      <a
+        href={link.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1 text-primary transition-colors hover:text-primary/80"
+        aria-label="Open defect URL in a new tab"
+        title={`${link.label}: ${link.href}`}
+      >
+        <ExternalLink className="h-4 w-4" />
+      </a>
+    )
+  }
+
+  return <DefectUrlHoverList links={links} />
 }
 
 const CellRenderers = {

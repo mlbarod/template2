@@ -1,4 +1,4 @@
-import { IconSearch, IconUserPlus, IconUsers } from "@tabler/icons-react"
+import { IconSearch, IconUserPlus } from "@tabler/icons-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -44,7 +44,7 @@ function RecipientPickerUserList({
 
   if (isLoading) {
     return (
-      <div className="rounded-md border px-3 py-8 text-center text-xs text-muted-foreground">
+      <div className="flex h-full min-h-0 items-center justify-center rounded-md border px-3 py-8 text-center text-xs text-muted-foreground">
         {loadingText}
       </div>
     )
@@ -52,14 +52,14 @@ function RecipientPickerUserList({
 
   if (users.length === 0) {
     return (
-      <div className="rounded-md border px-3 py-8 text-center text-xs text-muted-foreground">
+      <div className="flex h-full min-h-0 items-center justify-center rounded-md border px-3 py-8 text-center text-xs text-muted-foreground">
         {emptyText}
       </div>
     )
   }
 
   return (
-    <div className="grid min-h-0 grid-rows-[auto,1fr] overflow-hidden rounded-md border">
+    <div className="grid h-full min-h-0 grid-rows-[auto,minmax(0,1fr)] overflow-hidden rounded-md border">
       <label className="flex items-center gap-2 border-b px-3 py-2 text-xs font-medium">
         <Checkbox
           checked={checked}
@@ -125,10 +125,14 @@ export function RecipientPickerDialog({
     const recipientKey = getRecipientKey(user)
     return recipientKey && selectedIds.includes(recipientKey)
   }).length
+  const handleSourceSdwtChange = (value) => {
+    onSourceSdwtChange(value)
+    onLoadSourceRecipients(value)
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="grid max-h-[85vh] w-[min(760px,calc(100%-2rem))] max-w-[min(760px,calc(100%-2rem))] grid-rows-[auto,1fr,auto] overflow-hidden">
+      <DialogContent className="grid h-[min(85dvh,720px)] w-[min(760px,calc(100%-2rem))] max-w-[min(760px,calc(100%-2rem))] grid-rows-[auto,minmax(0,1fr),auto] overflow-hidden">
         <DialogHeader>
           <DialogTitle>{config.title} 선택</DialogTitle>
           <DialogDescription>
@@ -136,17 +140,20 @@ export function RecipientPickerDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs value={activeTab} onValueChange={onTabChange} className="min-h-0">
+        <Tabs value={activeTab} onValueChange={onTabChange} className="h-full min-h-0 overflow-hidden">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="group">소속에서 불러오기</TabsTrigger>
             <TabsTrigger value="search">이름 · KnoxID 검색</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="group" className="grid min-h-0 grid-rows-[auto,1fr] gap-3">
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+          <TabsContent
+            value="group"
+            className="min-h-0 grid-rows-[auto,minmax(0,1fr)] gap-3 overflow-hidden data-[state=active]:grid data-[state=inactive]:hidden"
+          >
+            <div className="grid grid-cols-1 gap-2">
               <Select
                 value={sourceSdwt || undefined}
-                onValueChange={onSourceSdwtChange}
+                onValueChange={handleSourceSdwtChange}
                 disabled={!canManageRecipients || accountUserSdwtValues.length === 0}
               >
                 <SelectTrigger className="w-full">
@@ -160,16 +167,6 @@ export function RecipientPickerDialog({
                   ))}
                 </SelectContent>
               </Select>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={onLoadSourceRecipients}
-                disabled={!canManageRecipients || !sourceSdwt || isLoadingSourceUsers}
-                className="gap-1"
-              >
-                <IconUsers className="size-4" />
-                불러오기
-              </Button>
             </div>
 
             <RecipientPickerUserList
@@ -177,13 +174,16 @@ export function RecipientPickerDialog({
               selectedIds={selectedIds}
               isLoading={isLoadingSourceUsers}
               loadingText="소속 사용자를 불러오는 중입니다."
-              emptyText="소속을 선택하고 불러오기를 누르세요."
+              emptyText="소속을 선택하면 사용자를 불러옵니다."
               onToggleUser={onToggleUser}
               onToggleAll={(checked) => onToggleAll(groupUsers, checked)}
             />
           </TabsContent>
 
-          <TabsContent value="search" className="grid min-h-0 grid-rows-[auto,1fr] gap-3">
+          <TabsContent
+            value="search"
+            className="min-h-0 grid-rows-[auto,minmax(0,1fr)] gap-3 overflow-hidden data-[state=active]:grid data-[state=inactive]:hidden"
+          >
             <form className="grid grid-cols-[minmax(0,1fr)_auto] gap-2" onSubmit={onSearch}>
               <Input
                 value={searchValue}

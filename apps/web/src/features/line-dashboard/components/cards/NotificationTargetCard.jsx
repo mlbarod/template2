@@ -15,7 +15,7 @@ import {
 function LineUserSdwtBadges({ lineId, values, selectedValue, onSelect }) {
   if (!lineId) {
     return (
-      <div className="inline-flex items-center gap-2 rounded-md bg-background px-2 py-2 text-sm text-muted-foreground">
+      <div className="flex h-full min-h-0 items-center gap-2 rounded-md border bg-background px-2 py-2 text-sm text-muted-foreground">
         <AlertCircleIcon className="h-3 w-3" />
         라인을 선택하면 알림 Target 목록이 표시됩니다.
       </div>
@@ -24,7 +24,7 @@ function LineUserSdwtBadges({ lineId, values, selectedValue, onSelect }) {
 
   if (!values || values.length === 0) {
     return (
-      <div className="inline-flex items-center gap-2 rounded-md bg-background px-2 py-1 text-[11px] text-muted-foreground">
+      <div className="flex h-full min-h-0 items-center gap-2 rounded-md border bg-background px-2 py-1 text-[11px] text-muted-foreground">
         <AlertCircleIcon className="h-3 w-3" />
         등록된 알림 Target이 없습니다.
       </div>
@@ -32,7 +32,7 @@ function LineUserSdwtBadges({ lineId, values, selectedValue, onSelect }) {
   }
 
   return (
-    <div className="grid max-h-52 min-h-32 grid-cols-2 content-start gap-2 overflow-y-auto rounded-md border p-2">
+    <div className="grid h-full min-h-0 grid-cols-2 content-start gap-2 overflow-y-auto rounded-md border p-2">
       {values.map((value) => (
         <button
           key={value}
@@ -148,7 +148,7 @@ function TargetMappingSummary({
           {error}
         </p>
       ) : null}
-      <div className="mt-2 flex max-h-32 flex-wrap content-start gap-1.5 overflow-y-auto pr-1">
+      <div className="mt-2 flex flex-wrap content-start gap-1.5 pr-1">
         {mappings.length > 0 ? (
           mappings.map((mapping) => {
             const sdwtProd = mapping.sdwtProd || "-"
@@ -195,37 +195,9 @@ export function NotificationTargetCard({
   onSelectTarget,
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-2 rounded-lg border bg-background p-4 shadow-sm">
-      <div className="space-y-1">
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden rounded-lg border bg-background p-4 shadow-sm">
+      <div className="shrink-0 space-y-1">
         <h2 className="text-base font-medium">알림 Target 선택</h2>
-        <div className="flex gap-2">
-          <Input
-            id="target-create-input"
-            value={newTargetDraft}
-            onChange={(event) => onTargetDraftChange(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault()
-                void onCreateTarget()
-              }
-            }}
-            placeholder="ex) L1_NIGHT_SHIFT"
-            maxLength={maxTargetFieldLength}
-            disabled={!lineId || !canCreateTarget || isCreatingTarget}
-            className="h-8 text-xs"
-          />
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={onCreateTarget}
-            disabled={!lineId || !canCreateTarget || isCreatingTarget || !newTargetDraft.trim()}
-            className="h-8 shrink-0"
-          >
-            <IconPlus className="mr-1 size-3" />
-            추가
-          </Button>
-        </div>
         <p className="text-xs text-muted-foreground">
           메신저/메일 수신인을 설정할 알림 Target을 선택하세요.
         </p>
@@ -246,26 +218,61 @@ export function NotificationTargetCard({
         </div>
       ) : null}
 
-      <div className="min-w-0">
-        <LineUserSdwtBadges
-          lineId={lineId}
-          values={userSdwtValues}
-          selectedValue={selectedUserSdwtProd}
-          onSelect={onSelectTarget}
-        />
-      </div>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-hidden">
+        <div className="min-h-0 flex-1">
+          <LineUserSdwtBadges
+            lineId={lineId}
+            values={userSdwtValues}
+            selectedValue={selectedUserSdwtProd}
+            onSelect={onSelectTarget}
+          />
+        </div>
 
-      <TargetMappingSummary
-        target={selectedNotificationTarget}
-        draft={mappingDraft}
-        userOptionValues={mappingOptions.userSdwtProds}
-        sdwtOptionValues={mappingOptions.sdwtProds}
-        error={mappingFormError}
-        isSaving={isCreatingMapping}
-        canManage={canManageMappings}
-        onDraftChange={onMappingDraftChange}
-        onSubmit={onCreateTargetMapping}
-      />
+        <div className="shrink-0 rounded-md border bg-muted/30 p-2">
+          <div className="flex min-w-0 gap-2">
+            <Input
+              id="target-create-input"
+              value={newTargetDraft}
+              onChange={(event) => onTargetDraftChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault()
+                  void onCreateTarget()
+                }
+              }}
+              placeholder="새 Target 추가"
+              maxLength={maxTargetFieldLength}
+              disabled={!lineId || !canCreateTarget || isCreatingTarget}
+              className="h-8 text-xs"
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={onCreateTarget}
+              disabled={!lineId || !canCreateTarget || isCreatingTarget || !newTargetDraft.trim()}
+              className="h-8 shrink-0"
+            >
+              <IconPlus className="mr-1 size-3" />
+              추가
+            </Button>
+          </div>
+        </div>
+
+        <div className="shrink-0">
+          <TargetMappingSummary
+            target={selectedNotificationTarget}
+            draft={mappingDraft}
+            userOptionValues={mappingOptions.userSdwtProds}
+            sdwtOptionValues={mappingOptions.sdwtProds}
+            error={mappingFormError}
+            isSaving={isCreatingMapping}
+            canManage={canManageMappings}
+            onDraftChange={onMappingDraftChange}
+            onSubmit={onCreateTargetMapping}
+          />
+        </div>
+      </div>
     </div>
   )
 }

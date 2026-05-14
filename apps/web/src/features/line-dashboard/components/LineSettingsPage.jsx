@@ -145,10 +145,10 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   const isRefreshing = isLoading && hasLoadedOnce
   const title = isRecipientSettings ? "E-SOP 수신인 설정" : "E-SOP 알림 설정"
   const settingsGridClassName = isRecipientSettings
-    ? "grid min-w-0 grid-cols-1 gap-3 xl:grid-cols-3"
+    ? "grid h-full min-h-0 min-w-0 grid-cols-1 grid-rows-3 gap-3 xl:grid-cols-3 xl:grid-rows-1"
     : "grid h-full min-h-0 min-w-0 grid-cols-1 gap-3"
   const settingsBodyClassName = isRecipientSettings
-    ? "min-h-0 flex-1 overflow-y-auto pr-1"
+    ? "flex min-h-0 flex-1 overflow-hidden pr-1"
     : "flex flex-1 min-h-0 min-w-0 flex-col"
   const selectedNotificationTarget = notificationTargets.find(
     (target) => target.targetUserSdwtProd === selectedUserSdwtProd,
@@ -715,9 +715,9 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     }))
   }, [canManageRecipients])
 
-  const handleLoadSourceRecipients = React.useCallback(async (channel) => {
+  const handleLoadSourceRecipients = React.useCallback(async (channel, selectedSourceSdwt) => {
     const config = RECIPIENT_CHANNEL_CONFIG[channel]
-    const sourceSdwt = recipientSourceSdwt[channel]
+    const sourceSdwt = selectedSourceSdwt || recipientSourceSdwt[channel]
     if (!sourceSdwt) {
       setRecipientActionErrors((prev) => ({ ...prev, [channel]: "불러올 소속을 선택하세요." }))
       return
@@ -1152,21 +1152,21 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
           )}
 
           {isRecipientSettings ? (
-            <div className="flex min-w-0 flex-col gap-3">
+            <div className="grid h-full min-h-0 min-w-0 grid-rows-2 gap-3">
               {notificationTargetCard}
               {alarmChannelSettingsCard}
             </div>
           ) : null}
 
           {isRecipientSettings ? (
-            <div className="grid min-h-[calc(100vh-12rem)] min-w-0 grid-rows-2 gap-3">
+            <div className="grid h-full min-h-0 min-w-0 grid-rows-2 gap-3">
               <div className="min-h-0">{needToSendCommentRuleCard}</div>
               <div className="min-h-0">{myRecipientTargetsCard}</div>
             </div>
           ) : null}
 
           {isRecipientSettings ? (
-            <div className="flex min-w-0 flex-col gap-3">
+            <div className="grid h-full min-h-0 min-w-0 grid-rows-2 gap-3">
               <RecipientSettingsCards
                 recipientChannels={RECIPIENT_CHANNELS}
                 selectedUserSdwtProd={selectedUserSdwtProd}

@@ -150,13 +150,10 @@ export function getRecipientExternalKnoxId(user) {
 }
 
 export function getRecipientSecondaryText(user) {
-  const parts = [
-    user?.recipientType === "external" ? "미가입" : "",
-    user?.userSdwtProd,
-    user?.email,
-    user?.knoxId,
-  ].filter(Boolean)
-  return parts.length ? parts.join(" · ") : "연락처 정보 없음"
+  const userSdwtProd = typeof user?.userSdwtProd === "string" && user.userSdwtProd.trim()
+    ? user.userSdwtProd.trim()
+    : "user_sdwt_prod 없음"
+  return user?.recipientType === "external" ? `미가입 ${userSdwtProd}` : userSdwtProd
 }
 
 export function getRecipientListText(user) {
@@ -167,9 +164,7 @@ export function getRecipientListText(user) {
     user?.knoxId ||
     `User ${user?.userId || user?.id}`
   const knoxId = user?.knoxId || ""
-  const userSdwtProd = user?.userSdwtProd || ""
-  const nameWithKnox = knoxId && name !== knoxId ? `${name}(${knoxId})` : name
-  return userSdwtProd ? `${nameWithKnox}-${userSdwtProd}` : nameWithKnox
+  return knoxId && name !== knoxId ? `${name}(${knoxId})` : name
 }
 
 export function mergeRecipientUsers(currentUsers, nextUsers) {

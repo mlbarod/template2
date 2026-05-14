@@ -64,14 +64,14 @@ export function MyRecipientTargetsCard({
                 key={`${target.lineId}-${target.targetUserSdwtProd}`}
                 type="button"
                 onClick={() => onSelectTarget(target.targetUserSdwtProd)}
-                className={`flex w-full min-w-0 flex-col gap-2 border-b px-3 py-2 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+                className={`flex w-full min-w-0 items-center justify-between gap-3 border-b px-3 py-2 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
                   isSelected ? "bg-muted" : ""
                 }`}
                 aria-pressed={isSelected}
                 title={`${target.targetUserSdwtProd} 선택`}
               >
-                <span className="truncate font-mono text-xs font-medium">{target.targetUserSdwtProd}</span>
-                <span className="flex flex-wrap gap-1">
+                <span className="min-w-0 truncate font-mono text-xs font-medium">{target.targetUserSdwtProd}</span>
+                <span className="flex shrink-0 flex-wrap justify-end gap-1">
                   {(target.channels || []).map((channel) => (
                     <ChannelBadge key={channel} channel={channel} />
                   ))}

@@ -48,7 +48,7 @@ export function RecipientSettingsCards({
 
     return (
       <React.Fragment key={config.channel}>
-        <div className="min-w-0">
+        <div className="min-h-0 min-w-0">
           <RecipientChannelCard
             config={config}
             selectedUserSdwtProd={selectedUserSdwtProd}
@@ -78,7 +78,7 @@ export function RecipientSettingsCards({
           onTabChange={(value) => onPickerTabChange(config.channel, value)}
           onSourceSdwtChange={(value) => onSourceSdwtChange(config.channel, value)}
           isLoadingSourceUsers={Boolean(isLoadingSourceUsers[config.channel])}
-          onLoadSourceRecipients={() => onLoadSourceRecipients(config.channel)}
+          onLoadSourceRecipients={(sourceSdwt) => onLoadSourceRecipients(config.channel, sourceSdwt)}
           searchValue={recipientSearches[config.channel] || ""}
           onSearchChange={(value) => onRecipientSearchChange(config.channel, value)}
           isSearchingRecipients={Boolean(isSearchingRecipients[config.channel])}
