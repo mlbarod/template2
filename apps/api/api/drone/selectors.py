@@ -886,7 +886,7 @@ def affiliation_exists_for_user_sdwt_prod(*, user_sdwt_prod: str) -> bool:
 
 
 def list_drone_sop_mapping_option_values_for_line(*, line_id: str) -> dict[str, list[str]]:
-    """라인별 Drone SOP 지정 조합 드롭다운 옵션을 조회합니다.
+    """라인별 account_affiliation 지정 조합 드롭다운 옵션을 조회합니다.
 
     인자:
         line_id: 라인 ID.
@@ -902,23 +902,12 @@ def list_drone_sop_mapping_option_values_for_line(*, line_id: str) -> dict[str, 
     if not normalized_line_id:
         return {"userSdwtProds": [], "sdwtProds": []}
 
-    base_queryset = DroneSOP.objects.filter(line_id__iexact=normalized_line_id)
-    user_sdwt_values = (
-        base_queryset.exclude(user_sdwt_prod__isnull=True)
-        .exclude(user_sdwt_prod__exact="")
-        .values_list("user_sdwt_prod", flat=True)
-        .order_by("id")
+    user_sdwt_values = account_selectors.list_user_sdwt_prod_values_for_line(
+        line_id=normalized_line_id,
     )
-    sdwt_values = (
-        base_queryset.exclude(sdwt_prod__isnull=True)
-        .exclude(sdwt_prod__exact="")
-        .values_list("sdwt_prod", flat=True)
-        .order_by("id")
-    )
-
     return {
         "userSdwtProds": collapse_display_values(user_sdwt_values),
-        "sdwtProds": collapse_display_values(sdwt_values),
+        "sdwtProds": collapse_display_values(user_sdwt_values),
     }
 
 

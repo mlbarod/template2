@@ -1508,6 +1508,36 @@ def list_line_sdwt_pairs() -> list[dict[str, str]]:
     return [{"line_id": row["line"], "user_sdwt_prod": row["user_sdwt_prod"]} for row in pairs]
 
 
+def list_user_sdwt_prod_values_for_line(*, line_id: str) -> list[str]:
+    """라인 ID에 매핑되는 account_affiliation user_sdwt_prod 목록을 조회합니다.
+
+    입력:
+    - line_id: 라인 ID
+
+    반환:
+    - list[str]: user_sdwt_prod 문자열 목록
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - 없음
+    """
+
+    normalized_line_id = _normalize_text(line_id)
+    if not normalized_line_id:
+        return []
+
+    values = (
+        Affiliation.objects.filter(line__iexact=normalized_line_id)
+        .exclude(user_sdwt_prod__isnull=True)
+        .exclude(user_sdwt_prod__exact="")
+        .values_list("user_sdwt_prod", flat=True)
+        .order_by("user_sdwt_prod")
+    )
+    return sorted(_collapse_user_sdwt_prod_values(values))
+
+
 def get_next_user_sdwt_prod_change(
     *,
     user: Any,

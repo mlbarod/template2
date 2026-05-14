@@ -2354,6 +2354,16 @@ class DroneSopTargetRecipientTests(TestCase):
             user_sdwt_prod="USER_A",
             target_user_sdwt_prod="CUSTOM_TARGET",
         )
+        account_services.ensure_affiliation_option(
+            department="Dept",
+            line="L1",
+            user_sdwt_prod="USER_A",
+        )
+        account_services.ensure_affiliation_option(
+            department="Dept",
+            line="L1",
+            user_sdwt_prod="SDWT_A",
+        )
         DroneSOP.objects.create(
             line_id="L1",
             sdwt_prod="SDWT_A",
@@ -2365,8 +2375,8 @@ class DroneSopTargetRecipientTests(TestCase):
         )
         DroneSOP.objects.create(
             line_id="L1",
-            sdwt_prod="sdwt_a",
-            user_sdwt_prod="user_a",
+            sdwt_prod="SOP_ONLY_S",
+            user_sdwt_prod="SOP_ONLY_U",
             eqp_id="EQP-A2",
             chamber_ids="CH-A2",
             lot_id="LOT-A2",
@@ -2399,8 +2409,8 @@ class DroneSopTargetRecipientTests(TestCase):
             custom_target["mappings"],
             [{"sdwtProd": "SDWT_A", "userSdwtProd": "USER_A"}],
         )
-        self.assertEqual(payload["mappingOptions"]["userSdwtProds"], ["USER_A"])
-        self.assertEqual(payload["mappingOptions"]["sdwtProds"], ["SDWT_A"])
+        self.assertEqual(payload["mappingOptions"]["userSdwtProds"], ["ETCH_A", "SDWT_A", "USER_A"])
+        self.assertEqual(payload["mappingOptions"]["sdwtProds"], ["ETCH_A", "SDWT_A", "USER_A"])
 
     def test_notification_target_endpoint_creates_custom_target(self) -> None:
         """account_affiliation에 없는 커스텀 target도 기존 line 소유 target으로 생성할 수 있어야 합니다."""
