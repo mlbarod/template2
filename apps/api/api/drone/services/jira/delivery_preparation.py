@@ -127,10 +127,10 @@ def collect_jira_delivery_rows(
                 continue
 
             config_row = channel_by_target.get(_normalize_target_lookup_key(target) or "")
-            if not config_row:
+            if not config_row or not bool(config_row.get("jira_configured", False)):
                 mark_channel_delivery_status(
                     delivery_ids=[delivery.id],
-                    status=DroneSopDelivery.Statuses.FAILED,
+                    status=DroneSopDelivery.Statuses.DISABLED,
                     reason=REASON_CHANNEL_CONFIG_MISSING,
                 )
                 continue

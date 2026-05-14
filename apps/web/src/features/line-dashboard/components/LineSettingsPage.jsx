@@ -6,9 +6,14 @@ import { LineSettingsHeader } from "./LineSettingsHeader"
 import { AlarmChannelSettingsCard } from "./cards/AlarmChannelSettingsCard"
 import { EarlyInformSettingsCard } from "./cards/EarlyInformSettingsCard"
 import { NeedToSendCommentRuleCard } from "./cards/NeedToSendCommentRuleCard"
+import { MyRecipientTargetsCard } from "./cards/MyRecipientTargetsCard"
 import { NotificationTargetCard } from "./cards/NotificationTargetCard"
 import { RecipientSettingsCards } from "./sections/RecipientSettingsCards"
-import { fetchAccountUserPool, fetchNotificationRecipientPermissions } from "../api"
+import {
+  fetchAccountUserPool,
+  fetchMyNotificationRecipientTargets,
+  fetchNotificationRecipientPermissions,
+} from "../api"
 import { useLineSettings } from "../hooks/useLineSettings"
 import {
   DEFAULT_CHANNEL_ENABLED,
@@ -121,7 +126,10 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   const [recipientPickerSelectedIds, setRecipientPickerSelectedIds] = React.useState({ mail: [], messenger: [] })
   const [recipientSourceSdwt, setRecipientSourceSdwt] = React.useState({ mail: "", messenger: "" })
   const [accountUserSdwtValues, setAccountUserSdwtValues] = React.useState([])
+  const [myRecipientTargets, setMyRecipientTargets] = React.useState([])
+  const [myRecipientTargetsError, setMyRecipientTargetsError] = React.useState(null)
   const [recipientActionErrors, setRecipientActionErrors] = React.useState({ mail: null, messenger: null })
+  const [isMyRecipientTargetsLoading, setIsMyRecipientTargetsLoading] = React.useState(false)
   const [isSearchingRecipients, setIsSearchingRecipients] = React.useState({ mail: false, messenger: false })
   const [isLoadingSourceUsers, setIsLoadingSourceUsers] = React.useState({ mail: false, messenger: false })
   const [isSavingRecipients, setIsSavingRecipients] = React.useState({ mail: false, messenger: false })
@@ -132,8 +140,11 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   const isRefreshing = isLoading && hasLoadedOnce
   const title = isRecipientSettings ? "E-SOP 수신인 설정" : "E-SOP 알림 설정"
   const settingsGridClassName = isRecipientSettings
-    ? "grid h-full min-h-0 min-w-0 grid-cols-1 gap-3 xl:grid-cols-3"
+    ? "grid min-w-0 grid-cols-1 gap-3 xl:grid-cols-3"
     : "grid h-full min-h-0 min-w-0 grid-cols-1 gap-3"
+  const settingsBodyClassName = isRecipientSettings
+    ? "min-h-0 flex-1 overflow-y-auto pr-1"
+    : "flex flex-1 min-h-0 min-w-0 flex-col"
   const selectedNotificationTarget = notificationTargets.find(
     (target) => target.targetUserSdwtProd === selectedUserSdwtProd,
   )
@@ -164,10 +175,46 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     )
   }, [])
 
+  const loadMyRecipientTargets = React.useCallback(async () => {
+    const requestLineId = lineId
+    const requestUserId = user?.id
+    if (!isRecipientSettings || !requestLineId || !requestUserId) {
+      setMyRecipientTargets([])
+      setMyRecipientTargetsError(null)
+      setIsMyRecipientTargetsLoading(false)
+      return { ok: true }
+    }
+
+    setIsMyRecipientTargetsLoading(true)
+    setMyRecipientTargetsError(null)
+    try {
+      const { targets } = await fetchMyNotificationRecipientTargets({ lineId: requestLineId })
+      if (recipientContextRef.current.lineId !== requestLineId) {
+        return { ok: false, stale: true }
+      }
+      setMyRecipientTargets(targets || [])
+      return { ok: true }
+    } catch (requestError) {
+      if (recipientContextRef.current.lineId !== requestLineId) {
+        return { ok: false, stale: true }
+      }
+      const message =
+        requestError instanceof Error ? requestError.message : "Failed to load my recipient targets"
+      setMyRecipientTargets([])
+      setMyRecipientTargetsError(message)
+      return { ok: false }
+    } finally {
+      if (recipientContextRef.current.lineId === requestLineId) {
+        setIsMyRecipientTargetsLoading(false)
+      }
+    }
+  }, [isRecipientSettings, lineId, user?.id])
+
   const handleRefresh = React.useCallback(() => {
     if (!lineId) return
     refresh()
-  }, [lineId, refresh])
+    void loadMyRecipientTargets()
+  }, [lineId, loadMyRecipientTargets, refresh])
 
   const handleFormChange = React.useCallback((key, value) => {
     setFormValues((prev) => ({ ...prev, [key]: value }))
@@ -247,6 +294,10 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     setNewTargetDraft("")
     setTargetFormError(null)
   }, [lineId])
+
+  React.useEffect(() => {
+    void loadMyRecipientTargets()
+  }, [loadMyRecipientTargets])
 
   React.useEffect(() => {
     setMappingDraft({ userSdwtProd: "", sdwtProd: "" })
@@ -781,6 +832,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
       if (result?.stale) {
         return
       }
+      void loadMyRecipientTargets()
       showRecipientsSaveToast(config.saveDescription)
     } catch (requestError) {
       if (!isCurrentRecipientContext(requestLineId, requestTarget)) {
@@ -800,6 +852,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     currentRecipientDrafts,
     isCurrentRecipientContext,
     lineId,
+    loadMyRecipientTargets,
     selectedUserSdwtProd,
     updateMailRecipients,
     updateMessengerRecipients,
@@ -924,34 +977,70 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     [cancelEditing, deleteEntry, editingId],
   )
 
-  const channelSettingsCards = (
-    <>
-      <AlarmChannelSettingsCard
-        selectedUserSdwtProd={selectedUserSdwtProd}
-        jiraKeyDraft={jiraKeyDraft}
-        channelEnabledDraft={channelEnabledDraft}
-        maxJiraKeyLength={MAX_JIRA_KEY_LENGTH}
-        jiraKeyFormError={jiraKeyFormError}
-        jiraKeyError={jiraKeyError}
-        isJiraKeyLoading={isJiraKeyLoading}
-        isSavingJiraKey={isSavingJiraKey}
-        canManage={canManageChannelSettings}
-        onJiraKeyDraftChange={setJiraKeyDraft}
-        onChannelEnabledChange={handleChannelEnabledChange}
-        onSaveJiraKey={handleJiraKeySave}
-      />
-      <NeedToSendCommentRuleCard
-        selectedUserSdwtProd={selectedUserSdwtProd}
-        ruleDraft={needToSendRuleDraft}
-        maxKeywordLength={MAX_NEED_TO_SEND_KEYWORD_LENGTH}
-        formError={needToSendRuleFormError}
-        isLoading={isJiraKeyLoading}
-        isSaving={isSavingNeedToSendRule}
-        canManage={canManageChannelSettings}
-        onDraftChange={handleNeedToSendRuleDraftChange}
-        onSave={handleNeedToSendRuleSave}
-      />
-    </>
+  const notificationTargetCard = (
+    <NotificationTargetCard
+      lineId={lineId}
+      newTargetDraft={newTargetDraft}
+      maxTargetFieldLength={MAX_TARGET_FIELD_LENGTH}
+      canCreateTarget={canCreateTarget}
+      canManageMappings={canManageMappings}
+      isCreatingTarget={isCreatingTarget}
+      isCreatingMapping={isCreatingMapping}
+      targetFormError={targetFormError}
+      mappingFormError={mappingFormError}
+      mappingDraft={mappingDraft}
+      mappingOptions={mappingOptions}
+      userSdwtValues={userSdwtValues}
+      selectedUserSdwtProd={selectedUserSdwtProd}
+      selectedNotificationTarget={selectedNotificationTarget}
+      onTargetDraftChange={setNewTargetDraft}
+      onMappingDraftChange={handleMappingDraftChange}
+      onCreateTarget={handleCreateTarget}
+      onCreateTargetMapping={handleCreateTargetMapping}
+      onSelectTarget={setSelectedUserSdwtProd}
+    />
+  )
+
+  const alarmChannelSettingsCard = (
+    <AlarmChannelSettingsCard
+      selectedUserSdwtProd={selectedUserSdwtProd}
+      jiraKeyDraft={jiraKeyDraft}
+      channelEnabledDraft={channelEnabledDraft}
+      maxJiraKeyLength={MAX_JIRA_KEY_LENGTH}
+      jiraKeyFormError={jiraKeyFormError}
+      jiraKeyError={jiraKeyError}
+      isJiraKeyLoading={isJiraKeyLoading}
+      isSavingJiraKey={isSavingJiraKey}
+      canManage={canManageChannelSettings}
+      onJiraKeyDraftChange={setJiraKeyDraft}
+      onChannelEnabledChange={handleChannelEnabledChange}
+      onSaveJiraKey={handleJiraKeySave}
+    />
+  )
+
+  const needToSendCommentRuleCard = (
+    <NeedToSendCommentRuleCard
+      selectedUserSdwtProd={selectedUserSdwtProd}
+      ruleDraft={needToSendRuleDraft}
+      maxKeywordLength={MAX_NEED_TO_SEND_KEYWORD_LENGTH}
+      formError={needToSendRuleFormError}
+      isLoading={isJiraKeyLoading}
+      isSaving={isSavingNeedToSendRule}
+      canManage={canManageChannelSettings}
+      onDraftChange={handleNeedToSendRuleDraftChange}
+      onSave={handleNeedToSendRuleSave}
+    />
+  )
+
+  const myRecipientTargetsCard = (
+    <MyRecipientTargetsCard
+      lineId={lineId}
+      targets={myRecipientTargets}
+      selectedUserSdwtProd={selectedUserSdwtProd}
+      isLoading={isMyRecipientTargetsLoading}
+      error={myRecipientTargetsError}
+      onSelectTarget={setSelectedUserSdwtProd}
+    />
   )
 
   return (
@@ -973,7 +1062,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
         </div>
       )}
 
-      <div className="flex flex-1 min-h-0 min-w-0 flex-col">
+      <div className={settingsBodyClassName}>
         <div className={settingsGridClassName}>
           {isNotificationSettings && (
             <EarlyInformSettingsCard
@@ -1000,37 +1089,21 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
           )}
 
           {isRecipientSettings ? (
-            <NotificationTargetCard
-              lineId={lineId}
-              newTargetDraft={newTargetDraft}
-              maxTargetFieldLength={MAX_TARGET_FIELD_LENGTH}
-              canCreateTarget={canCreateTarget}
-              canManageMappings={canManageMappings}
-              isCreatingTarget={isCreatingTarget}
-              isCreatingMapping={isCreatingMapping}
-              targetFormError={targetFormError}
-              mappingFormError={mappingFormError}
-              mappingDraft={mappingDraft}
-              mappingOptions={mappingOptions}
-              userSdwtValues={userSdwtValues}
-              selectedUserSdwtProd={selectedUserSdwtProd}
-              selectedNotificationTarget={selectedNotificationTarget}
-              onTargetDraftChange={setNewTargetDraft}
-              onMappingDraftChange={handleMappingDraftChange}
-              onCreateTarget={handleCreateTarget}
-              onCreateTargetMapping={handleCreateTargetMapping}
-              onSelectTarget={setSelectedUserSdwtProd}
-            />
-          ) : null}
-
-          {isRecipientSettings ? (
-            <div className="grid h-full min-h-0 min-w-0 grid-rows-2 gap-4">
-              {channelSettingsCards}
+            <div className="flex min-w-0 flex-col gap-3">
+              {notificationTargetCard}
+              {alarmChannelSettingsCard}
             </div>
           ) : null}
 
           {isRecipientSettings ? (
-            <div className="flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-hidden">
+            <div className="grid min-h-[calc(100vh-12rem)] min-w-0 grid-rows-2 gap-3">
+              <div className="min-h-0">{needToSendCommentRuleCard}</div>
+              <div className="min-h-0">{myRecipientTargetsCard}</div>
+            </div>
+          ) : null}
+
+          {isRecipientSettings ? (
+            <div className="flex min-w-0 flex-col gap-3">
               <RecipientSettingsCards
                 recipientChannels={RECIPIENT_CHANNELS}
                 selectedUserSdwtProd={selectedUserSdwtProd}

@@ -18,6 +18,7 @@ export {
   createNotificationTargetMapping,
   createNotificationTarget,
   fetchAccountUserPool,
+  fetchMyNotificationRecipientTargets,
   fetchNotificationRecipientPermissions,
   fetchNotificationRecipients,
   fetchNotificationTargets,

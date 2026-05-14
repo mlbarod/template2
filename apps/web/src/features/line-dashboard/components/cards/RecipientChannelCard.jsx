@@ -20,7 +20,7 @@ export function RecipientChannelCard({
   const pickerDisabled = !selectedUserSdwtProd
 
   return (
-    <div className="flex h-full min-h-0 flex-col rounded-lg border bg-background p-4 shadow-sm">
+    <div className="flex min-w-0 flex-col rounded-lg border bg-background p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3 pb-3">
         <div className="min-w-0 space-y-1">
           <h2 className="text-base font-medium">{config.title}</h2>
@@ -49,7 +49,7 @@ export function RecipientChannelCard({
         </Button>
       </div>
 
-      <div className="flex flex-1 min-h-0 flex-col gap-3">
+      <div className="flex flex-col gap-3">
         <Button
           type="button"
           variant="outline"
@@ -61,7 +61,7 @@ export function RecipientChannelCard({
           수신인 검색/추가
         </Button>
 
-        <div className="min-h-64 flex-1 overflow-y-auto rounded-md border">
+        <div className="max-h-80 min-h-64 overflow-y-auto rounded-md border">
           {isLoadingRecipients ? (
             <div className="px-3 py-6 text-center text-xs text-muted-foreground">{config.loadingText}</div>
           ) : recipients.length === 0 ? (

@@ -32,7 +32,7 @@ function LineUserSdwtBadges({ lineId, values, selectedValue, onSelect }) {
   }
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-2 content-start gap-2 overflow-y-auto rounded-md border p-2">
+    <div className="grid max-h-52 min-h-32 grid-cols-2 content-start gap-2 overflow-y-auto rounded-md border p-2">
       {values.map((value) => (
         <button
           key={value}
@@ -68,7 +68,7 @@ function TargetMappingSummary({
 }) {
   if (!target) {
     return (
-      <div className="min-h-0 flex-[1.5] rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+      <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
         알림 Target을 선택하면 지정 조합이 표시됩니다.
       </div>
     )
@@ -79,7 +79,7 @@ function TargetMappingSummary({
   const isSelectDisabled = !canManage || isSaving || !hasOptions
 
   return (
-    <div className="flex min-h-0 flex-[1.5] flex-col overflow-hidden rounded-md border bg-muted/30 px-3 py-2">
+    <div className="flex flex-col rounded-md border bg-muted/30 px-3 py-2">
       <div className="flex shrink-0 items-center justify-between gap-2">
         <span className="text-xs font-medium text-foreground">지정 조합</span>
         <Badge variant={target.isConfigured ? "default" : "secondary"} className="text-[10px]">
@@ -148,7 +148,7 @@ function TargetMappingSummary({
           {error}
         </p>
       ) : null}
-      <div className="mt-2 flex min-h-0 flex-1 flex-wrap content-start gap-1.5 overflow-y-auto pr-1">
+      <div className="mt-2 flex max-h-32 flex-wrap content-start gap-1.5 overflow-y-auto pr-1">
         {mappings.length > 0 ? (
           mappings.map((mapping) => {
             const sdwtProd = mapping.sdwtProd || "-"
@@ -195,7 +195,7 @@ export function NotificationTargetCard({
   onSelectTarget,
 }) {
   return (
-    <div className="flex h-full min-h-0 flex-col gap-2 rounded-lg border bg-background p-4 shadow-sm">
+    <div className="flex min-w-0 flex-col gap-2 rounded-lg border bg-background p-4 shadow-sm">
       <div className="space-y-1">
         <h2 className="text-base font-medium">알림 Target 선택</h2>
         <div className="flex gap-2">
@@ -246,7 +246,7 @@ export function NotificationTargetCard({
         </div>
       ) : null}
 
-      <div className="min-h-0 min-w-0 flex-1">
+      <div className="min-w-0">
         <LineUserSdwtBadges
           lineId={lineId}
           values={userSdwtValues}

@@ -11,7 +11,7 @@ import json
 import re
 from html import unescape
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from .utils import sanitize_url
 
@@ -44,6 +44,19 @@ def _strip_wrapping_quotes(value: Any) -> str:
     if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {"'", '"'}:
         return cleaned[1:-1].strip()
     return cleaned
+
+
+def _is_no_data_defect_map_url(value: Any) -> bool:
+    """Defect map URL의 No data placeholder 여부를 판정합니다."""
+
+    normalized = " ".join(unquote(str(value or "")).strip().strip("/").casefold().split())
+    if normalized in {"no data", "nodata"}:
+        return True
+    for scheme in ("http://", "https://"):
+        if normalized.startswith(scheme):
+            host_like = normalized.removeprefix(scheme).strip().strip("/")
+            return host_like in {"no data", "nodata"}
+    return False
 
 
 def _extract_url_query_value(*, url: str, key: str) -> str:
@@ -128,7 +141,7 @@ def _normalize_defect_json_entry(
         return None
 
     map_url = sanitize_url(_get_defect_entry_value(entry, "DEFECT_MAP_URL"))
-    if not map_url:
+    if not map_url or _is_no_data_defect_map_url(map_url):
         return None
 
     map_file = _extract_defect_map_file(map_url)
@@ -156,7 +169,7 @@ def _normalize_defect_json_chunk(
     """JSON 파싱이 실패한 defect_json object chunk를 정규화합니다."""
 
     map_url = sanitize_url(_extract_json_string_field(raw=raw, key="DEFECT_MAP_URL"))
-    if not map_url:
+    if not map_url or _is_no_data_defect_map_url(map_url):
         return None
 
     map_file = _extract_defect_map_file(map_url)

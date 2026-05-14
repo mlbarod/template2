@@ -95,6 +95,7 @@ def collect_pending_channel_deliveries(
     channel_by_target: dict[str, ChannelConfig],
     enabled_field: str,
     channel: str,
+    configured_field: str | None = None,
 ) -> tuple[list[PendingChannelDelivery], list[int]]:
     """채널 전송 대기 delivery를 분류합니다.
 
@@ -126,10 +127,13 @@ def collect_pending_channel_deliveries(
                 continue
 
             config_row = channel_by_target.get(normalize_target_lookup_key(target) or "")
-            if not config_row:
+            if not config_row or (
+                configured_field is not None
+                and not bool(config_row.get(configured_field, False))
+            ):
                 _mark_delivery_status(
                     delivery_ids=[delivery.id],
-                    status=DroneSopDelivery.Statuses.FAILED,
+                    status=DroneSopDelivery.Statuses.DISABLED,
                     reason=REASON_CHANNEL_CONFIG_MISSING,
                 )
                 continue

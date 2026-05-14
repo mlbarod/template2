@@ -168,6 +168,11 @@ def retry_drone_sop_channel(
             channel=delivery_channel,
             status=DroneSopDelivery.Statuses.SUCCESS,
         ).exists()
+        disabled_exists = DroneSopDelivery.objects.filter(
+            sop_id=sop_id,
+            channel=delivery_channel,
+            status=DroneSopDelivery.Statuses.DISABLED,
+        ).exists()
 
         if failed_delivery_ids:
             mark_channel_delivery_status(
@@ -181,6 +186,9 @@ def retry_drone_sop_channel(
 
         if success_exists:
             return build_retry_channel_result(channel=normalized_channel, state="success")
+
+        if disabled_exists:
+            return build_retry_channel_result(channel=normalized_channel, state="disabled")
 
         return build_retry_channel_result(channel=normalized_channel, state="pending")
 

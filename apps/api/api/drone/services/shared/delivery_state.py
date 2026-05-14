@@ -12,9 +12,15 @@ from typing import Any, Sequence
 
 from django.db import transaction
 from django.db.models import Q
+from django.db.models.functions import Lower
 from django.utils import timezone
 
-from ...models import DroneSOP, DroneSopDelivery, DroneSopTarget, DroneSopTargetDispatch
+from ...models import (
+    DroneSOP,
+    DroneSopDelivery,
+    DroneSopTarget,
+    DroneSopTargetDispatch,
+)
 from .delivery_snapshot import (
     DELIVERY_CHANNELS as _DELIVERY_CHANNELS,
     append_unique_target as _append_unique_target,
@@ -26,6 +32,9 @@ from .delivery_snapshot import (
     normalize_string_value as _normalize_string_value,
 )
 from .notify_resolver import UserSdwtProdMapIndex, load_user_sdwt_prod_map_index, resolve_target_user_sdwt_prods
+
+_REASON_CHANNEL_CONFIG_MISSING = "channel_config_missing"
+_REASON_DISABLED_BY_POLICY = "disabled_by_policy"
 
 
 @dataclass(frozen=True)
@@ -144,13 +153,79 @@ def _refresh_dispatch_statuses_for_delivery_ids(*, delivery_ids: Sequence[int]) 
         )
 
 
-def get_or_prepare_channel_delivery(
+def _load_initial_delivery_state_by_target(
+    *,
+    target_user_sdwt_prods: set[str],
+    channels: Sequence[str],
+) -> dict[str, dict[str, tuple[str, str | None]]]:
+    """target/channel별 최초 delivery 상태를 채널 설정 기준으로 계산합니다."""
+
+    normalized_targets = [
+        target_key
+        for target in target_user_sdwt_prods
+        if (target_key := _normalize_lookup_key(target))
+    ]
+    normalized_channels = _normalize_channels(channels)
+    if not normalized_targets or not normalized_channels:
+        return {}
+
+    state_by_target: dict[str, dict[str, tuple[str, str | None]]] = {}
+    rows = (
+        DroneSopTarget.objects.annotate(target_lookup=Lower("target_user_sdwt_prod"))
+        .filter(target_lookup__in=normalized_targets)
+        .prefetch_related("channel_configs")
+    )
+    for target in rows:
+        target_key = _normalize_lookup_key(target.target_user_sdwt_prod)
+        if not target_key:
+            continue
+        config_by_channel = {config.channel: config for config in target.channel_configs.all()}
+        channel_state: dict[str, tuple[str, str | None]] = {}
+        for channel in normalized_channels:
+            config = config_by_channel.get(channel)
+            if config is None:
+                channel_state[channel] = (
+                    DroneSopDelivery.Statuses.DISABLED,
+                    _REASON_CHANNEL_CONFIG_MISSING,
+                )
+                continue
+            if not config.enabled:
+                channel_state[channel] = (
+                    DroneSopDelivery.Statuses.DISABLED,
+                    _REASON_DISABLED_BY_POLICY,
+                )
+                continue
+            channel_state[channel] = (DroneSopDelivery.Statuses.PENDING, None)
+        state_by_target[target_key] = channel_state
+    return state_by_target
+
+
+def _resolve_initial_delivery_state(
+    *,
+    state_by_target: dict[str, dict[str, tuple[str, str | None]]],
+    target_user_sdwt_prod: str,
+    channel: str,
+) -> tuple[str, str | None]:
+    """설정이 없으면 최초 delivery를 비활성 상태로 시작합니다."""
+
+    target_key = _normalize_lookup_key(target_user_sdwt_prod)
+    if not target_key:
+        return DroneSopDelivery.Statuses.DISABLED, _REASON_CHANNEL_CONFIG_MISSING
+    return state_by_target.get(target_key, {}).get(
+        channel,
+        (DroneSopDelivery.Statuses.DISABLED, _REASON_CHANNEL_CONFIG_MISSING),
+    )
+
+
+def _get_or_prepare_channel_delivery(
     *,
     sop_id: int,
     target_user_sdwt_prod: str,
     channel: str,
-) -> DroneSopDelivery:
-    """target/channel 발송 row를 생성하거나 현재 상태로 반환합니다."""
+    initial_status: str = DroneSopDelivery.Statuses.PENDING,
+    initial_reason: str | None = None,
+) -> tuple[DroneSopDelivery, bool]:
+    """target/channel 발송 row를 생성하거나 현재 상태와 생성 여부를 반환합니다."""
 
     cleaned_target = _normalize_string_value(target_user_sdwt_prod)
     if cleaned_target and not cleaned_target.startswith("__"):
@@ -161,17 +236,40 @@ def get_or_prepare_channel_delivery(
         sop_id=sop_id,
         target_user_sdwt_prod=cleaned_target or "__TARGET_MISSING__",
     )
-    delivery, _ = DroneSopDelivery.objects.get_or_create(
+    delivery, created = DroneSopDelivery.objects.get_or_create(
         dispatch=dispatch,
         channel=channel,
         defaults={
             "sop_id": sop_id,
-            "status": DroneSopDelivery.Statuses.PENDING,
+            "status": initial_status,
+            "reason": initial_reason,
         },
     )
     if delivery.sop_id != sop_id:
         delivery.sop_id = sop_id
         delivery.save(update_fields=["sop", "updated_at"])
+    if created:
+        _refresh_dispatch_statuses_for_delivery_ids(delivery_ids=[delivery.id])
+    return delivery, created
+
+
+def get_or_prepare_channel_delivery(
+    *,
+    sop_id: int,
+    target_user_sdwt_prod: str,
+    channel: str,
+    initial_status: str = DroneSopDelivery.Statuses.PENDING,
+    initial_reason: str | None = None,
+) -> DroneSopDelivery:
+    """target/channel 발송 row를 생성하거나 현재 상태로 반환합니다."""
+
+    delivery, _ = _get_or_prepare_channel_delivery(
+        sop_id=sop_id,
+        target_user_sdwt_prod=target_user_sdwt_prod,
+        channel=channel,
+        initial_status=initial_status,
+        initial_reason=initial_reason,
+    )
     return delivery
 
 
@@ -194,6 +292,7 @@ def create_channel_delivery_with_dispatch(
     delivery.status = status
     delivery.reason = reason
     delivery.save(update_fields=["status", "reason", "updated_at"])
+    _refresh_dispatch_statuses_for_delivery_ids(delivery_ids=[delivery.id])
     return delivery
 
 
@@ -205,8 +304,8 @@ def ensure_channel_delivery_snapshots_for_rows(
 ) -> DeliverySnapshotResult:
     """SOP별 target/channel delivery snapshot을 생성합니다.
 
-    이미 delivery가 있는 SOP는 기존 target snapshot을 유지합니다. delivery가 전혀 없는
-    SOP만 현재 매핑을 해석해 최초 snapshot을 만듭니다.
+    최초 생성 시점의 채널 설정을 기준으로 유효 채널은 pending, 미설정/비활성 채널은
+    disabled로 시작합니다. 기존 delivery 상태는 덮어쓰지 않습니다.
     """
 
     normalized_channels = _normalize_channels(channels)
@@ -222,7 +321,7 @@ def ensure_channel_delivery_snapshots_for_rows(
 
     target_values: set[str] = set()
     missing_ids: list[int] = []
-    created_count = 0
+    resolved_targets_by_sop_id: dict[int, list[str]] = {}
 
     for row in rows:
         sop_id = _extract_sop_id(row)
@@ -241,6 +340,7 @@ def ensure_channel_delivery_snapshots_for_rows(
                 missing_ids.append(sop_id)
             continue
 
+        resolved_targets_by_sop_id[sop_id] = snapshot_targets
         for target in snapshot_targets:
             target_key = _normalize_lookup_key(target)
             if not target_key:
@@ -251,13 +351,28 @@ def ensure_channel_delivery_snapshots_for_rows(
                 DroneSOP.objects.filter(id=sop_id).filter(
                     Q(target_user_sdwt_prod__isnull=True) | Q(target_user_sdwt_prod="")
                 ).update(target_user_sdwt_prod=target)
+
+    initial_state_by_target = _load_initial_delivery_state_by_target(
+        target_user_sdwt_prods=target_values,
+        channels=normalized_channels,
+    )
+    created_count = 0
+    for sop_id, targets in resolved_targets_by_sop_id.items():
+        for target in targets:
             for channel in normalized_channels:
-                before_id = get_or_prepare_channel_delivery(
+                initial_status, initial_reason = _resolve_initial_delivery_state(
+                    state_by_target=initial_state_by_target,
+                    target_user_sdwt_prod=target,
+                    channel=channel,
+                )
+                _, created = _get_or_prepare_channel_delivery(
                     sop_id=sop_id,
                     target_user_sdwt_prod=target,
                     channel=channel,
-                ).id
-                if before_id:
+                    initial_status=initial_status,
+                    initial_reason=initial_reason,
+                )
+                if created:
                     created_count += 1
 
     return DeliverySnapshotResult(
@@ -325,7 +440,7 @@ def filter_delivery_ids_for_config_failure(*, delivery_ids: Sequence[int]) -> li
         return []
     rows = (
         DroneSopDelivery.objects.filter(id__in=normalized_ids)
-        .exclude(status__in=[DroneSopDelivery.Statuses.SUCCESS, DroneSopDelivery.Statuses.DISABLED])
+        .filter(status__in=[DroneSopDelivery.Statuses.PENDING, DroneSopDelivery.Statuses.SENDING])
         .values_list("id", flat=True)
     )
     return normalize_positive_ids(list(rows))

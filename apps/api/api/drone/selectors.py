@@ -232,7 +232,7 @@ def list_drone_sop_user_sdwt_channels_by_targets(
         target_user_sdwt_prod_values: target_user_sdwt_prod 집합 또는 리스트.
 
     반환:
-        {target_user_sdwt_prod: {jira_key, chatroom_id, jira_template_key, mail_template_key, messenger_template_key, jira_enabled, messenger_enabled, mail_enabled}} 형태의 dict.
+        {target_user_sdwt_prod: {jira_key, chatroom_id, jira_template_key, mail_template_key, messenger_template_key, *_enabled, *_configured}} 형태의 dict.
 
     부작용:
         없음. 읽기 전용 조회입니다.
@@ -272,6 +272,9 @@ def list_drone_sop_user_sdwt_channels_by_targets(
             "jira_enabled": bool(jira_config.enabled) if jira_config else True,
             "messenger_enabled": bool(messenger_config.enabled) if messenger_config else True,
             "mail_enabled": bool(mail_config.enabled) if mail_config else True,
+            "jira_configured": jira_config is not None,
+            "messenger_configured": messenger_config is not None,
+            "mail_configured": mail_config is not None,
         }
     return mapping
 
@@ -1143,6 +1146,75 @@ def list_drone_sop_channel_recipients(
             }
         )
     return recipients
+
+
+def list_drone_sop_recipient_targets_for_user(
+    *,
+    user: Any,
+    line_id: str = "",
+) -> list[dict[str, object]]:
+    """현재 사용자가 수신인으로 등록된 target 목록을 조회합니다.
+
+    인자:
+        user: 조회 대상 Django 사용자 객체.
+        line_id: 선택된 라인 ID. 비어 있으면 전체 라인을 조회합니다.
+
+    반환:
+        target별 등록 채널을 묶은 dict 목록.
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+    """
+
+    user_id = getattr(user, "id", None)
+    if not user_id:
+        return []
+
+    normalized_line_id = normalize_text(line_id)
+    queryset = (
+        DroneSopTargetRecipient.objects.filter(
+            user_id=user_id,
+            target__target_user_sdwt_prod__isnull=False,
+        )
+        .exclude(target__target_user_sdwt_prod__exact="")
+        .select_related("target")
+        .prefetch_related("target__channel_configs")
+        .order_by("target__line_id", "target__target_user_sdwt_prod", "channel", "id")
+    )
+    if normalized_line_id:
+        queryset = queryset.filter(target__line_id__iexact=normalized_line_id)
+
+    targets_by_key: dict[tuple[str, str], dict[str, object]] = {}
+    for row in queryset:
+        target = row.target
+        target_value = normalize_text(target.target_user_sdwt_prod)
+        if not target_value:
+            continue
+        response_line_id = normalize_text(target.line_id)
+        key = (response_line_id.casefold(), target_value.casefold())
+        target_payload = targets_by_key.setdefault(
+            key,
+            {
+                "lineId": response_line_id,
+                "targetUserSdwtProd": target_value,
+                "channels": [],
+                "source": _derive_target_source(target_user_sdwt_prod=target_value),
+                "jiraEnabled": bool(target.jira_enabled),
+                "messengerEnabled": bool(target.messenger_enabled),
+                "mailEnabled": bool(target.mail_enabled),
+            },
+        )
+        channels = target_payload.get("channels")
+        if isinstance(channels, list) and row.channel not in channels:
+            channels.append(row.channel)
+
+    return sorted(
+        targets_by_key.values(),
+        key=lambda item: (
+            str(item.get("lineId") or "").casefold(),
+            str(item.get("targetUserSdwtProd") or "").casefold(),
+        ),
+    )
 
 
 def get_drone_sop_channel_by_target_user_sdwt_prod(

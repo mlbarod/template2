@@ -8,6 +8,7 @@ export { fetchAccountUserPool } from "@/features/account"
 
 const RECIPIENTS_PATH = "/api/v1/line-dashboard/notification-recipients"
 const RECIPIENT_PERMISSIONS_PATH = "/api/v1/line-dashboard/notification-recipient-permissions"
+const MY_RECIPIENT_TARGETS_PATH = "/api/v1/line-dashboard/my-notification-recipient-targets"
 const NOTIFICATION_TARGETS_PATH = "/api/v1/line-dashboard/notification-targets"
 const NOTIFICATION_TARGET_MAPPINGS_PATH = "/api/v1/line-dashboard/notification-target-mappings"
 
@@ -87,6 +88,22 @@ function normalizeTargets(values, fallbackLineId = "") {
     .filter(Boolean)
 }
 
+function normalizeRecipientTarget(rawTarget, fallbackLineId = "") {
+  const target = normalizeTarget(rawTarget, fallbackLineId)
+  if (!target) return null
+
+  return {
+    ...target,
+    channels: normalizeTextValues(rawTarget?.channels),
+  }
+}
+
+function normalizeRecipientTargets(values, fallbackLineId = "") {
+  return (Array.isArray(values) ? values : [])
+    .map((target) => normalizeRecipientTarget(target, fallbackLineId))
+    .filter(Boolean)
+}
+
 export async function fetchNotificationTargets({ lineId }) {
   if (!lineId) {
     return {
@@ -117,6 +134,31 @@ export async function fetchNotificationTargets({ lineId }) {
     targets,
     targetUserSdwtProds: targets.map((target) => target.targetUserSdwtProd),
     mappingOptions: normalizeMappingOptions(payload?.mappingOptions),
+  }
+}
+
+export async function fetchMyNotificationRecipientTargets({ lineId }) {
+  if (!lineId) {
+    return { lineId: "", targets: [] }
+  }
+
+  const response = await fetch(buildBackendUrl(MY_RECIPIENT_TARGETS_PATH, { lineId }), {
+    cache: "no-store",
+    credentials: "include",
+  })
+  const payload = await safeParseJson(response)
+
+  if (!response.ok) {
+    throw buildApiError(
+      response,
+      payload,
+      `Failed to load my recipient targets (status ${response.status})`,
+    )
+  }
+
+  return {
+    lineId: payload?.lineId || lineId,
+    targets: normalizeRecipientTargets(payload?.targets, payload?.lineId || lineId),
   }
 }
 

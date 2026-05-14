@@ -32,6 +32,14 @@ function showInstantInformErrorToast(message) {
   })
 }
 
+function showInstantInformNotQueueableToast(reason) {
+  const detail = typeof reason === "string" && reason.trim() ? reason.trim() : "no_queueable_channel"
+  toast.info("발송 가능한 채널이 없습니다.", {
+    description: `채널 설정 또는 상태를 확인해 주세요. (reason: ${detail})`,
+    ...buildToastOptions({ intent: "info", duration: 3200 }),
+  })
+}
+
 function showAlreadyInformedToast() {
   toast.info("이미 Jira 전송 완료되었습니다.", {
     ...buildToastOptions({ intent: "info", duration: 2400 }),
@@ -135,6 +143,15 @@ export function InstantInformCell({
         if (result?.alreadyInformed) {
           showAlreadyInformedToast()
           setIsDialogOpen(false)
+          return
+        }
+        if (result?.notQueueable || result?.status === "not_queueable") {
+          showInstantInformNotQueueableToast(result?.blockReason)
+          setIsDialogOpen(false)
+          return
+        }
+        if (!result?.queued && result?.status !== "queued") {
+          showInstantInformErrorToast("즉시 발송 대기 등록이 되지 않았습니다.")
           return
         }
         showInstantInformQueuedToast()

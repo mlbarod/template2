@@ -19,7 +19,9 @@ from ..jira.config import DroneCtttmConfig
 from ..jira.delivery import _enrich_rows_with_ctttm_urls
 from ..jira.sop_jira import run_drone_sop_jira_create_from_rows
 from ..mail.mail_sender import DroneMailConfig, send_drone_sop_mail
+from ..mail.templates.mail_template_registry import MAIL_TEMPLATE_SOURCES
 from ..messenger.messenger_api import DroneMessengerConfig, send_drone_sop_messenger_message
+from ..messenger.templates.messenger_template_registry import EXCEL_TABLE_TEMPLATE_SENDERS
 from ..shared.delivery_state import (
     ensure_channel_delivery_snapshots_for_rows,
     filter_delivery_ids_for_config_failure as _filter_delivery_ids_for_config_failure,
@@ -129,6 +131,7 @@ def _run_messenger_inform(
         rows=rows,
         channel_by_target=channel_by_target,
         enabled_field="messenger_enabled",
+        configured_field="messenger_configured",
         channel=DroneSopTargetRecipient.Channels.MESSENGER,
     )
 
@@ -147,6 +150,9 @@ def _run_messenger_inform(
         messenger_template_key = _normalize_string_value(delivery.config.get("messenger_template_key"))
         if not messenger_template_key:
             _mark_delivery_failed(delivery_id=delivery.delivery_id, reason=REASON_TEMPLATE_MISSING)
+            continue
+        if messenger_template_key not in EXCEL_TABLE_TEMPLATE_SENDERS:
+            _mark_delivery_failed(delivery_id=delivery.delivery_id, reason=REASON_CHANNEL_CONFIG_INVALID)
             continue
 
         delivery_row = delivery.as_delivery_row()
@@ -201,6 +207,7 @@ def _run_mail_inform(
         rows=rows,
         channel_by_target=channel_by_target,
         enabled_field="mail_enabled",
+        configured_field="mail_configured",
         channel=DroneSopTargetRecipient.Channels.MAIL,
     )
 
@@ -219,6 +226,9 @@ def _run_mail_inform(
         template_key = _normalize_string_value(delivery.config.get("mail_template_key"))
         if not template_key:
             _mark_delivery_failed(delivery_id=delivery.delivery_id, reason=REASON_TEMPLATE_MISSING)
+            continue
+        if template_key not in MAIL_TEMPLATE_SOURCES:
+            _mark_delivery_failed(delivery_id=delivery.delivery_id, reason=REASON_CHANNEL_CONFIG_INVALID)
             continue
 
         line_id = _normalize_string_value(delivery.row.get("line_id")) or ""

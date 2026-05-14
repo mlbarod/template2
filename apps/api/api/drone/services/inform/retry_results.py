@@ -14,6 +14,7 @@ class DroneSopRetryChannelResult:
     queued: bool = False
     already_pending: bool = False
     already_sent: bool = False
+    already_disabled: bool = False
     updated_fields: dict[str, Any] = field(default_factory=dict)
 
 
@@ -36,6 +37,12 @@ def build_retry_channel_result(*, channel: str, state: str) -> DroneSopRetryChan
         return DroneSopRetryChannelResult(
             channel=channel,
             already_sent=True,
+            updated_fields={},
+        )
+    if state == "disabled":
+        return DroneSopRetryChannelResult(
+            channel=channel,
+            already_disabled=True,
             updated_fields={},
         )
     raise ValueError("unknown retry channel state")

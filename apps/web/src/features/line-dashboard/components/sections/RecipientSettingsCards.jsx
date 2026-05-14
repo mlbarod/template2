@@ -45,7 +45,7 @@ export function RecipientSettingsCards({
 
     return (
       <React.Fragment key={config.channel}>
-        <div className="min-h-0 min-w-0 flex-1">
+        <div className="min-w-0">
           <RecipientChannelCard
             config={config}
             selectedUserSdwtProd={selectedUserSdwtProd}

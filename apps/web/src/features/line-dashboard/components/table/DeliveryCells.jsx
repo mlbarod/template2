@@ -75,6 +75,13 @@ function showRetryAlreadySentToast(label) {
   })
 }
 
+function showRetryDisabledToast(label) {
+  toast.info(`${label} 비활성 상태입니다.`, {
+    description: "채널 설정을 확인한 뒤 다시 시도해 주세요.",
+    ...buildToastOptions({ intent: "info", duration: 2600 }),
+  })
+}
+
 function showRetryUnknownStatusToast(status) {
   const normalized = typeof status === "string" && status.trim() ? status.trim() : "empty"
   toast.info("채널 재시도 응답 확인 필요", {
@@ -107,6 +114,10 @@ function showRetryResultToast(label, result) {
   }
   if (status === "already_sent") {
     showRetryAlreadySentToast(label)
+    return
+  }
+  if (status === "disabled") {
+    showRetryDisabledToast(label)
     return
   }
   showRetryUnknownStatusToast(status)

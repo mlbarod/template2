@@ -28,12 +28,14 @@ from api.drone.models import (
     DroneSopDelivery,
     DroneSopTarget,
     DroneSopTargetChannelConfig,
+    DroneSopTargetDispatch,
     DroneSopTargetMapping,
     DroneSopTargetRecipient,
 )
 from api.drone.services.channels import recipients as recipient_services
 from api.drone.services.channels import user_sdwt_channel as channel_services
 from api.drone.services.jira.sop_jira import update_drone_sop_jira_status
+from api.drone.services.shared.delivery_state import filter_delivery_ids_for_config_failure
 from api.drone.services.pop3.sop_pop3 import build_drone_sop_row, upsert_drone_sop_rows
 
 _PREVIOUS_LOGGING_DISABLE: int | None = None
@@ -349,6 +351,34 @@ class DroneSopPop3ParsingTests(TestCase):
             ],
         )
 
+    def test_build_drone_sop_row_skips_no_data_defect_map_url(self) -> None:
+        """DEFECT_MAP_URL이 No data placeholder이면 해당 defect step을 제외합니다."""
+
+        valid_map_url = "https://example.com/map/api/mapg/map?file=valid_df.parquet"
+        defect_json = json.dumps(
+            [
+                {"STEP_SEQ": "ST001", "DEFECT_MAP_URL": "No data"},
+                {"STEP_SEQ": "ST002", "DEFECT_MAP_URL": "https://No Data"},
+                {"STEP_SEQ": "ST003", "DEFECT_MAP_URL": valid_map_url},
+            ]
+        )
+        html = f"""
+        <html><body>
+          <data>
+            <lot_id>LOT.1</lot_id>
+            <defect_json>{defect_json}</defect_json>
+          </data>
+        </body></html>
+        """
+
+        row = build_drone_sop_row(html=html, early_inform_map={})
+        assert row is not None
+
+        defect_entries = json.loads(str(row["defect_url"]))
+        self.assertEqual(len(defect_entries), 1)
+        self.assertEqual(defect_entries[0]["step_seq"], "ST003")
+        self.assertEqual(defect_entries[0]["map_url"], valid_map_url)
+
     def test_build_drone_sop_row_fills_system_when_knox_and_user_missing(self) -> None:
         """knox_id/user_sdwt_prod 누락 시 기본값이 채워지는지 확인합니다."""
         html = """
@@ -474,8 +504,8 @@ class DroneSopPop3ParsingTests(TestCase):
 class DroneSopUpsertTests(TestCase):
     """UPSERT 동작을 검증합니다."""
 
-    def test_upsert_creates_delivery_snapshot_for_configured_target(self) -> None:
-        """신규 SOP upsert 시 지정 조합의 channel delivery snapshot을 생성합니다."""
+    def test_upsert_marks_unconfigured_channel_snapshots_disabled(self) -> None:
+        """신규 SOP upsert 시 미설정 채널 snapshot은 pending이 아니어야 합니다."""
 
         _ensure_target_mapping(
             sdwt_prod="SDWT-MULTI",
@@ -503,13 +533,33 @@ class DroneSopUpsertTests(TestCase):
         deliveries = DroneSopDelivery.objects.filter(sop=sop).order_by("channel")
         self.assertEqual(deliveries.count(), 3)
         self.assertEqual(
-            {(sop.target_user_sdwt_prod, delivery.channel, delivery.status) for delivery in deliveries},
             {
-                ("TARGET-A", DroneSopDelivery.Channels.JIRA, DroneSopDelivery.Statuses.PENDING),
-                ("TARGET-A", DroneSopDelivery.Channels.MAIL, DroneSopDelivery.Statuses.PENDING),
-                ("TARGET-A", DroneSopDelivery.Channels.MESSENGER, DroneSopDelivery.Statuses.PENDING),
+                (sop.target_user_sdwt_prod, delivery.channel, delivery.status, delivery.reason)
+                for delivery in deliveries
+            },
+            {
+                (
+                    "TARGET-A",
+                    DroneSopDelivery.Channels.JIRA,
+                    DroneSopDelivery.Statuses.DISABLED,
+                    "channel_config_missing",
+                ),
+                (
+                    "TARGET-A",
+                    DroneSopDelivery.Channels.MAIL,
+                    DroneSopDelivery.Statuses.DISABLED,
+                    "channel_config_missing",
+                ),
+                (
+                    "TARGET-A",
+                    DroneSopDelivery.Channels.MESSENGER,
+                    DroneSopDelivery.Statuses.DISABLED,
+                    "channel_config_missing",
+                ),
             },
         )
+        dispatch = DroneSopTargetDispatch.objects.get(sop=sop)
+        self.assertEqual(dispatch.status, DroneSopTargetDispatch.Statuses.DISABLED)
 
     def test_existing_delivery_snapshot_ignores_later_mapping_changes(self) -> None:
         """snapshot 생성 후 추가된 mapping은 기존 SOP target에 자동 소급되지 않아야 합니다."""
@@ -829,6 +879,12 @@ class DroneSopInstantInformTests(TestCase):
             user_sdwt_prod="SDWT",
             target_user_sdwt_prod="TARGET-SDWT",
         )
+        _upsert_target(
+            target_user_sdwt_prod="TARGET-SDWT",
+            jira_key="PROJ",
+            jira_template_key="common",
+            messenger_enabled=False,
+        )
         row = _create_drone_sop(
             sdwt_prod="SDWT",
             user_sdwt_prod="SDWT",
@@ -862,8 +918,16 @@ class DroneSopInstantInformTests(TestCase):
             set(refreshed.channel_deliveries.values_list("channel", "status")),
             {
                 (DroneSopDelivery.Channels.JIRA, DroneSopDelivery.Statuses.PENDING),
-                (DroneSopDelivery.Channels.MESSENGER, DroneSopDelivery.Statuses.PENDING),
-                (DroneSopDelivery.Channels.MAIL, DroneSopDelivery.Statuses.PENDING),
+                (DroneSopDelivery.Channels.MESSENGER, DroneSopDelivery.Statuses.DISABLED),
+                (DroneSopDelivery.Channels.MAIL, DroneSopDelivery.Statuses.DISABLED),
+            },
+        )
+        self.assertEqual(
+            set(refreshed.channel_deliveries.values_list("channel", "reason")),
+            {
+                (DroneSopDelivery.Channels.JIRA, None),
+                (DroneSopDelivery.Channels.MESSENGER, "disabled_by_policy"),
+                (DroneSopDelivery.Channels.MAIL, "channel_config_missing"),
             },
         )
 
@@ -873,6 +937,12 @@ class DroneSopInstantInformTests(TestCase):
             sdwt_prod="SDWT",
             user_sdwt_prod="USR",
             target_user_sdwt_prod="TARGET-SDWT",
+        )
+        _upsert_target(
+            target_user_sdwt_prod="TARGET-SDWT",
+            jira_key="PROJ",
+            jira_template_key="common",
+            messenger_enabled=False,
         )
         row = _create_drone_sop(
             sdwt_prod="sdwt",
@@ -898,12 +968,68 @@ class DroneSopInstantInformTests(TestCase):
             ).exists()
         )
 
+    def test_enqueue_instant_inform_without_queueable_channel_does_not_mark_requested(self) -> None:
+        """발송 가능한 채널이 없으면 즉시인폼 플래그를 확정하지 않습니다."""
+        _ensure_target_mapping(
+            sdwt_prod="SDWT-NO-CHANNEL",
+            user_sdwt_prod="USER-NO-CHANNEL",
+            target_user_sdwt_prod="TARGET-NO-CHANNEL",
+        )
+        row = _create_drone_sop(
+            sdwt_prod="SDWT-NO-CHANNEL",
+            user_sdwt_prod="USER-NO-CHANNEL",
+            status="IN_PROGRESS",
+            needtosend=0,
+            instant_inform=0,
+            comment="base",
+        )
+
+        result = services.enqueue_drone_sop_jira_instant_inform(
+            sop_id=int(row.id),
+            comment="updated",
+        )
+
+        self.assertFalse(result.queued)
+        self.assertFalse(result.already_informed)
+        self.assertTrue(result.not_queueable)
+        self.assertEqual(result.block_reason, "no_queueable_channel")
+
+        refreshed = DroneSOP.objects.get(id=row.id)
+        self.assertEqual(refreshed.comment, "updated")
+        self.assertEqual(refreshed.instant_inform, 0)
+        self.assertEqual(
+            set(refreshed.channel_deliveries.values_list("channel", "status", "reason")),
+            {
+                (
+                    DroneSopDelivery.Channels.JIRA,
+                    DroneSopDelivery.Statuses.DISABLED,
+                    "channel_config_missing",
+                ),
+                (
+                    DroneSopDelivery.Channels.MESSENGER,
+                    DroneSopDelivery.Statuses.DISABLED,
+                    "channel_config_missing",
+                ),
+                (
+                    DroneSopDelivery.Channels.MAIL,
+                    DroneSopDelivery.Statuses.DISABLED,
+                    "channel_config_missing",
+                ),
+            },
+        )
+
     def test_enqueue_instant_inform_queues_remaining_channels_when_jira_already_sent(self) -> None:
         """Jira만 전송된 항목은 메신저/메일까지 즉시인폼 대기 상태로 둡니다."""
         _ensure_target_mapping(
             sdwt_prod="SDWT",
             user_sdwt_prod="SDWT",
             target_user_sdwt_prod="TARGET-SDWT",
+        )
+        _upsert_target(
+            target_user_sdwt_prod="TARGET-SDWT",
+            messenger_template_key="common",
+            mail_template_key="common",
+            chatroom_id=12345,
         )
         row = _create_drone_sop(
             sdwt_prod="SDWT",
@@ -976,6 +1102,12 @@ class DroneSopInstantInformTests(TestCase):
             user_sdwt_prod="USER",
             target_user_sdwt_prod="TARGET-A",
         )
+        _upsert_target(
+            target_user_sdwt_prod="TARGET-A",
+            jira_key="PROJ",
+            jira_template_key="common",
+            messenger_enabled=False,
+        )
         sop = DroneSOP.objects.create(
             line_id="L1",
             sdwt_prod="SDWT",
@@ -1013,6 +1145,41 @@ class DroneSopDeliveryConstraintTests(TestCase):
                 channel=DroneSopDelivery.Channels.JIRA,
                 status="ESOP_STARTED",
             )
+
+    def test_config_failure_filter_preserves_existing_failed_delivery(self) -> None:
+        """전역 설정 실패 처리는 이미 실패한 delivery 사유를 덮어쓰지 않아야 합니다."""
+
+        sop = _create_drone_sop(target_user_sdwt_prod="TARGET-A")
+        failed = DroneSopDelivery.objects.get(
+            sop=sop,
+            channel=DroneSopDelivery.Channels.JIRA,
+        )
+        failed.status = DroneSopDelivery.Statuses.FAILED
+        failed.reason = "send_failed"
+        failed.save(update_fields=["status", "reason", "updated_at"])
+
+        pending = DroneSopDelivery.objects.get(
+            sop=sop,
+            channel=DroneSopDelivery.Channels.MAIL,
+        )
+        pending.status = DroneSopDelivery.Statuses.PENDING
+        pending.reason = None
+        pending.save(update_fields=["status", "reason", "updated_at"])
+
+        disabled = DroneSopDelivery.objects.get(
+            sop=sop,
+            channel=DroneSopDelivery.Channels.MESSENGER,
+        )
+        disabled.status = DroneSopDelivery.Statuses.DISABLED
+        disabled.reason = "disabled_by_policy"
+        disabled.save(update_fields=["status", "reason", "updated_at"])
+
+        self.assertEqual(
+            filter_delivery_ids_for_config_failure(
+                delivery_ids=[int(failed.id), int(pending.id), int(disabled.id)],
+            ),
+            [int(pending.id)],
+        )
 
 
 class DroneSopRetryChannelTests(TestCase):
@@ -1112,6 +1279,28 @@ class DroneSopRetryChannelTests(TestCase):
         self.assertEqual(refreshed.send_messenger, 0)
         self.assertIsNone(refreshed.messenger_reason)
 
+    def test_retry_channel_returns_disabled_when_channel_is_disabled(self) -> None:
+        """비활성 채널은 대기 상태로 오인하지 않고 비활성 응답을 반환합니다."""
+        row = _create_drone_sop(target_user_sdwt_prod="TARGET-A")
+        delivery = DroneSopDelivery.objects.get(
+            sop=row,
+            channel=DroneSopDelivery.Channels.MAIL,
+        )
+        delivery.status = DroneSopDelivery.Statuses.DISABLED
+        delivery.reason = "channel_config_missing"
+        delivery.save(update_fields=["status", "reason", "updated_at"])
+
+        result = services.retry_drone_sop_channel(sop_id=int(row.id), channel="mail")
+
+        self.assertFalse(result.queued)
+        self.assertFalse(result.already_pending)
+        self.assertFalse(result.already_sent)
+        self.assertTrue(result.already_disabled)
+
+        refreshed = DroneSOP.objects.get(id=row.id)
+        self.assertEqual(refreshed.send_mail, 0)
+        self.assertEqual(refreshed.mail_reason, "channel_config_missing")
+
     def test_retry_channel_rejects_invalid_channel(self) -> None:
         """지원하지 않는 채널 키는 오류로 거부하는지 확인합니다."""
         row = _create_drone_sop(send_mail=-1, mail_reason="send_failed")
@@ -1188,6 +1377,8 @@ class DroneEndpointTests(TestCase):
         mock_service.return_value = SimpleNamespace(
             already_informed=False,
             queued=True,
+            not_queueable=False,
+            block_reason=None,
             jira_key="JIRA-1",
             updated_fields={},
         )
@@ -1198,6 +1389,28 @@ class DroneEndpointTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json().get("status"), "queued")
+
+    @patch("api.drone.views.services.enqueue_drone_sop_jira_instant_inform")
+    def test_drone_sop_instant_inform_returns_not_queueable(self, mock_service) -> None:
+        """발송 가능한 채널이 없으면 API status=not_queueable로 응답합니다."""
+        mock_service.return_value = SimpleNamespace(
+            already_informed=False,
+            queued=False,
+            not_queueable=True,
+            block_reason="no_queueable_channel",
+            jira_key=None,
+            updated_fields={"comment": "test"},
+        )
+        response = self.client.post(
+            reverse("drone-sop-instant-inform", kwargs={"sop_id": 123}),
+            data='{"comment":"test"}',
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json().get("status"), "not_queueable")
+        self.assertFalse(response.json().get("queued"))
+        self.assertTrue(response.json().get("notQueueable"))
+        self.assertEqual(response.json().get("blockReason"), "no_queueable_channel")
 
     @patch("api.drone.views.services.retry_drone_sop_channel")
     def test_drone_sop_retry_channel(self, mock_service) -> None:
@@ -1284,6 +1497,30 @@ class DroneEndpointTests(TestCase):
         self.assertFalse(response.json().get("queued"))
         self.assertFalse(response.json().get("alreadyPending"))
         self.assertTrue(response.json().get("alreadySent"))
+
+    @patch("api.drone.views.services.retry_drone_sop_channel")
+    def test_drone_sop_retry_channel_returns_disabled(self, mock_service) -> None:
+        """비활성 채널 응답이 API status=disabled로 매핑되는지 확인합니다."""
+        mock_service.return_value = SimpleNamespace(
+            channel="mail",
+            queued=False,
+            already_pending=False,
+            already_sent=False,
+            already_disabled=True,
+            updated_fields={},
+        )
+
+        response = self.client.post(
+            reverse("drone-sop-retry-channel", kwargs={"sop_id": 123}),
+            data='{"channel":"mail"}',
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json().get("status"), "disabled")
+        self.assertFalse(response.json().get("queued"))
+        self.assertFalse(response.json().get("alreadyPending"))
+        self.assertFalse(response.json().get("alreadySent"))
+        self.assertTrue(response.json().get("alreadyDisabled"))
 
     @override_settings(AIRFLOW_TRIGGER_TOKEN="token")
     @patch("api.drone.views.services.run_drone_sop_pop3_ingest_from_env")
@@ -1868,6 +2105,67 @@ class DroneSopTargetRecipientTests(TestCase):
         payload = response.json()
         self.assertTrue(payload["isOperator"])
         self.assertIn("ETCH_A", payload["manageableUserSdwtProds"])
+
+    def test_my_notification_recipient_targets_returns_current_user_targets(self) -> None:
+        """일반 사용자도 본인이 수신인으로 등록된 target 목록은 조회할 수 있어야 합니다."""
+
+        target = _upsert_target(line_id="L1", target_user_sdwt_prod="ETCH_A")
+        other_target = _upsert_target(line_id="L1", target_user_sdwt_prod="PHOTO_B")
+        DroneSopTargetRecipient.objects.create(
+            target=target,
+            channel=DroneSopTargetRecipient.Channels.MAIL,
+            user=self.same_group_user,
+        )
+        DroneSopTargetRecipient.objects.create(
+            target=target,
+            channel=DroneSopTargetRecipient.Channels.MESSENGER,
+            user=self.same_group_user,
+        )
+        DroneSopTargetRecipient.objects.create(
+            target=other_target,
+            channel=DroneSopTargetRecipient.Channels.MAIL,
+            user=self.mail_user,
+        )
+
+        self.client.force_login(self.same_group_user)
+        response = self.client.get(
+            reverse("line-dashboard-my-notification-recipient-targets"),
+            {"lineId": "L1"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["lineId"], "L1")
+        self.assertEqual(len(payload["targets"]), 1)
+        self.assertEqual(payload["targets"][0]["targetUserSdwtProd"], "ETCH_A")
+        self.assertEqual(payload["targets"][0]["lineId"], "L1")
+        self.assertEqual(payload["targets"][0]["channels"], ["mail", "messenger"])
+
+    def test_my_notification_recipient_targets_filters_by_line(self) -> None:
+        """본인 수신 target 목록은 요청 lineId 범위로 제한되어야 합니다."""
+
+        line_one_target = _upsert_target(line_id="L1", target_user_sdwt_prod="ETCH_A")
+        line_two_target = _upsert_target(line_id="L2", target_user_sdwt_prod="DIFF_A")
+        DroneSopTargetRecipient.objects.create(
+            target=line_one_target,
+            channel=DroneSopTargetRecipient.Channels.MAIL,
+            user=self.same_group_user,
+        )
+        DroneSopTargetRecipient.objects.create(
+            target=line_two_target,
+            channel=DroneSopTargetRecipient.Channels.MAIL,
+            user=self.same_group_user,
+        )
+
+        self.client.force_login(self.same_group_user)
+        response = self.client.get(
+            reverse("line-dashboard-my-notification-recipient-targets"),
+            {"lineId": "L2"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        targets = response.json()["targets"]
+        self.assertEqual([row["targetUserSdwtProd"] for row in targets], ["DIFF_A"])
 
     def test_notification_target_endpoint_lists_configured_and_affiliation_targets(self) -> None:
         """알림 target 목록은 설정된 target과 account_affiliation 추천값을 함께 반환해야 합니다."""
@@ -2853,6 +3151,7 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
             metro_current_step="ST001",
         )
         _ensure_target_mapping(sdwt_prod="SDWT_NO", user_sdwt_prod="SDWT_NO")
+        _upsert_target(target_user_sdwt_prod="SDWT_NO", jira_enabled=True)
 
         result = services.run_drone_sop_jira_create_from_env()
         self.assertEqual(result.candidates, 1)
@@ -2917,6 +3216,11 @@ class DroneSopJiraCreateProjectKeyTests(TestCase):
             metro_current_step="ST001",
         )
         _ensure_target_mapping(sdwt_prod="SDWT1", user_sdwt_prod="SDWT1")
+        _upsert_target(
+            target_user_sdwt_prod="SDWT1",
+            jira_template_key="common",
+            jira_key="PROJ1",
+        )
 
         result = services.run_drone_sop_jira_create_from_env()
         self.assertTrue(result.skipped)
@@ -3333,6 +3637,11 @@ class DroneSopInformPolicyTests(TestCase):
     @override_settings(DRONE_JIRA_BASE_URL="")
     def test_inform_marks_jira_failed_when_base_url_missing(self) -> None:
         """Jira 설정이 없으면 send_jira가 실패 처리되는지 확인합니다."""
+        _upsert_target(
+            target_user_sdwt_prod="SDWT1",
+            jira_template_key="common",
+            jira_key="PROJ1",
+        )
         sop = _create_drone_sop(
             sdwt_prod="SDWT1",
             user_sdwt_prod="SDWT1",
@@ -3389,6 +3698,10 @@ class DroneSopInformPolicyTests(TestCase):
     @patch.dict(os.environ, {"DRONE_MAIL_SENDER": ""})
     def test_inform_marks_mail_failed_when_sender_missing(self) -> None:
         """메일 발신자 미설정 시 send_mail이 실패 처리되는지 확인합니다."""
+        _upsert_target(
+            target_user_sdwt_prod="SDWT1",
+            mail_template_key="common",
+        )
         sop = _create_drone_sop(
             sdwt_prod="SDWT1",
             user_sdwt_prod="SDWT1",
@@ -3523,6 +3836,50 @@ class DroneSopInformPolicyTests(TestCase):
         refreshed = DroneSOP.objects.get(id=sop.id)
         self.assertEqual(refreshed.send_messenger, -1)
         self.assertEqual(refreshed.messenger_reason, "template_missing")
+        mock_messenger.assert_not_called()
+
+    @override_settings(
+        DRONE_JIRA_BASE_URL="http://example.local/jira",
+        DRONE_MAIL_SENDER="sender@example.com",
+    )
+    @patch.dict(
+        os.environ,
+        {
+            "KNOX_MESSENGER_API_BASE_URL": "http://example.local/messenger/",
+            "KNOX_MESSENGER_AUTHORIZATION": "dummy-auth",
+            "KNOX_MESSENGER_SYSTEM_ID": "dummy-system",
+        },
+    )
+    @patch("api.drone.services.inform.sop_inform.send_drone_sop_messenger_message")
+    def test_inform_marks_messenger_failed_when_template_key_invalid(self, mock_messenger: Mock) -> None:
+        """지원하지 않는 메신저 템플릿 키는 API 호출 전에 설정 오류로 처리합니다."""
+        sop = _create_drone_sop(
+            line_id="L1",
+            sdwt_prod="SDWT1",
+            user_sdwt_prod="SDWT1",
+            eqp_id="EQP1",
+            chamber_ids="1",
+            lot_id="LOT.1",
+            main_step="MS",
+            status="COMPLETE",
+            needtosend=1,
+            send_jira=-1,
+            send_messenger=0,
+            send_mail=-1,
+            metro_current_step="ST001",
+        )
+        _upsert_target(
+            target_user_sdwt_prod="SDWT1",
+            messenger_template_key="messenger",
+            chatroom_id=12345,
+        )
+
+        result = services.run_drone_sop_pipeline_from_env()
+        self.assertEqual(result.candidates, 1)
+
+        refreshed = DroneSOP.objects.get(id=sop.id)
+        self.assertEqual(refreshed.send_messenger, -1)
+        self.assertEqual(refreshed.messenger_reason, "channel_config_invalid")
         mock_messenger.assert_not_called()
 
     @override_settings(

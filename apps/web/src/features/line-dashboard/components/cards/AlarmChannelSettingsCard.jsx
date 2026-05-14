@@ -28,7 +28,7 @@ export function AlarmChannelSettingsCard({
   const showPermissionNotice = Boolean(selectedUserSdwtProd && !canManage)
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-hidden rounded-lg border bg-background p-3 shadow-sm">
+    <div className="flex min-w-0 flex-col gap-3 rounded-lg border bg-background p-3 shadow-sm">
       <div className="shrink-0 space-y-1">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-base font-medium">알람 채널 설정</h2>
@@ -50,7 +50,7 @@ export function AlarmChannelSettingsCard({
         </p>
       ) : null}
 
-      <form className="flex min-h-0 flex-1 flex-col gap-2" onSubmit={onSaveJiraKey}>
+      <form className="flex flex-col gap-2" onSubmit={onSaveJiraKey}>
         <div className="grid shrink-0 gap-2">
           <div className="space-y-1">
             <p className="text-xs font-medium text-muted-foreground">선택된 알림 Target</p>

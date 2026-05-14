@@ -10,6 +10,7 @@ from django.urls import path
 from .views import (
     DroneEarlyInformView,
     DroneJiraKeyView,
+    DroneMyNotificationRecipientTargetView,
     DroneNotificationRecipientPermissionView,
     DroneNotificationRecipientView,
     DroneNotificationTargetMappingView,
@@ -55,6 +56,11 @@ urlpatterns = [
         "notification-recipient-permissions",
         DroneNotificationRecipientPermissionView.as_view(),
         name="line-dashboard-notification-recipient-permissions",
+    ),
+    path(
+        "my-notification-recipient-targets",
+        DroneMyNotificationRecipientTargetView.as_view(),
+        name="line-dashboard-my-notification-recipient-targets",
     ),
     path("history", LineHistoryView.as_view(), name="line-dashboard-history"),
     path("line-ids", LineIdListView.as_view(), name="line-dashboard-line-ids"),

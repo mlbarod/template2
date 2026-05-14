@@ -1447,6 +1447,55 @@ class DroneNotificationRecipientPermissionView(DroneAuthenticatedView):
         return JsonResponse(selectors.get_drone_sop_permission_context(user=request.user))
 
 
+class DroneMyNotificationRecipientTargetView(DroneAuthenticatedView):
+    """현재 사용자가 수신인으로 등록된 target 목록 조회 엔드포인트입니다."""
+
+    def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """현재 사용자의 수신 target 목록을 반환합니다.
+
+        입력:
+        - 요청: Django HttpRequest
+        - args/kwargs: URL 라우팅 인자
+
+        반환:
+        - JsonResponse: 현재 사용자가 수신인인 target 목록
+
+        부작용:
+        - 없음
+
+        오류:
+        - 401: 미인증
+
+        예시 요청:
+        - 예시 요청: GET /api/v1/line-dashboard/my-notification-recipient-targets?lineId=L1
+
+        snake/camel 호환:
+        - 요청 쿼리는 lineId(camelCase)만 지원합니다.
+        """
+
+        # -----------------------------------------------------------------------------
+        # 1) 인증 확인
+        # -----------------------------------------------------------------------------
+        auth_response = self._authorize_user(request)
+        if auth_response is not None:
+            return auth_response
+
+        # -----------------------------------------------------------------------------
+        # 2) 선택 라인 기준으로 본인 수신 target 조회
+        # -----------------------------------------------------------------------------
+        line_id = normalize_line_id(request.GET.get("lineId"))
+        targets = selectors.list_drone_sop_recipient_targets_for_user(
+            user=request.user,
+            line_id=line_id,
+        )
+        return JsonResponse(
+            {
+                "lineId": line_id,
+                "targets": targets,
+            }
+        )
+
+
 class LineHistoryView(APIView):
     """라인 대시보드 차트용 시간 단위 합계/분해 집계 제공."""
 
@@ -1631,7 +1680,11 @@ class DroneSopInstantInformView(DroneAuthenticatedView):
     def _resolve_status(result: services.DroneSopInstantInformResult) -> str:
         """즉시 인폼 결과를 상태 문자열로 변환합니다."""
 
-        return "already_informed" if result.already_informed else "queued"
+        if result.already_informed:
+            return "already_informed"
+        if result.queued:
+            return "queued"
+        return "not_queueable"
 
     def post(self, request: HttpRequest, sop_id: int, *args: object, **kwargs: object) -> JsonResponse:
         """Drone SOP 단건 즉시인폼 체크 요청을 처리합니다.
@@ -1693,6 +1746,8 @@ class DroneSopInstantInformView(DroneAuthenticatedView):
                     "status": status,
                     "already_informed": result.already_informed,
                     "queued": result.queued,
+                    "not_queueable": getattr(result, "not_queueable", False),
+                    "block_reason": getattr(result, "block_reason", None),
                     "jira_key": result.jira_key,
                 },
             )
@@ -1701,6 +1756,8 @@ class DroneSopInstantInformView(DroneAuthenticatedView):
                 "status": status,
                 "alreadyInformed": result.already_informed,
                 "queued": result.queued,
+                "notQueueable": getattr(result, "not_queueable", False),
+                "blockReason": getattr(result, "block_reason", None),
                 "jiraKey": result.jira_key,
                 "updated": result.updated_fields,
             }
@@ -1727,6 +1784,8 @@ class DroneSopRetryChannelView(DroneAuthenticatedView):
             return "queued"
         if result.already_sent:
             return "already_sent"
+        if getattr(result, "already_disabled", False):
+            return "disabled"
         return "already_pending"
 
     def post(self, request: HttpRequest, sop_id: int, *args: object, **kwargs: object) -> JsonResponse:
@@ -1789,6 +1848,7 @@ class DroneSopRetryChannelView(DroneAuthenticatedView):
                     "queued": result.queued,
                     "already_pending": result.already_pending,
                     "already_sent": result.already_sent,
+                    "already_disabled": getattr(result, "already_disabled", False),
                 },
             )
 
@@ -1798,6 +1858,7 @@ class DroneSopRetryChannelView(DroneAuthenticatedView):
                 "queued": result.queued,
                 "alreadyPending": result.already_pending,
                 "alreadySent": result.already_sent,
+                "alreadyDisabled": getattr(result, "already_disabled", False),
                 "updated": result.updated_fields,
             }
             return JsonResponse(response_payload, status=200)
