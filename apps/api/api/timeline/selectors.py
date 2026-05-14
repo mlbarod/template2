@@ -522,7 +522,7 @@ def _fetch_racb_logs(*, eqp_id: str) -> List[Dict[str, object]]:
 
 
 # =============================================================================
-# default DB Drone/Jira 로그 조회
+# default DB Drone 로그 조회
 # =============================================================================
 
 
@@ -570,21 +570,9 @@ def _fetch_drone_logs(*, eqp_id: str) -> List[Dict[str, object]]:
             sop.user_sdwt_prod as operator,
             sop.status as status,
             sop.comment as comment,
-            jira_delivery.external_key as jira_key,
             sop.line_id as line_id,
             sop.eqp_id as eqp_id
         from drone_sop as sop
-        left join lateral (
-            select delivery.external_key
-            from drone_sop_target_dispatch as dispatch
-            join drone_sop_delivery as delivery
-              on delivery.dispatch_id = dispatch.id
-            where dispatch.sop_id = sop.id
-              and delivery.channel = 'jira'
-              and delivery.status = 'success'
-            order by delivery.sent_at desc nulls last, delivery.id desc
-            limit 1
-        ) as jira_delivery on true
         where sop.created_at > %s
           and sop.eqp_id = %s
           {match_clause}
@@ -602,7 +590,6 @@ def _fetch_drone_logs(*, eqp_id: str) -> List[Dict[str, object]]:
             "operator": row.get("operator"),
             "status": row.get("status"),
             "comment": row.get("comment"),
-            "jiraKey": row.get("jira_key"),
             "lineId": row.get("line_id"),
             "eqpId": row.get("eqp_id"),
         }
@@ -615,9 +602,9 @@ TIMELINE_LOG_FETCHERS: Dict[str, Callable[[str], LogRows]] = {
     "tip": lambda eqp_key: _fetch_tip_logs(eqp_id=eqp_key),
     "ctttm": lambda eqp_key: _fetch_ctttm_logs(eqp_id=eqp_key),
     "racb": lambda eqp_key: _fetch_racb_logs(eqp_id=eqp_key),
-    "jira": lambda eqp_key: _fetch_drone_logs(eqp_id=eqp_key),
+    "drone": lambda eqp_key: _fetch_drone_logs(eqp_id=eqp_key),
 }
-TIMELINE_LOG_KEYS = ("eqp", "tip", "ctttm", "racb", "jira", "event")
+TIMELINE_LOG_KEYS = ("eqp", "tip", "ctttm", "racb", "drone", "event")
 
 
 def _fetch_logs_by_type_normalized(*, eqp_key: str, type_key: str) -> LogRows:

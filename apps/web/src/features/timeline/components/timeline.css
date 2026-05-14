@@ -65,8 +65,7 @@
   --timeline-racb-warn: var(--timeline-palette-caution);
   --timeline-ctttm-cbm: var(--timeline-palette-info);
   --timeline-ctttm-nsp: var(--timeline-palette-violet);
-  --timeline-jira-issued: var(--timeline-palette-teal);
-  --timeline-jira-closed: color-mix(in hsl, var(--timeline-palette-neutral) 78%, transparent);
+  --timeline-drone: var(--timeline-palette-teal);
   --timeline-foreground-strong: var(--primary-foreground);
 }
 
@@ -243,17 +242,10 @@
   color: var(--timeline-foreground-strong);
 }
 
-.timeline .vis-item.timeline-color-jira-issued,
-.timeline-legend-dot.timeline-color-jira-issued {
-  background-color: var(--timeline-jira-issued) !important;
-  border-color: var(--timeline-jira-issued) !important;
-  color: var(--timeline-foreground-strong);
-}
-
-.timeline .vis-item.timeline-color-jira-closed,
-.timeline-legend-dot.timeline-color-jira-closed {
-  background-color: var(--timeline-jira-closed) !important;
-  border-color: var(--timeline-jira-closed) !important;
+.timeline .vis-item.timeline-color-drone,
+.timeline-legend-dot.timeline-color-drone {
+  background-color: var(--timeline-drone) !important;
+  border-color: var(--timeline-drone) !important;
   color: var(--timeline-text);
 }
 

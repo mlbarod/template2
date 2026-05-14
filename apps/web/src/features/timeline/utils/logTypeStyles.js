@@ -1,4 +1,4 @@
-// Centralized log type badge styles for the data log table and related UI.
+// Data Log 테이블과 관련 UI에서 공유하는 로그 타입 badge 스타일입니다.
 const fallbackClass = "bg-muted text-foreground";
 
 export const logTypeBadgeClasses = {
@@ -6,7 +6,7 @@ export const logTypeBadgeClasses = {
   TIP: "bg-accent/20 text-accent-foreground",
   RACB: "bg-destructive/10 text-destructive",
   CTTTM: "bg-secondary/20 text-foreground",
-  JIRA: "bg-muted text-foreground",
+  DRONE: "bg-muted text-foreground",
 };
 
 export const getLogTypeBadgeClass = (logType) =>

@@ -1,10 +1,9 @@
-// src/features/timeline/components/logDetail/LogDetailSection.jsx
 import React from "react";
 import EqpDetail from "./EqpDetail";
 import TipDetail from "./TipDetail";
 import RacbDetail from "./RacbDetail";
 import CtttmDetail from "./CtttmDetail";
-import JiraDetail from "./JiraDetail";
+import DroneDetail from "./DroneDetail";
 
 /**
  * 선택된 로그 상세정보를 보여주는 컴포넌트
@@ -31,8 +30,8 @@ export default function LogDetailSection({ log }) {
         return <RacbDetail log={log} />;
       case "CTTTM":
         return <CtttmDetail log={log} />;
-      case "JIRA":
-        return <JiraDetail log={log} />;
+      case "DRONE":
+        return <DroneDetail log={log} />;
       default:
         return (
           <div className="col-span-2 text-muted-foreground py-2">

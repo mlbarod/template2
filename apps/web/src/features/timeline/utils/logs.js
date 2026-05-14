@@ -1,6 +1,5 @@
 /**
- * Shared helpers for timeline log shaping.
- * Keep the math small and readable so beginners can follow along.
+ * 타임라인 로그 가공에 공통으로 사용하는 작은 유틸리티입니다.
  */
 export function addDurationToLogs(logs = [], logType) {
   if (!logs.length) return logs;
@@ -44,7 +43,7 @@ export function mergeLogsByTime(logsByType = {}) {
     tipLogs = [],
     ctttmLogs = [],
     racbLogs = [],
-    jiraLogs = [],
+    droneLogs = [],
   } = logsByType;
 
   return [
@@ -52,7 +51,7 @@ export function mergeLogsByTime(logsByType = {}) {
     ...tipLogs,
     ...ctttmLogs,
     ...racbLogs,
-    ...jiraLogs,
+    ...droneLogs,
   ]
     .filter((log) => log && log.eventTime)
     .sort(

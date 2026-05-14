@@ -1,4 +1,3 @@
-// src/features/timeline/components/JiraTimeline.jsx
 import React from "react";
 import BaseTimeline from "./BaseTimeline";
 import TimelineLegend from "./TimelineLegend";
@@ -8,38 +7,38 @@ import { processData } from "../utils/visTimelineItems";
 import { makeGroupLabel } from "../utils/groupLabel";
 import { timelineLegends } from "../utils/timelineLegends";
 
-const JIRA_GROUP = {
-  id: "JIRA",
-  content: makeGroupLabel("JIRA", "JIRA"),
+const DRONE_GROUP = {
+  id: "DRONE",
+  content: makeGroupLabel("DRONE", "DRONE"),
   className: "custom-group-label",
   order: 1,
 };
 
-export default function JiraTimeline({
+export default function DroneTimeline({
   range,
   showLegend,
   showTimeAxis = false,
-  jiraLogs = [],
+  droneLogs = [],
 }) {
-  const items = processData("JIRA", jiraLogs);
+  const items = processData("DRONE", droneLogs);
 
   const options = buildFixedHeightOptions(range, 76);
 
-  if (jiraLogs.length === 0) {
+  if (droneLogs.length === 0) {
     return (
-      <TimelineEmptyState title="📋 JIRA" message="JIRA 로그가 없습니다" />
+      <TimelineEmptyState title="🚁 DRONE" message="DRONE 로그가 없습니다" />
     );
   }
 
   return (
     <BaseTimeline
-      groups={[JIRA_GROUP]}
+      groups={[DRONE_GROUP]}
       items={items}
       options={options}
-      title="📋 JIRA"
+      title="🚁 DRONE"
       showTimeAxis={showTimeAxis}
       headerExtra={
-        showLegend ? <TimelineLegend items={timelineLegends.JIRA} /> : null
+        showLegend ? <TimelineLegend items={timelineLegends.DRONE} /> : null
       }
     />
   );

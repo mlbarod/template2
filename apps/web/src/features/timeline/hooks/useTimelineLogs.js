@@ -3,7 +3,7 @@ import { useEqpLogs } from "./useEqpLogs";
 import { useTipLogs } from "./useTipLogs";
 import { useCtttmLogs } from "./useCtttmLogs";
 import { useRacbLogs } from "./useRacbLogs";
-import { useJiraLogs } from "./useJiraLogs";
+import { useDroneLogs } from "./useDroneLogs";
 import { DEFAULT_TYPE_FILTERS } from "../utils/constants";
 import { transformLogsToTableData } from "../utils/dataTransformers";
 import { addDurationToLogs, mergeLogsByTime } from "../utils/logs";
@@ -17,22 +17,21 @@ export function useTimelineLogs(
   const { data: tipLogs = [], isLoading: tipLoading } = useTipLogs(eqpId);
   const { data: ctttmLogs = [], isLoading: ctttmLoading } = useCtttmLogs(eqpId);
   const { data: racbLogs = [], isLoading: racbLoading } = useRacbLogs(eqpId);
-  const { data: jiraLogs = [], isLoading: jiraLoading } = useJiraLogs(eqpId);
+  const { data: droneLogs = [], isLoading: droneLoading } = useDroneLogs(eqpId);
 
   const logsLoading =
-    eqpLoading || tipLoading || ctttmLoading || racbLoading || jiraLoading;
+    eqpLoading || tipLoading || ctttmLoading || racbLoading || droneLoading;
 
-  // Heavy transforms (sorting + duration calc) stay memoized to avoid recomputing
-  // on every minor UI toggle.
+  // 정렬과 duration 계산은 UI 토글마다 반복되지 않도록 memoized 상태로 유지합니다.
   const logsWithDuration = useMemo(
     () => ({
       eqpLogs: addDurationToLogs(eqpLogs, "EQP"),
       tipLogs: addDurationToLogs(tipLogs, "TIP"),
       ctttmLogs: ctttmLogs || [],
       racbLogs: racbLogs || [],
-      jiraLogs: jiraLogs || [],
+      droneLogs: droneLogs || [],
     }),
-    [eqpLogs, tipLogs, ctttmLogs, racbLogs, jiraLogs]
+    [eqpLogs, tipLogs, ctttmLogs, racbLogs, droneLogs]
   );
 
   const mergedLogs = useMemo(

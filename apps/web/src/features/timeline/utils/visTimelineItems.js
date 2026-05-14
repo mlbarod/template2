@@ -39,7 +39,9 @@ export function processData(logType, data, makeRangeContinuous = false) {
       ? buildRangeEnd(start, sortedData, index)
       : start;
     const stateClass =
-      (cfg.stateClasses && cfg.stateClasses[log.eventType]) || FALLBACK_CLASS;
+      (cfg.stateClasses && cfg.stateClasses[log.eventType]) ||
+      cfg.defaultClass ||
+      FALLBACK_CLASS;
     const labelClass = `timeline-item-label ${typeClass}`;
     const content = `<span class="${labelClass}">${log.eventType || ""}</span>`;
 

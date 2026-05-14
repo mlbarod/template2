@@ -34,10 +34,8 @@ export const groupConfig = {
       NSP: "timeline-color-ctttm-nsp",
     },
   },
-  JIRA: {
-    stateClasses: {
-      ISSUED: "timeline-color-jira-issued",
-      CLOSED: "timeline-color-jira-closed",
-    },
+  DRONE: {
+    defaultClass: "timeline-color-drone",
+    stateClasses: {},
   },
 };

@@ -140,7 +140,7 @@ export default function TimelinePage() {
                 tipLogs={logsWithDuration.tipLogs}
                 ctttmLogs={logsWithDuration.ctttmLogs}
                 racbLogs={logsWithDuration.racbLogs}
-                jiraLogs={logsWithDuration.jiraLogs}
+                droneLogs={logsWithDuration.droneLogs}
                 typeFilters={typeFilters}
               />
             )}

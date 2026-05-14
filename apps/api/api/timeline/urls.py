@@ -10,10 +10,10 @@ from django.urls import path
 
 from .views import (
     TimelineCtttmLogsView,
+    TimelineDroneLogsView,
     TimelineEquipmentInfoView,
     TimelineEqpLogsView,
     TimelineEquipmentsView,
-    TimelineJiraLogsView,
     TimelineLinesView,
     TimelineLogsView,
     TimelinePrcGroupView,
@@ -42,5 +42,5 @@ urlpatterns = [
     path("logs/tip", TimelineTipLogsView.as_view(), name="timeline-logs-tip"),
     path("logs/ctttm", TimelineCtttmLogsView.as_view(), name="timeline-logs-ctttm"),
     path("logs/racb", TimelineRacbLogsView.as_view(), name="timeline-logs-racb"),
-    path("logs/jira", TimelineJiraLogsView.as_view(), name="timeline-logs-jira"),
+    path("logs/drone", TimelineDroneLogsView.as_view(), name="timeline-logs-drone"),
 ]

@@ -203,16 +203,16 @@ class TimelineEndpointTests(TestCase):
         self.assertTrue(isinstance(response.json(), list))
         selector.assert_called_once_with(eqp_id="EQP-ALPHA", log_key="racb")
 
-    def test_timeline_jira_logs_returns_results(self) -> None:
+    def test_timeline_drone_logs_returns_results(self) -> None:
         with patch(
             f"{TIMELINE_VIEW_SELECTORS}.get_logs_by_type",
             return_value=[],
         ) as selector:
             response = self.client.get(
-                reverse("timeline-logs-jira"),
+                reverse("timeline-logs-drone"),
                 {"eqpId": "EQP-ALPHA"},
             )
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(isinstance(response.json(), list))
-        selector.assert_called_once_with(eqp_id="EQP-ALPHA", log_key="jira")
+        selector.assert_called_once_with(eqp_id="EQP-ALPHA", log_key="drone")

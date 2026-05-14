@@ -337,18 +337,18 @@ class TimelineRacbLogsView(_TimelineLogsByTypeView):
     log_key = "racb"
 
 
-class TimelineJiraLogsView(_TimelineLogsByTypeView):
-    """Jira 타입 로그만 반환합니다."""
+class TimelineDroneLogsView(_TimelineLogsByTypeView):
+    """DRONE 타입 로그만 반환합니다."""
 
-    log_key = "jira"
+    log_key = "drone"
 
 
 __all__ = [
     "TimelineCtttmLogsView",
+    "TimelineDroneLogsView",
     "TimelineEquipmentInfoView",
     "TimelineEqpLogsView",
     "TimelineEquipmentsView",
-    "TimelineJiraLogsView",
     "TimelineLinesView",
     "TimelineLogsView",
     "TimelinePrcGroupView",

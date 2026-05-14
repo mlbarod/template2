@@ -1,11 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { timelineApiClient } from "../api/client";
 
-export const useJiraLogs = (eqpId) =>
+export const useDroneLogs = (eqpId) =>
   useQuery({
-    queryKey: ["timeline", "logs", "jira", eqpId],
+    queryKey: ["timeline", "logs", "drone", eqpId],
     queryFn: () =>
-      timelineApiClient("/logs/jira", {
+      timelineApiClient("/logs/drone", {
         params: { eqpId },
       }),
     enabled: !!eqpId,

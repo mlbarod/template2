@@ -18,9 +18,8 @@ export const timelineLegends = {
     { key: "ALARM", className: "timeline-color-racb-alarm", label: "ALARM" },
     { key: "WARN", className: "timeline-color-racb-warn", label: "WARN" },
   ],
-  JIRA: [
-    { key: "ISSUED", className: "timeline-color-jira-issued", label: "ISSUED" },
-    { key: "CLOSED", className: "timeline-color-jira-closed", label: "CLOSED" },
+  DRONE: [
+    { key: "DRONE", className: "timeline-color-drone", label: "DRONE" },
   ],
 };
 

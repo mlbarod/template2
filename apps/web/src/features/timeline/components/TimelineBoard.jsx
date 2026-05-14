@@ -1,10 +1,9 @@
-// src/features/timeline/components/TimelineBoard.jsx
 import React from "react";
 import EqpTimeline from "./EqpTimeline";
 import TipTimeline from "./TipTimeline";
 import CtttmTimeline from "./CtttmTimeline";
 import RacbTimeline from "./RacbTimeline";
-import JiraTimeline from "./JiraTimeline";
+import DroneTimeline from "./DroneTimeline";
 import { useTimelineRange } from "../hooks/useTimelineRange";
 import { filterTipLogsByGroups } from "../utils/tipUtils";
 
@@ -15,7 +14,7 @@ export default function TimelineBoard({
   tipLogs = [],
   ctttmLogs = [],
   racbLogs = [],
-  jiraLogs = [],
+  droneLogs = [],
   typeFilters,
 }) {
   const visibleTipLogs = filterTipLogsByGroups(tipLogs, selectedTipGroups);
@@ -25,7 +24,7 @@ export default function TimelineBoard({
     ...(typeFilters?.TIP ? visibleTipLogs : []),
     ...(typeFilters?.CTTTM ? ctttmLogs : []),
     ...(typeFilters?.RACB ? racbLogs : []),
-    ...(typeFilters?.JIRA ? jiraLogs : []),
+    ...(typeFilters?.DRONE ? droneLogs : []),
   ];
 
   const range = useTimelineRange(visibleLogs);
@@ -85,13 +84,13 @@ export default function TimelineBoard({
           />
         )}
 
-        {/* JIRA 타임라인 */}
-        {typeFilters?.JIRA && (
-          <JiraTimeline
+        {/* DRONE 타임라인 */}
+        {typeFilters?.DRONE && (
+          <DroneTimeline
             range={range}
             showLegend={showLegend}
             showTimeAxis={true}
-            jiraLogs={jiraLogs}
+            droneLogs={droneLogs}
           />
         )}
       </div>
