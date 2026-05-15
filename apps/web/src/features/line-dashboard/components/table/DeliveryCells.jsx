@@ -128,13 +128,13 @@ function DeliveryStatusBadge({ summary, compact = false }) {
   return (
     <span
       className={[
-        "inline-flex min-w-0 items-center justify-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+        "inline-flex min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium",
         DELIVERY_STATUS_CLASSES[summary.status] ?? DELIVERY_STATUS_CLASSES.unknown,
         compact ? "max-w-full" : "",
       ].join(" ")}
     >
       <Icon className="h-3 w-3 shrink-0" />
-      <span className="truncate">{getDeliveryStatusLabel(summary)}</span>
+      <span className="truncate whitespace-nowrap">{getDeliveryStatusLabel(summary)}</span>
     </span>
   )
 }
@@ -144,13 +144,13 @@ function DeliveryChannelPill({ channel, summary }) {
   return (
     <span
       className={[
-        "inline-flex min-w-0 items-center justify-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+        "inline-flex min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium",
         DELIVERY_STATUS_CLASSES[summary.status] ?? DELIVERY_STATUS_CLASSES.unknown,
       ].join(" ")}
     >
       <Icon className="h-3 w-3 shrink-0" />
       <span className="shrink-0">{channel.shortLabel}</span>
-      <span className="truncate">{getDeliveryStatusLabel(summary)}</span>
+      <span className="truncate whitespace-nowrap">{getDeliveryStatusLabel(summary)}</span>
     </span>
   )
 }
@@ -217,6 +217,9 @@ export function DeliverySummaryCell({ rowOriginal, meta }) {
       rowOriginal?.[channel.field] ?? rowOriginal?.[channel.fallbackField],
     ),
   }))
+  const visibleSummaries = summaries.filter(({ summary }) => summary.status !== "disabled")
+  if (visibleSummaries.length === 0) return null
+
   const title = summaries
     .map(({ channel, summary }) => `${channel.label}: ${getDeliveryStatusLabel(summary)}`)
     .join(" · ")
@@ -227,7 +230,7 @@ export function DeliverySummaryCell({ rowOriginal, meta }) {
       className="inline-flex max-w-full flex-wrap items-center justify-center gap-1 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       title={title}
     >
-      {summaries.map(({ channel, summary }) => (
+      {visibleSummaries.map(({ channel, summary }) => (
         <DeliveryChannelPill key={channel.channel} channel={channel} summary={summary} />
       ))}
     </button>

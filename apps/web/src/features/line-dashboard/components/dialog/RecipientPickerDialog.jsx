@@ -26,6 +26,8 @@ import {
   getRecipientSecondaryText,
 } from "../../utils/lineSettings"
 
+const RECIPIENT_PICKER_LIST_HEIGHT_CLASS = "h-[420px]"
+
 function RecipientPickerUserList({
   users,
   selectedIds,
@@ -44,7 +46,7 @@ function RecipientPickerUserList({
 
   if (isLoading) {
     return (
-      <div className="flex h-full min-h-0 items-center justify-center rounded-md border px-3 py-8 text-center text-xs text-muted-foreground">
+      <div className={`flex ${RECIPIENT_PICKER_LIST_HEIGHT_CLASS} min-h-0 min-w-0 items-center justify-center rounded-md border px-3 py-8 text-center text-xs text-muted-foreground`}>
         {loadingText}
       </div>
     )
@@ -52,15 +54,15 @@ function RecipientPickerUserList({
 
   if (users.length === 0) {
     return (
-      <div className="flex h-full min-h-0 items-center justify-center rounded-md border px-3 py-8 text-center text-xs text-muted-foreground">
+      <div className={`flex ${RECIPIENT_PICKER_LIST_HEIGHT_CLASS} min-h-0 min-w-0 items-center justify-center rounded-md border px-3 py-8 text-center text-xs text-muted-foreground`}>
         {emptyText}
       </div>
     )
   }
 
   return (
-    <div className="grid h-full min-h-0 grid-rows-[auto,minmax(0,1fr)] overflow-hidden rounded-md border">
-      <label className="flex items-center gap-2 border-b px-3 py-2 text-xs font-medium">
+    <div className={`grid ${RECIPIENT_PICKER_LIST_HEIGHT_CLASS} min-h-0 grid-rows-[auto,minmax(0,1fr)] overflow-hidden rounded-md border`}>
+      <label className="flex h-8 items-center gap-2 border-b px-3 text-xs font-medium">
         <Checkbox
           checked={checked}
           onCheckedChange={(nextChecked) => onToggleAll(nextChecked === true)}
@@ -68,27 +70,29 @@ function RecipientPickerUserList({
         현재 결과 전체 선택
       </label>
       <div className="min-h-0 overflow-y-auto">
-        {users.map((user) => {
-          const recipientKey = getRecipientKey(user)
-          if (!recipientKey) return null
-          return (
-            <label
-              key={recipientKey}
-              className="flex min-w-0 cursor-pointer items-center gap-3 border-b px-3 py-2 last:border-b-0"
-            >
-              <Checkbox
-                checked={selectedIds.includes(recipientKey)}
-                onCheckedChange={(nextChecked) => onToggleUser(recipientKey, nextChecked === true)}
-              />
-              <div className="min-w-0">
-                <div className="truncate text-xs font-medium">{getRecipientListText(user)}</div>
-                <div className="truncate text-[11px] text-muted-foreground">
-                  {getRecipientSecondaryText(user)}
+        <div className="flex flex-col">
+          {users.map((user) => {
+            const recipientKey = getRecipientKey(user)
+            if (!recipientKey) return null
+            return (
+              <label
+                key={recipientKey}
+                className="flex h-[44px] max-h-[44px] min-h-[44px] flex-none min-w-0 cursor-pointer items-center gap-3 border-b px-3"
+              >
+                <Checkbox
+                  checked={selectedIds.includes(recipientKey)}
+                  onCheckedChange={(nextChecked) => onToggleUser(recipientKey, nextChecked === true)}
+                />
+                <div className="min-w-0">
+                  <div className="truncate text-xs font-medium leading-tight">{getRecipientListText(user)}</div>
+                  <div className="truncate text-[11px] leading-tight text-muted-foreground">
+                    {getRecipientSecondaryText(user)}
+                  </div>
                 </div>
-              </div>
-            </label>
-          )
-        })}
+              </label>
+            )
+          })}
+        </div>
       </div>
     </div>
   )
@@ -148,7 +152,7 @@ export function RecipientPickerDialog({
 
           <TabsContent
             value="group"
-            className="min-h-0 grid-rows-[auto,minmax(0,1fr)] gap-3 overflow-hidden data-[state=active]:grid data-[state=inactive]:hidden"
+            className="h-full min-h-0 grid-rows-[auto,minmax(0,1fr)] gap-3 overflow-hidden data-[state=active]:grid data-[state=inactive]:hidden"
           >
             <div className="grid grid-cols-1 gap-2">
               <Select
@@ -182,7 +186,7 @@ export function RecipientPickerDialog({
 
           <TabsContent
             value="search"
-            className="min-h-0 grid-rows-[auto,minmax(0,1fr)] gap-3 overflow-hidden data-[state=active]:grid data-[state=inactive]:hidden"
+            className="h-full min-h-0 grid-rows-[auto,minmax(0,1fr)] gap-3 overflow-hidden data-[state=active]:grid data-[state=inactive]:hidden"
           >
             <form className="grid grid-cols-[minmax(0,1fr)_auto] gap-2" onSubmit={onSearch}>
               <Input
