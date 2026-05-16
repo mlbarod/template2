@@ -19,6 +19,7 @@ class ExternalAffiliationRecordSerializer(serializers.Serializer):
     """외부 DB에서 전달되는 사용자 예측 소속 레코드 입력 스키마."""
 
     knox_id = serializers.CharField(max_length=150)
+    username = serializers.CharField(max_length=150, required=False, allow_blank=True, allow_null=True)
     department = serializers.CharField(max_length=128)
     user_sdwt_prod = serializers.CharField(max_length=64)
     source_updated_at = serializers.DateTimeField(required=False, allow_null=True)

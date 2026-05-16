@@ -609,9 +609,10 @@ class ExternalAffiliationSnapshotAdmin(admin.ModelAdmin):
 
     list_display = (
         "knox_id",
+        "username",
         "predicted_user_sdwt_prod",
         "source_updated_at",
         "last_seen_at",
     )
-    search_fields = ("knox_id", "predicted_user_sdwt_prod")
+    search_fields = ("knox_id", "username", "predicted_user_sdwt_prod")
     ordering = ("-last_seen_at", "-id")

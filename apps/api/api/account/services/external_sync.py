@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Iterable
+from typing import Any, Iterable
 
 from django.db import transaction
 from django.utils import timezone
@@ -21,6 +21,26 @@ from django.utils import timezone
 from ..models import ExternalAffiliationSnapshot, UserCurrentAffiliation
 from .. import selectors
 from .utils import _same_user_sdwt_prod
+
+
+def _normalize_optional_text(value: Any) -> str | None:
+    """선택 문자열 값을 공백 제거 후 없으면 None으로 반환합니다."""
+
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip()
+    return cleaned or None
+
+
+def _resolve_snapshot_username(
+    *,
+    record: dict[str, object],
+) -> tuple[bool, str | None]:
+    """동기화 레코드에 포함된 username 제공 여부와 정규화 값을 반환합니다."""
+
+    if "username" not in record:
+        return False, None
+    return True, _normalize_optional_text(record.get("username"))
 
 
 def sync_external_affiliations(
@@ -88,11 +108,15 @@ def sync_external_affiliations(
             source_updated_at = now
 
         predicted_by_knox[knox_id] = predicted
+        username_provided, username = _resolve_snapshot_username(
+            record=record,
+        )
 
         snapshot = existing.get(knox_id)
         if snapshot is None:
             snapshot = ExternalAffiliationSnapshot(
                 knox_id=knox_id,
+                username=username if username_provided else None,
                 department=department,
                 predicted_user_sdwt_prod=predicted,
                 source_updated_at=source_updated_at,
@@ -110,7 +134,10 @@ def sync_external_affiliations(
         changed = not _same_user_sdwt_prod(snapshot.predicted_user_sdwt_prod, predicted)
         changed_department = (snapshot.department or "").strip() != department
         changed_source = snapshot.source_updated_at != source_updated_at
-        if changed or changed_department or changed_source:
+        changed_username = username_provided and (snapshot.username or "").strip() != (username or "")
+        if changed or changed_department or changed_source or changed_username:
+            if username_provided:
+                snapshot.username = username
             snapshot.department = department
             snapshot.predicted_user_sdwt_prod = predicted
             snapshot.source_updated_at = source_updated_at
@@ -130,7 +157,7 @@ def sync_external_affiliations(
         if to_update:
             ExternalAffiliationSnapshot.objects.bulk_update(
                 to_update,
-                ["department", "predicted_user_sdwt_prod", "source_updated_at"],
+                ["username", "department", "predicted_user_sdwt_prod", "source_updated_at"],
                 batch_size=bulk_batch_size,
             )
         if processed_existing_ids:

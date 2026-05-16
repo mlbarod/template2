@@ -1694,6 +1694,78 @@ class AffiliationChangeRequestTests(TestCase):
 class ExternalAffiliationSyncTests(TestCase):
     """외부 소속 동기화/재확인 흐름을 검증합니다."""
 
+    def test_sync_external_affiliations_stores_username_from_record(self) -> None:
+        """외부 동기화 입력의 username을 스냅샷에 저장하는지 확인합니다."""
+
+        result = sync_external_affiliations(
+            records=[
+                {
+                    "knox_id": "loginid-ext-username-1",
+                    "username": "홍길동",
+                    "department": "Dept",
+                    "user_sdwt_prod": "group-a",
+                    "source_updated_at": timezone.now(),
+                }
+            ]
+        )
+
+        snapshot = ExternalAffiliationSnapshot.objects.get(knox_id="loginid-ext-username-1")
+        self.assertEqual(result["created"], 1)
+        self.assertEqual(snapshot.username, "홍길동")
+
+    def test_sync_external_affiliations_does_not_use_account_user_username_when_record_missing(self) -> None:
+        """입력 username이 없으면 account_user.username을 대신 저장하지 않습니다."""
+
+        User = get_user_model()
+        user = User.objects.create_user(
+            sabun="S70100",
+            password="test-password",
+            username="계정사용자",
+            knox_id="loginid-ext-username-2",
+        )
+
+        sync_external_affiliations(
+            records=[
+                {
+                    "knox_id": user.knox_id,
+                    "department": "Dept",
+                    "user_sdwt_prod": "group-a",
+                    "source_updated_at": timezone.now(),
+                }
+            ]
+        )
+
+        snapshot = ExternalAffiliationSnapshot.objects.get(knox_id="loginid-ext-username-2")
+        self.assertIsNone(snapshot.username)
+
+    def test_sync_external_affiliations_keeps_username_when_record_omits_username(self) -> None:
+        """기존 username은 입력 필드가 아예 없을 때 보존합니다."""
+
+        updated_at = timezone.now()
+        ExternalAffiliationSnapshot.objects.create(
+            knox_id="loginid-ext-username-3",
+            username="기존이름",
+            department="Dept",
+            predicted_user_sdwt_prod="group-a",
+            source_updated_at=updated_at,
+            last_seen_at=updated_at,
+        )
+
+        result = sync_external_affiliations(
+            records=[
+                {
+                    "knox_id": "loginid-ext-username-3",
+                    "department": "Dept",
+                    "user_sdwt_prod": "group-a",
+                    "source_updated_at": updated_at,
+                }
+            ]
+        )
+
+        snapshot = ExternalAffiliationSnapshot.objects.get(knox_id="loginid-ext-username-3")
+        self.assertEqual(result["unchanged"], 1)
+        self.assertEqual(snapshot.username, "기존이름")
+
     def test_sync_external_affiliations_flags_user_on_change(self) -> None:
         """예측 소속 변경 시 재확인 플래그가 켜지는지 확인합니다."""
         # -----------------------------------------------------------------------------

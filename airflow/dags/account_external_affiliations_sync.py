@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from datetime import timedelta
+from typing import Any
 
 import requests
 from airflow import DAG
@@ -19,6 +20,30 @@ ACCOUNT_EXTERNAL_AFFILIATIONS_SYNC_HTTP_TIMEOUT = int(
 ACCOUNT_EXTERNAL_AFFILIATIONS_SYNC_SCHEDULE = (
     os.getenv("ACCOUNT_EXTERNAL_AFFILIATIONS_SYNC_SCHEDULE") or "@daily"
 )
+EXTERNAL_AFFILIATION_COLUMN_RENAMES = {
+    "tdvt_nm": "user_sdwt_prod",
+    "sso_id": "knox_id",
+    "org_dept_kor_nm": "department",
+    "emp_prf_fllnm": "username",
+}
+EXTERNAL_AFFILIATION_RECORD_COLUMNS = [
+    "knox_id",
+    "username",
+    "department",
+    "user_sdwt_prod",
+    "source_updated_at",
+]
+
+
+def build_external_affiliations_payload(payload: Any) -> dict[str, list[dict[str, object]]]:
+    """사내 서버에서 받은 DataFrame을 외부 소속 동기화 API payload로 변환합니다."""
+
+    renamed_payload = payload.rename(columns=EXTERNAL_AFFILIATION_COLUMN_RENAMES)
+    available_columns = [
+        column for column in EXTERNAL_AFFILIATION_RECORD_COLUMNS if column in renamed_payload.columns
+    ]
+    normalized_payload = renamed_payload[available_columns].where(renamed_payload.notna(), None)
+    return {"records": normalized_payload.to_dict("records")}
 
 
 def run_account_external_affiliations_sync(**_context):
@@ -29,7 +54,10 @@ def run_account_external_affiliations_sync(**_context):
     if AIRFLOW_TRIGGER_TOKEN:
         headers["Authorization"] = f"Bearer {AIRFLOW_TRIGGER_TOKEN}"
 
-    # records 예시: [{"knox_id": "K1", "department": "DeptA", "user_sdwt_prod": "G1", "source_updated_at": "2025-01-01T00:00:00Z"}]
+    # 사내 서버 수신부에서 받은 DataFrame은 아래 helper로 API payload 형식에 맞춥니다.
+    # payload = build_external_affiliations_payload(payload)
+    # records 예시:
+    # [{"knox_id": "K1", "username": "홍길동", "department": "DeptA", "user_sdwt_prod": "G1"}]
     payload = {"records": []}
 
     response = requests.post(

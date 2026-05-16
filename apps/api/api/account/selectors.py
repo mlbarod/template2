@@ -557,11 +557,12 @@ def _list_external_affiliation_pool(
     if normalized_search:
         queryset = queryset.filter(
             Q(knox_id__icontains=normalized_search)
+            | Q(username__icontains=normalized_search)
             | Q(department__icontains=normalized_search)
             | Q(predicted_user_sdwt_prod__icontains=normalized_search)
         )
 
-    rows = queryset.order_by("predicted_user_sdwt_prod", "knox_id")
+    rows = queryset.order_by("predicted_user_sdwt_prod", "username", "knox_id")
     if safe_limit is not None:
         rows = rows[:safe_limit]
 
@@ -579,8 +580,8 @@ def _list_external_affiliation_pool(
                 "recipientType": "external",
                 "recipientKey": recipient_key,
                 "externalKnoxId": knox_id,
-                "username": "",
-                "displayName": knox_id,
+                "username": snapshot.username or "",
+                "displayName": snapshot.username or knox_id,
                 "sabun": "",
                 "knoxId": knox_id,
                 "email": _build_external_snapshot_email(knox_id=knox_id),

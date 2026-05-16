@@ -394,6 +394,7 @@ class ExternalAffiliationSnapshot(models.Model):
     """외부 DB에서 가져온 예측 소속(user_sdwt_prod) 스냅샷을 저장합니다."""
 
     knox_id = models.CharField(max_length=150, unique=True)
+    username = models.CharField(max_length=150, null=True, blank=True)
     department = models.CharField(max_length=128, null=True, blank=True)
     predicted_user_sdwt_prod = models.CharField(max_length=64)
     source_updated_at = models.DateTimeField()
