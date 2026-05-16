@@ -35,6 +35,7 @@ _DELIVERY_UPDATE_FIELDS = (
     "delivery_jira",
     "delivery_messenger",
     "delivery_mail",
+    "delivery_visible_channels",
     "informed_at",
     "jira_key",
     "inform_step",
@@ -217,13 +218,18 @@ def _attach_delivery_summary_columns(
             hidden_channels=hidden_channel_set,
         ),
     }
+    channel_flags: dict[str, int | None] = {}
     for channel, column in _DELIVERY_COLUMN_BY_CHANNEL.items():
-        enriched[column] = _summarize_delivery_flag(
+        channel_flags[channel] = _summarize_delivery_flag(
             delivery_rows=delivery_rows,
             channel=channel,
             enabled_channels=visible_enabled_channels,
             hidden_channels=hidden_channel_set,
         )
+        enriched[column] = channel_flags[channel]
+    enriched["delivery_visible_channels"] = [
+        channel for channel, flag in channel_flags.items() if flag is not None
+    ]
 
     jira_success = next(
         (

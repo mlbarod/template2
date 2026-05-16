@@ -86,6 +86,19 @@ export function normalizeDeliveryRows(rowOriginal) {
     .filter(Boolean)
 }
 
+export function normalizeDeliveryVisibleChannels(rowOriginal) {
+  const rawChannels = rowOriginal?.delivery_visible_channels ?? rowOriginal?.deliveryVisibleChannels
+  if (!Array.isArray(rawChannels)) return null
+  const visibleChannels = new Set()
+  for (const rawChannel of rawChannels) {
+    const channel = normalizeTextValue(rawChannel)?.toLowerCase()
+    if (DELIVERY_CHANNELS.some((item) => item.channel === channel)) {
+      visibleChannels.add(channel)
+    }
+  }
+  return visibleChannels
+}
+
 export function hasDeliveryRows(rowOriginal) {
   return normalizeDeliveryRows(rowOriginal).length > 0
 }
@@ -175,12 +188,16 @@ export function summarizeRowDeliveryChannel(rowOriginal, channelKey) {
   const hasDeliveryField = Object.prototype.hasOwnProperty.call(rowOriginal ?? {}, channel.field)
   const hasFallbackField = Object.prototype.hasOwnProperty.call(rowOriginal ?? {}, channel.fallbackField)
   const explicitValue = rowOriginal?.[channel.field] ?? rowOriginal?.[channel.fallbackField]
-  if ((hasDeliveryField || hasFallbackField) && (explicitValue === null || explicitValue === undefined)) {
+  const visibleChannels = normalizeDeliveryVisibleChannels(rowOriginal)
+  if (visibleChannels && !visibleChannels.has(channel.channel)) {
     return null
   }
   const deliveryRows = normalizeDeliveryRows(rowOriginal)
   const existingSummary = summarizeExistingDeliveryChannel(deliveryRows, channel.channel)
   if (existingSummary) return existingSummary
+  if ((hasDeliveryField || hasFallbackField) && (explicitValue === null || explicitValue === undefined)) {
+    return null
+  }
   return summarizeDeliveryChannelFlag(channel.channel, explicitValue)
 }
 

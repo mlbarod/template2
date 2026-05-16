@@ -18,8 +18,10 @@ import {
   DELIVERY_CHANNELS,
   getDeliveryStatusLabel,
   normalizeDeliveryRows,
+  normalizeDeliveryVisibleChannels,
   normalizeTextValue,
   resolveChannelReason,
+  summarizeDeliveryChannelFlag,
   summarizeRowDeliveryChannel,
   uniqueDeliveryTargets,
 } from "../../utils/dataTableDelivery"
@@ -232,7 +234,16 @@ function DeliveryCellDetail({ delivery, summaryFallback }) {
 
 export function DeliverySummaryCell({ rowOriginal, meta }) {
   const visibleSummaries = buildVisibleChannelSummaries(rowOriginal)
-  if (visibleSummaries.length === 0) return null
+  if (visibleSummaries.length === 0) {
+    const visibleChannels = normalizeDeliveryVisibleChannels(rowOriginal)
+    const hasVisibleDeliveryMetadata =
+      Boolean(visibleChannels && visibleChannels.size > 0) ||
+      normalizeDeliveryRows(rowOriginal).length > 0
+    const overallSummary = hasVisibleDeliveryMetadata
+      ? summarizeDeliveryChannelFlag("delivery_status", rowOriginal?.delivery_status)
+      : null
+    return overallSummary ? <DeliveryStatusBadge summary={overallSummary} compact /> : null
+  }
 
   const title = visibleSummaries
     .map(({ channel, summary }) => `${channel.label}: ${getDeliveryStatusLabel(summary)}`)

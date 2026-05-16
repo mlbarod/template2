@@ -6830,6 +6830,7 @@ class DroneTablesEndpointTests(TestCase):
         self.assertEqual(row["delivery_jira"], 1)
         self.assertIsNone(row["delivery_messenger"])
         self.assertIsNone(row["delivery_mail"])
+        self.assertEqual(row["delivery_visible_channels"], ["jira"])
         self.assertEqual(row["jira_key"], "PROJ-1")
         self.assertIsNotNone(row["informed_at"])
         self.assertEqual(
@@ -6897,6 +6898,7 @@ class DroneTablesEndpointTests(TestCase):
         self.assertIsNone(row["delivery_jira"])
         self.assertEqual(row["delivery_messenger"], 0)
         self.assertEqual(row["delivery_mail"], 0)
+        self.assertEqual(row["delivery_visible_channels"], ["messenger", "mail"])
 
     def test_tables_list_marks_cancelled_delivery_as_blocked_status(self) -> None:
         """취소 delivery는 비활성이 아니라 차단 상태로 요약합니다."""
@@ -6941,6 +6943,7 @@ class DroneTablesEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         row = next(row for row in response.json()["rows"] if row["id"] == sop.id)
         self.assertIsNone(row["delivery_jira"])
+        self.assertNotIn("jira", row["delivery_visible_channels"])
         self.assertIsNone(row.get("jira_key"))
         self.assertIsNone(row.get("informed_at"))
 
@@ -6952,6 +6955,7 @@ class DroneTablesEndpointTests(TestCase):
 
         self.assertIn("deliveryRows", payload)
         self.assertIn("delivery_jira", payload)
+        self.assertIn("delivery_visible_channels", payload)
         self.assertNotIn("target_user_sdwt_prod", payload)
 
     def test_tables_list_rejects_non_drone_sop_table(self) -> None:
@@ -7306,6 +7310,7 @@ class DroneTablesEndpointTests(TestCase):
         self.assertIsNone(updated["delivery_jira"])
         self.assertEqual(updated["delivery_messenger"], 0)
         self.assertEqual(updated["delivery_mail"], 0)
+        self.assertEqual(updated["delivery_visible_channels"], ["messenger", "mail"])
 
     @patch("api.drone.services.table_ops.execute")
     def test_tables_update_rejects_parsing_controlled_fields(self, mock_execute: Mock) -> None:
