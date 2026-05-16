@@ -6537,14 +6537,15 @@ class DroneTablesEndpointTests(TestCase):
         self.assertEqual(payload["rowCount"], 1)
 
     def test_tables_list_includes_delivery_rows_metadata(self) -> None:
-        """테이블 조회 row에 target/channel delivery 메타가 포함되는지 확인합니다."""
+        """테이블 조회 row에 channel delivery 메타가 포함되는지 확인합니다."""
 
-        sop = _create_drone_sop(target_user_sdwt_prod="TARGET-A")
-        DroneSopDelivery.objects.filter(sop=sop).exclude(channel=DroneSopDelivery.Channels.JIRA).delete()
+        sop = _create_drone_sop(target_user_sdwt_prod="SOP-TARGET")
+        DroneSopDelivery.objects.filter(sop=sop).delete()
         delivery = services.create_channel_delivery_with_dispatch(
             sop=sop,
             channel=DroneSopDelivery.Channels.JIRA,
             status=DroneSopDelivery.Statuses.SUCCESS,
+            target_user_sdwt_prod="DELIVERY-SNAPSHOT",
         )
         delivery.external_key = "PROJ-1"
         delivery.sent_comment = "sent snapshot"
@@ -6562,7 +6563,7 @@ class DroneTablesEndpointTests(TestCase):
         row = payload["rows"][0]
         self.assertEqual(row["id"], sop.id)
         self.assertEqual(row["delivery_status"], 1)
-        self.assertEqual(row["delivery_targets"], "TARGET-A")
+        self.assertEqual(row["delivery_targets"], "SOP-TARGET")
         self.assertEqual(row["jira_key"], "PROJ-1")
         self.assertIsNotNone(row["informed_at"])
         self.assertEqual(
@@ -6576,9 +6577,27 @@ class DroneTablesEndpointTests(TestCase):
                 for delivery in row["deliveryRows"]
             ],
             [
-                ("TARGET-A", "jira", "success", "sent snapshot"),
+                ("DELIVERY-SNAPSHOT", "jira", "success", "sent snapshot"),
             ],
         )
+
+    def test_tables_list_uses_sop_target_when_delivery_missing(self) -> None:
+        """delivery가 없어도 SOP의 target_user_sdwt_prod를 알림 Target으로 반환합니다."""
+
+        sop = _create_drone_sop(
+            target_user_sdwt_prod="TARGET-VISIBLE",
+            status="IN_PROGRESS",
+            needtosend=0,
+            instant_inform=0,
+        )
+
+        response = self.client.get(reverse("drone-tables"), {"table": "drone_sop", "recentHoursStart": "24"})
+
+        self.assertEqual(response.status_code, 200)
+        row = next(row for row in response.json()["rows"] if row["id"] == sop.id)
+        self.assertFalse(DroneSopDelivery.objects.filter(sop=sop).exists())
+        self.assertEqual(row["delivery_targets"], "TARGET-VISIBLE")
+        self.assertEqual(row["delivery_status"], 0)
 
     def test_table_record_delivery_update_payload_excludes_base_target(self) -> None:
         """단건 갱신 payload는 화면 row target을 덮어쓰지 않는지 확인합니다."""

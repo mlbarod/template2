@@ -93,46 +93,18 @@ def _latest_success_sent_at(*, delivery_rows: list[dict[str, Any]]) -> datetime 
     return latest_sent_at
 
 
-def _extract_delivery_targets(delivery_rows: list[dict[str, Any]]) -> list[str]:
-    """delivery row에서 중복 없는 target 목록을 추출합니다."""
+def _extract_row_target(row: dict[str, Any]) -> str | None:
+    """테이블에 표시할 SOP row의 target 값을 반환합니다."""
 
-    targets: list[str] = []
-    seen: set[str] = set()
-    for delivery in delivery_rows:
-        target = delivery.get("targetUserSdwtProd") or delivery.get("target_user_sdwt_prod")
-        if not isinstance(target, str) or not target.strip():
-            continue
-        cleaned = target.strip()
-        lookup = cleaned.casefold()
-        if lookup in seen:
-            continue
-        seen.add(lookup)
-        targets.append(cleaned)
-    return targets
-
-
-def _group_delivery_rows_by_target(*, delivery_rows: list[dict[str, Any]]) -> list[tuple[str, list[dict[str, Any]]]]:
-    """delivery row를 target별 표시 row 단위로 묶습니다."""
-
-    grouped: list[tuple[str, list[dict[str, Any]]]] = []
-    index_by_target: dict[str, int] = {}
-    for delivery in delivery_rows:
-        target = delivery.get("targetUserSdwtProd") or delivery.get("target_user_sdwt_prod")
-        if not isinstance(target, str) or not target.strip():
-            continue
-        cleaned = target.strip()
-        target_key = cleaned.casefold()
-        if target_key not in index_by_target:
-            index_by_target[target_key] = len(grouped)
-            grouped.append((cleaned, []))
-        grouped[index_by_target[target_key]][1].append(delivery)
-    return grouped
+    target = row.get("target_user_sdwt_prod")
+    if not isinstance(target, str) or not target.strip():
+        return None
+    return target.strip()
 
 
 def _attach_delivery_summary_columns(*, row: dict[str, Any], delivery_rows: list[dict[str, Any]]) -> dict[str, Any]:
     """테이블 row에 delivery 가상 컬럼 값을 붙입니다."""
 
-    targets = _extract_delivery_targets(delivery_rows)
     dispatch_id = next(
         (
             delivery.get("dispatchId") or delivery.get("dispatch_id")
@@ -145,7 +117,7 @@ def _attach_delivery_summary_columns(*, row: dict[str, Any], delivery_rows: list
         **row,
         "dispatch_id": dispatch_id,
         "deliveryRows": delivery_rows,
-        "delivery_targets": targets[0] if targets else None,
+        "delivery_targets": _extract_row_target(row),
         "delivery_status": _summarize_delivery_overall_flag(delivery_rows=delivery_rows),
     }
     for channel, column in _DELIVERY_COLUMN_BY_CHANNEL.items():
@@ -167,7 +139,7 @@ def _attach_delivery_summary_columns(*, row: dict[str, Any], delivery_rows: list
 
 
 def attach_delivery_rows(*, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """테이블 row에 target/channel delivery 메타를 붙입니다."""
+    """테이블 row에 channel delivery 메타를 붙입니다."""
 
     if not rows:
         return rows
@@ -178,23 +150,16 @@ def attach_delivery_rows(*, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if isinstance(row, dict) and (sop_id := _normalize_positive_int(row.get("id"))) is not None
     ]
     delivery_rows_by_sop_id = selectors.list_drone_sop_channel_delivery_rows_by_sop_ids(sop_ids=sop_ids)
-    enriched_rows: list[dict[str, Any]] = []
-    for row in rows:
-        sop_id = _normalize_positive_int(row.get("id")) if isinstance(row, dict) else None
-        delivery_rows = delivery_rows_by_sop_id.get(sop_id or 0, [])
-        grouped_delivery_rows = _group_delivery_rows_by_target(delivery_rows=delivery_rows)
-        if not grouped_delivery_rows:
-            enriched_rows.append(_attach_delivery_summary_columns(row=row, delivery_rows=delivery_rows))
-            continue
-        for target, target_delivery_rows in grouped_delivery_rows:
-            target_row = {**row, "target_user_sdwt_prod": target}
-            enriched_rows.append(
-                _attach_delivery_summary_columns(
-                    row=target_row,
-                    delivery_rows=target_delivery_rows,
-                )
-            )
-    return enriched_rows
+    return [
+        _attach_delivery_summary_columns(
+            row=row,
+            delivery_rows=delivery_rows_by_sop_id.get(
+                _normalize_positive_int(row.get("id")) if isinstance(row, dict) else 0,
+                [],
+            ),
+        )
+        for row in rows
+    ]
 
 
 def build_delivery_update_payload(*, row: dict[str, Any]) -> dict[str, Any]:
