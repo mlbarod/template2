@@ -11,7 +11,11 @@ from datetime import datetime
 from typing import Any
 
 from .. import selectors
-from .shared.delivery_snapshot import is_sop_delivery_eligible, normalize_lookup_key
+from .shared.delivery_snapshot import (
+    is_sop_delivery_eligible,
+    normalize_int_flag,
+    normalize_lookup_key,
+)
 
 _DELIVERY_VIRTUAL_COLUMNS = [
     "delivery_targets",
@@ -87,7 +91,7 @@ def _summarize_delivery_overall_flag(
     delivery_rows: list[dict[str, Any]],
     enabled_channels: set[str],
     hidden_channels: set[str],
-) -> int:
+) -> int | None:
     """현재 활성 채널의 delivery row 목록을 테이블 정렬용 숫자 플래그로 요약합니다."""
 
     flags = [
@@ -101,7 +105,7 @@ def _summarize_delivery_overall_flag(
     ]
     visible_flags = [flag for flag in flags if flag is not None]
     if not visible_flags:
-        return 0
+        return None
     if any(flag < 0 for flag in visible_flags):
         return -1
     if any(flag == 0 for flag in visible_flags):
@@ -150,6 +154,14 @@ def _load_channel_config_map_by_row_target(*, rows: list[dict[str, Any]]) -> dic
     )
 
 
+def _is_sop_delivery_planned(row: dict[str, Any]) -> bool:
+    """delivery row 생성 전 예약 상태까지 포함해 표시 대상인지 확인합니다."""
+
+    if is_sop_delivery_eligible(row):
+        return True
+    return normalize_int_flag(row.get("needtosend")) == 1
+
+
 def _resolve_enabled_channels_for_row(
     *,
     row: dict[str, Any],
@@ -158,7 +170,7 @@ def _resolve_enabled_channels_for_row(
     """현재 row에서 표시 가능한 활성 채널 목록을 반환합니다."""
 
     target_key = normalize_lookup_key(_extract_row_target(row))
-    if not target_key or not is_sop_delivery_eligible(row):
+    if not target_key or not _is_sop_delivery_planned(row):
         return set()
 
     config = channel_config_map.get(target_key) or {}

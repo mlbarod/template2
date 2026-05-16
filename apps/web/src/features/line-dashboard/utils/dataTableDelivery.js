@@ -188,6 +188,7 @@ export function summarizeDeliveryChannelFlag(channel, fallbackValue) {
 export function summarizeRowDeliveryOverall(rowOriginal) {
   const visibleChannels = normalizeDeliveryVisibleChannels(rowOriginal)
   const deliveryRows = normalizeDeliveryRows(rowOriginal)
+  if (!visibleChannels?.size && deliveryRows.length === 0) return null
   const hasVisibleDeliveryMetadata =
     Boolean(visibleChannels && visibleChannels.size > 0) ||
     hasExplicitDeliveryStatus(rowOriginal)

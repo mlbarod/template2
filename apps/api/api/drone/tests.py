@@ -6864,7 +6864,7 @@ class DroneTablesEndpointTests(TestCase):
         row = next(row for row in response.json()["rows"] if row["id"] == sop.id)
         self.assertFalse(DroneSopDelivery.objects.filter(sop=sop).exists())
         self.assertEqual(row["delivery_targets"], "TARGET-VISIBLE")
-        self.assertEqual(row["delivery_status"], 0)
+        self.assertIsNone(row["delivery_status"])
         self.assertIsNone(row["delivery_jira"])
         self.assertIsNone(row["delivery_messenger"])
         self.assertIsNone(row["delivery_mail"])
@@ -6895,10 +6895,43 @@ class DroneTablesEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         row = next(row for row in response.json()["rows"] if row["id"] == sop.id)
         self.assertFalse(DroneSopDelivery.objects.filter(sop=sop).exists())
+        self.assertEqual(row["delivery_status"], 0)
         self.assertIsNone(row["delivery_jira"])
         self.assertEqual(row["delivery_messenger"], 0)
         self.assertEqual(row["delivery_mail"], 0)
         self.assertEqual(row["delivery_visible_channels"], ["messenger", "mail"])
+
+    def test_tables_list_uses_enabled_channel_flags_before_complete(self) -> None:
+        """예약된 SOP는 COMPLETE 전이어도 예정 채널을 대기로 표시합니다."""
+
+        _upsert_target(
+            target_user_sdwt_prod="TARGET-PLANNED",
+            jira_enabled=True,
+            messenger_enabled=True,
+            mail_enabled=False,
+        )
+        sop = DroneSOP.objects.create(
+            line_id="L1",
+            target_user_sdwt_prod="TARGET-PLANNED",
+            eqp_id="EQP-PLANNED",
+            chamber_ids="1",
+            lot_id="LOT.PLANNED",
+            main_step="MS",
+            status="IN_PROGRESS",
+            needtosend=1,
+            instant_inform=0,
+        )
+
+        response = self.client.get(reverse("drone-tables"), {"table": "drone_sop", "recentHoursStart": "24"})
+
+        self.assertEqual(response.status_code, 200)
+        row = next(row for row in response.json()["rows"] if row["id"] == sop.id)
+        self.assertFalse(DroneSopDelivery.objects.filter(sop=sop).exists())
+        self.assertEqual(row["delivery_status"], 0)
+        self.assertEqual(row["delivery_jira"], 0)
+        self.assertEqual(row["delivery_messenger"], 0)
+        self.assertIsNone(row["delivery_mail"])
+        self.assertEqual(row["delivery_visible_channels"], ["jira", "messenger"])
 
     def test_tables_list_marks_cancelled_delivery_as_blocked_status(self) -> None:
         """취소 delivery는 비활성이 아니라 차단 상태로 요약합니다."""
@@ -7273,9 +7306,11 @@ class DroneTablesEndpointTests(TestCase):
         sop.refresh_from_db()
         self.assertEqual(sop.needtosend, 0)
         updated = response.json()["updated"]
+        self.assertIsNone(updated["delivery_status"])
         self.assertIsNone(updated["delivery_jira"])
         self.assertIsNone(updated["delivery_messenger"])
         self.assertIsNone(updated["delivery_mail"])
+        self.assertEqual(updated["delivery_visible_channels"], [])
 
     def test_tables_update_needtosend_returns_delivery_flags(self) -> None:
         """예약 수정 직후 응답에도 활성 채널 전송 상태를 포함합니다."""
@@ -7307,6 +7342,7 @@ class DroneTablesEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         updated = response.json()["updated"]
         self.assertEqual(updated["needtosend"], 1)
+        self.assertEqual(updated["delivery_status"], 0)
         self.assertIsNone(updated["delivery_jira"])
         self.assertEqual(updated["delivery_messenger"], 0)
         self.assertEqual(updated["delivery_mail"], 0)

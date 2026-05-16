@@ -231,11 +231,84 @@ function DeliveryCellDetail({ delivery, summaryFallback }) {
   )
 }
 
+function getFlagLabel(value, labels) {
+  const { state } = deriveFlagState(value, 0)
+  return labels[state] ?? labels.off
+}
+
+function DeliveryOverallFallbackDialog({ rowOriginal, summary, trigger }) {
+  const primaryTarget = normalizeTextValue(rowOriginal?.delivery_targets ?? rowOriginal?.target_user_sdwt_prod)
+  const sopStatus = normalizeTextValue(rowOriginal?.status) ?? "-"
+  const needToSendLabel = getFlagLabel(rowOriginal?.needtosend, {
+    on: "예약됨",
+    off: "예약 안됨",
+    error: "예약 오류",
+  })
+  const instantInformLabel = getFlagLabel(rowOriginal?.instant_inform, {
+    on: "요청됨",
+    off: "요청 안됨",
+    error: "요청 오류",
+  })
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogContent className="max-w-[520px]">
+        <DialogHeader>
+          <DialogTitle>Delivery 상세</DialogTitle>
+          <DialogDescription>
+            아직 표시 가능한 채널별 delivery 정보가 없어 SOP 기준 상태만 표시합니다.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 rounded-md border p-3 text-sm">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-muted-foreground">전송 상태</span>
+            <DeliveryStatusBadge summary={summary} compact />
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-muted-foreground">Target</span>
+            <span className="min-w-0 truncate font-mono">{primaryTarget ?? "-"}</span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-muted-foreground">SOP 상태</span>
+            <span className="min-w-0 truncate">{sopStatus}</span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-muted-foreground">예약</span>
+            <span>{needToSendLabel}</span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-muted-foreground">즉시인폼</span>
+            <span>{instantInformLabel}</span>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function DeliverySummaryCell({ rowOriginal, meta }) {
   const visibleSummaries = buildVisibleChannelSummaries(rowOriginal)
   if (visibleSummaries.length === 0) {
     const overallSummary = summarizeRowDeliveryOverall(rowOriginal)
-    return overallSummary ? <DeliveryStatusBadge summary={overallSummary} compact /> : null
+    if (!overallSummary) return null
+    const trigger = (
+      <button
+        type="button"
+        className="inline-flex max-w-full rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        title={`전송 상태: ${getDeliveryStatusLabel(overallSummary)}`}
+      >
+        <DeliveryStatusBadge summary={overallSummary} compact />
+      </button>
+    )
+    return (
+      <DeliveryOverallFallbackDialog
+        rowOriginal={rowOriginal}
+        summary={overallSummary}
+        trigger={trigger}
+      />
+    )
   }
 
   const title = visibleSummaries
