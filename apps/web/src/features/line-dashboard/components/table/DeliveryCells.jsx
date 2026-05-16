@@ -16,12 +16,11 @@ import { formatCellValue, formatTooltipValue } from "../../utils/dataTableFormat
 import { deriveFlagState } from "../../utils/dataTableFlagState"
 import {
   DELIVERY_CHANNELS,
-  filterDeliveryRowsForPrimaryTarget,
   getDeliveryStatusLabel,
   normalizeDeliveryRows,
   normalizeTextValue,
   resolveChannelReason,
-  summarizeDeliveryChannel,
+  summarizeExistingDeliveryChannel,
   uniqueDeliveryTargets,
 } from "../../utils/dataTableDelivery"
 import { buildToastOptions } from "../../utils/toast"
@@ -155,11 +154,10 @@ function DeliveryChannelPill({ channel, summary }) {
   )
 }
 
-function groupDeliveryRowsByTarget(deliveryRows) {
+function groupDeliveryRowsByChannel(deliveryRows) {
   const grouped = new Map()
   for (const row of deliveryRows) {
-    if (!grouped.has(row.target)) grouped.set(row.target, {})
-    grouped.get(row.target)[row.channel] = row
+    grouped.set(row.channel, row)
   }
   return grouped
 }
@@ -196,31 +194,17 @@ function DeliveryCellDetail({ delivery }) {
 }
 
 export function DeliverySummaryCell({ rowOriginal, meta }) {
-  const rawDeliveryRows = normalizeDeliveryRows(rowOriginal)
-  const deliveryRows = filterDeliveryRowsForPrimaryTarget(
-    rawDeliveryRows,
-    rowOriginal?.delivery_targets ?? rowOriginal?.target_user_sdwt_prod,
-  )
-  const hasDeliverySignal =
-    rawDeliveryRows.length > 0 ||
-    DELIVERY_CHANNELS.some((channel) => (
-      rowOriginal?.[channel.field] !== undefined || rowOriginal?.[channel.fallbackField] !== undefined
-    ))
-
-  if (!hasDeliverySignal) return null
+  const deliveryRows = normalizeDeliveryRows(rowOriginal)
+  if (!deliveryRows.length) return null
 
   const summaries = DELIVERY_CHANNELS.map((channel) => ({
     channel,
-    summary: summarizeDeliveryChannel(
-      deliveryRows,
-      channel.channel,
-      rowOriginal?.[channel.field] ?? rowOriginal?.[channel.fallbackField],
-    ),
+    summary: summarizeExistingDeliveryChannel(deliveryRows, channel.channel),
   }))
-  const visibleSummaries = summaries.filter(({ summary }) => summary.status !== "disabled")
+  const visibleSummaries = summaries.filter(({ summary }) => summary && summary.status !== "disabled")
   if (visibleSummaries.length === 0) return null
 
-  const title = summaries
+  const title = visibleSummaries
     .map(({ channel, summary }) => `${channel.label}: ${getDeliveryStatusLabel(summary)}`)
     .join(" · ")
 
@@ -240,16 +224,10 @@ export function DeliverySummaryCell({ rowOriginal, meta }) {
 }
 
 function DeliveryDetailsDialog({ rowOriginal, trigger, initialChannel = null, meta }) {
-  const rawDeliveryRows = normalizeDeliveryRows(rowOriginal)
-  const deliveryRows = filterDeliveryRowsForPrimaryTarget(
-    rawDeliveryRows,
-    rowOriginal?.delivery_targets ?? rowOriginal?.target_user_sdwt_prod,
-  )
-  const targetValues = uniqueDeliveryTargets(
-    deliveryRows,
-    rowOriginal?.delivery_targets ?? rowOriginal?.target_user_sdwt_prod,
-  )
-  const groupedByTarget = groupDeliveryRowsByTarget(deliveryRows)
+  const deliveryRows = normalizeDeliveryRows(rowOriginal)
+  const primaryTarget = normalizeTextValue(rowOriginal?.delivery_targets ?? rowOriginal?.target_user_sdwt_prod)
+  const targetValues = primaryTarget ? [primaryTarget] : uniqueDeliveryTargets(deliveryRows, null)
+  const deliveryByChannel = groupDeliveryRowsByChannel(deliveryRows)
   const recordId = getRecordId(rowOriginal)
 
   const orderedChannels = initialChannel
@@ -286,7 +264,6 @@ function DeliveryDetailsDialog({ rowOriginal, trigger, initialChannel = null, me
 
           {targetValues.length > 0 ? (
             targetValues.map((target) => {
-              const deliveryByChannel = groupedByTarget.get(target) ?? {}
               return (
                 <div
                   key={target}
@@ -299,7 +276,7 @@ function DeliveryDetailsDialog({ rowOriginal, trigger, initialChannel = null, me
                   </div>
                   {orderedChannels.map((channel) => (
                     <div key={`${target}:${channel.channel}`} className="min-w-0 px-3 py-3">
-                      <DeliveryCellDetail delivery={deliveryByChannel[channel.channel]} />
+                      <DeliveryCellDetail delivery={deliveryByChannel.get(channel.channel)} />
                     </div>
                   ))}
                 </div>
@@ -348,8 +325,9 @@ function DeliveryDetailsDialog({ rowOriginal, trigger, initialChannel = null, me
 
 export function TargetSummaryCell({ value, rowOriginal }) {
   const deliveryRows = normalizeDeliveryRows(rowOriginal)
-  const targets = uniqueDeliveryTargets(deliveryRows, value ?? rowOriginal?.target_user_sdwt_prod)
-  const primaryTarget = targets[0] ?? normalizeTextValue(value ?? rowOriginal?.target_user_sdwt_prod)
+  const primaryTarget =
+    normalizeTextValue(value ?? rowOriginal?.target_user_sdwt_prod) ??
+    uniqueDeliveryTargets(deliveryRows, null)[0]
   if (!primaryTarget) return formatCellValue(value)
 
   const trigger = (
@@ -370,15 +348,18 @@ export function TargetSummaryCell({ value, rowOriginal }) {
 
 export function DeliveryChannelSummaryCell({ value, rowOriginal, channelKey, meta }) {
   const channel = DELIVERY_CHANNELS.find((item) => item.field === channelKey || item.fallbackField === channelKey)
-  const deliveryRows = filterDeliveryRowsForPrimaryTarget(
-    normalizeDeliveryRows(rowOriginal),
-    rowOriginal?.delivery_targets ?? rowOriginal?.target_user_sdwt_prod,
-  )
-  if (!channel || !deliveryRows.length) {
+  const deliveryRows = normalizeDeliveryRows(rowOriginal)
+  if (!channel) {
     return renderSendChannelCell({ value, rowOriginal, channelKey, meta })
   }
 
-  const summary = summarizeDeliveryChannel(deliveryRows, channel.channel, value)
+  if (!deliveryRows.length) {
+    return renderSendChannelCell({ value, rowOriginal, channelKey, meta })
+  }
+
+  const summary = summarizeExistingDeliveryChannel(deliveryRows, channel.channel)
+  if (!summary || summary.status === "disabled") return null
+
   const trigger = (
     <button
       type="button"

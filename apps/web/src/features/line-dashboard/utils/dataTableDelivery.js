@@ -107,20 +107,7 @@ export function filterDeliveryRowsForPrimaryTarget(deliveryRows, fallbackTarget)
   return deliveryRows.filter((row) => row.target.toLowerCase() === primaryKey)
 }
 
-export function summarizeDeliveryChannel(deliveryRows, channel, fallbackValue) {
-  const channelRows = deliveryRows.filter((row) => row.channel === channel)
-  if (!channelRows.length) {
-    const fallbackState = deriveFlagState(fallbackValue, 0)
-    return {
-      status: fallbackState.isError ? "failed" : fallbackState.isOn ? "success" : "pending",
-      total: 0,
-      success: fallbackState.isOn ? 1 : 0,
-      failed: fallbackState.isError ? 1 : 0,
-      pending: fallbackState.state === "off" ? 1 : 0,
-      disabled: 0,
-    }
-  }
-
+function summarizeDeliveryRows(channelRows) {
   const counts = channelRows.reduce(
     (acc, row) => {
       const status = row.status in DELIVERY_STATUS_LABELS ? row.status : "unknown"
@@ -142,15 +129,36 @@ export function summarizeDeliveryChannel(deliveryRows, channel, fallbackValue) {
   return { status, total, ...counts }
 }
 
+export function summarizeExistingDeliveryChannel(deliveryRows, channel) {
+  const channelRows = deliveryRows.filter((row) => row.channel === channel)
+  if (!channelRows.length) return null
+  return summarizeDeliveryRows(channelRows)
+}
+
+export function summarizeDeliveryChannel(deliveryRows, channel, fallbackValue) {
+  const channelRows = deliveryRows.filter((row) => row.channel === channel)
+  if (!channelRows.length) {
+    const fallbackState = deriveFlagState(fallbackValue, 0)
+    return {
+      status: fallbackState.isError ? "failed" : fallbackState.isOn ? "success" : "pending",
+      total: 0,
+      success: fallbackState.isOn ? 1 : 0,
+      failed: fallbackState.isError ? 1 : 0,
+      pending: fallbackState.state === "off" ? 1 : 0,
+      disabled: 0,
+    }
+  }
+
+  return summarizeDeliveryRows(channelRows)
+}
+
 export function summarizeRowDeliveryChannel(rowOriginal, channelKey) {
   const channel = DELIVERY_CHANNELS.find(
     (item) => item.channel === channelKey || item.field === channelKey || item.fallbackField === channelKey
   )
   if (!channel) return null
-  const deliveryRows = filterDeliveryRowsForPrimaryTarget(
-    normalizeDeliveryRows(rowOriginal),
-    rowOriginal?.delivery_targets ?? rowOriginal?.target_user_sdwt_prod
-  )
+  const deliveryRows = normalizeDeliveryRows(rowOriginal)
+  if (deliveryRows.length) return summarizeExistingDeliveryChannel(deliveryRows, channel.channel)
   return summarizeDeliveryChannel(
     deliveryRows,
     channel.channel,
