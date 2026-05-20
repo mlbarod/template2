@@ -116,6 +116,7 @@ function buildDefectImageUrls(link) {
 
 function DefectImagePreview({ link, centered = false }) {
   const imageUrls = buildDefectImageUrls(link)
+  const isSingleImage = imageUrls.length === 1
 
   if (!imageUrls.length) {
     return (
@@ -139,8 +140,19 @@ function DefectImagePreview({ link, centered = false }) {
   }
 
   return (
-    <div className={`${centered ? "max-h-[min(78vh,760px)] w-[min(820px,calc(100vw-2rem))] p-3" : "max-h-[420px] w-[360px] max-w-[70vw] p-2"} overflow-y-auto rounded-xl border border-border bg-popover shadow-xl`}>
-      <div className="sticky top-0 z-10 mb-3 flex items-center justify-between gap-2 border-b border-border bg-popover pb-2 text-sm">
+    <div
+      className={cn(
+        "flex flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-xl",
+        centered
+          ? isSingleImage
+            ? "max-h-[min(78vh,760px)] w-[min(520px,calc(100vw-2rem))]"
+            : "max-h-[min(78vh,760px)] w-[min(820px,calc(100vw-2rem))]"
+          : isSingleImage
+            ? "max-h-[420px] w-[220px] max-w-[70vw]"
+            : "max-h-[420px] w-[360px] max-w-[70vw]"
+      )}
+    >
+      <div className="z-10 flex shrink-0 items-center justify-between gap-2 border-b border-border bg-popover px-3 py-2 text-sm">
         <span className="min-w-0 truncate font-medium text-popover-foreground" title={link?.label}>
           {link?.label || "Defect"}
         </span>
@@ -163,40 +175,42 @@ function DefectImagePreview({ link, centered = false }) {
           ) : null}
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        {imageUrls.map((src, index) => {
-          const image = (
-            <img
-              src={src}
-              alt={`${link?.label || "Defect"} preview ${index + 1}`}
-              className="aspect-square w-full object-contain"
-              loading="lazy"
-              referrerPolicy="no-referrer"
-            />
-          )
-          const frameClassName = "block overflow-hidden rounded border border-border bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-
-          if (centered) {
-            return (
-              <div key={`${src}:${index}`} className={frameClassName} title={src}>
-                {image}
-              </div>
+      <div className="overflow-y-auto p-3">
+        <div className={cn("grid gap-3", isSingleImage ? "grid-cols-1" : "grid-cols-2")}>
+          {imageUrls.map((src, index) => {
+            const image = (
+              <img
+                src={src}
+                alt={`${link?.label || "Defect"} preview ${index + 1}`}
+                className="aspect-square w-full object-contain"
+                loading="lazy"
+                referrerPolicy="no-referrer"
+              />
             )
-          }
+            const frameClassName = "block overflow-hidden rounded border border-border bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
 
-          return (
-            <a
-              key={`${src}:${index}`}
-              href={src}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={frameClassName}
-              title={src}
-            >
-              {image}
-            </a>
-          )
-        })}
+            if (centered) {
+              return (
+                <div key={`${src}:${index}`} className={frameClassName} title={src}>
+                  {image}
+                </div>
+              )
+            }
+
+            return (
+              <a
+                key={`${src}:${index}`}
+                href={src}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={frameClassName}
+                title={src}
+              >
+                {image}
+              </a>
+            )
+          })}
+        </div>
       </div>
     </div>
   )
