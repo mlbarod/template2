@@ -38,6 +38,18 @@ import {
 import { deriveFlagState } from "../utils/dataTableFlagState"
 import { buildToastOptions } from "../utils/toast"
 
+const DEFECT_IMAGE_PATH = "/map/api/map-image/v3/defect-map"
+const DEFECT_IMAGE_STATIC_PARAMS = {
+  profileid: "DEFAULT",
+  themeid: "DEFAULT",
+  width: "500",
+  height: "500",
+  site: "GH",
+  targetDB: "APP",
+  useCache: "true",
+  includeCoordinate: "false",
+}
+
 async function copyTextToClipboard(text) {
   if (!text || !navigator?.clipboard?.writeText) {
     throw new Error("clipboard_unavailable")
@@ -59,8 +71,100 @@ function showLotIdCopyFailedToast() {
   })
 }
 
+function openExternalUrl(href) {
+  if (!href) return
+  window.open(href, "_blank", "noopener,noreferrer")
+}
+
+function normalizeImageRow(value) {
+  const selectedRow = Number(value)
+  if (!Number.isInteger(selectedRow) || selectedRow < 0) return null
+  return selectedRow
+}
+
+function buildDefectImageUrls(link) {
+  if (Array.isArray(link?.imageUrls) && link.imageUrls.length > 0) {
+    return link.imageUrls
+  }
+
+  if (!link?.href || !link?.mapFile || !Array.isArray(link?.imageRows)) {
+    return []
+  }
+
+  let origin = ""
+  try {
+    origin = new URL(link.href).origin
+  } catch {
+    return []
+  }
+
+  const seenRows = new Set()
+  return link.imageRows
+    .map(normalizeImageRow)
+    .filter((selectedRow) => {
+      if (selectedRow == null || seenRows.has(selectedRow)) return false
+      seenRows.add(selectedRow)
+      return true
+    })
+    .map((selectedRow) => {
+      const url = new URL(DEFECT_IMAGE_PATH, origin)
+      url.searchParams.set("file", link.mapFile)
+      url.searchParams.set("selected_row", String(selectedRow))
+      Object.entries(DEFECT_IMAGE_STATIC_PARAMS).forEach(([key, value]) => {
+        url.searchParams.set(key, value)
+      })
+      return url.toString()
+    })
+}
+
+function DefectImagePreview({ link }) {
+  const imageUrls = buildDefectImageUrls(link)
+
+  if (!imageUrls.length) {
+    return (
+      <div className="flex h-28 w-64 items-center justify-center rounded-md border border-dashed border-border bg-muted/40 px-3 text-center text-xs text-muted-foreground">
+        Preview image 없음
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-h-[420px] w-[360px] max-w-[70vw] overflow-y-auto rounded-md border border-border bg-popover p-2 shadow-md">
+      <div className="mb-2 flex items-center justify-between gap-2 text-xs">
+        <span className="min-w-0 truncate font-medium text-popover-foreground" title={link?.label}>
+          {link?.label || "Defect"}
+        </span>
+        <span className="shrink-0 text-muted-foreground">
+          {imageUrls.length} images
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {imageUrls.map((src, index) => (
+          <a
+            key={`${src}:${index}`}
+            href={src}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block overflow-hidden rounded border border-border bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            title={src}
+          >
+            <img
+              src={src}
+              alt={`${link?.label || "Defect"} preview ${index + 1}`}
+              className="aspect-square w-full object-contain"
+              loading="lazy"
+              referrerPolicy="no-referrer"
+            />
+          </a>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function DefectUrlHoverList({ links }) {
   const [open, setOpen] = React.useState(false)
+  const [activeIndex, setActiveIndex] = React.useState(0)
   const closeTimerRef = React.useRef(null)
 
   const clearCloseTimer = React.useCallback(() => {
@@ -103,26 +207,86 @@ function DefectUrlHoverList({ links }) {
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="center"
-        className="w-52 p-1"
+        className="flex w-auto gap-2 p-2"
         onMouseEnter={openList}
         onMouseLeave={scheduleClose}
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
-        {links.map((link, index) => (
-          <DropdownMenuItem key={`${link.href}:${index}`} asChild>
-            <a
-              href={link.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex cursor-pointer items-center justify-between gap-2"
-              title={link.href}
-              aria-label={`Open defect URL ${link.label || index + 1} in a new tab`}
-            >
-              <span className="min-w-0 truncate">{link.label || index + 1}</span>
-              <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            </a>
-          </DropdownMenuItem>
-        ))}
+        <div className="w-52 p-1">
+          {links.map((link, index) => (
+            <DropdownMenuItem key={`${link.href}:${index}`} asChild>
+              <a
+                href={link.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex cursor-pointer items-center justify-between gap-2"
+                title={link.href}
+                aria-label={`Open defect URL ${link.label || index + 1} in a new tab`}
+                onMouseEnter={() => setActiveIndex(index)}
+                onFocus={() => setActiveIndex(index)}
+              >
+                <span className="min-w-0 truncate">{link.label || index + 1}</span>
+                <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              </a>
+            </DropdownMenuItem>
+          ))}
+        </div>
+        <DefectImagePreview link={links[activeIndex] ?? links[0]} />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function DefectUrlPreviewLink({ link }) {
+  const [open, setOpen] = React.useState(false)
+  const closeTimerRef = React.useRef(null)
+
+  const clearCloseTimer = React.useCallback(() => {
+    if (!closeTimerRef.current) return
+    window.clearTimeout(closeTimerRef.current)
+    closeTimerRef.current = null
+  }, [])
+
+  const openPreview = React.useCallback(() => {
+    clearCloseTimer()
+    setOpen(true)
+  }, [clearCloseTimer])
+
+  const scheduleClose = React.useCallback(() => {
+    clearCloseTimer()
+    closeTimerRef.current = window.setTimeout(() => {
+      setOpen(false)
+      closeTimerRef.current = null
+    }, 120)
+  }, [clearCloseTimer])
+
+  React.useEffect(() => () => clearCloseTimer(), [clearCloseTimer])
+
+  return (
+    <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 text-primary transition-colors hover:text-primary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          aria-label="Open defect URL in a new tab"
+          title={`${link.label}: ${link.href}`}
+          onMouseEnter={openPreview}
+          onMouseLeave={scheduleClose}
+          onFocus={openPreview}
+          onBlur={scheduleClose}
+          onClick={() => openExternalUrl(link.href)}
+        >
+          <ExternalLink className="h-4 w-4" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="center"
+        className="p-2"
+        onMouseEnter={openPreview}
+        onMouseLeave={scheduleClose}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+      >
+        <DefectImagePreview link={link} />
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -134,18 +298,7 @@ function DefectUrlCell({ value }) {
 
   if (links.length === 1) {
     const [link] = links
-    return (
-      <a
-        href={link.href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 text-primary transition-colors hover:text-primary/80"
-        aria-label="Open defect URL in a new tab"
-        title={`${link.label}: ${link.href}`}
-      >
-        <ExternalLink className="h-4 w-4" />
-      </a>
-    )
+    return <DefectUrlPreviewLink link={link} />
   }
 
   return <DefectUrlHoverList links={links} />

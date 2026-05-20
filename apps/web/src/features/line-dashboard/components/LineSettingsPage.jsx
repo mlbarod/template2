@@ -328,6 +328,17 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     setRecipientPickerTabs((prev) => ({ ...prev, [channel]: value }))
   }, [])
 
+  const resolveDefaultRecipientDepartment = React.useCallback(() => {
+    const userDepartment = typeof user?.department === "string" ? user.department.trim() : ""
+    if (!userDepartment) return ""
+    const normalizedUserDepartment = userDepartment.toLowerCase()
+    return (
+      accountDepartmentValues.find((department) => (
+        typeof department === "string" && department.trim().toLowerCase() === normalizedUserDepartment
+      )) || userDepartment
+    )
+  }, [accountDepartmentValues, user?.department])
+
   const handleOpenRecipientPicker = React.useCallback(
     (channel) => {
       const config = RECIPIENT_CHANNEL_CONFIG[channel]
@@ -340,8 +351,20 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
         [channel]: canManageRecipients ? null : config.permissionErrorText,
       }))
       setRecipientPickerOpen((prev) => ({ ...prev, [channel]: true }))
+      if (canManageRecipients && !recipientSourceDepartments[channel]) {
+        const defaultDepartment = resolveDefaultRecipientDepartment()
+        if (defaultDepartment) {
+          void handleRecipientSourceDepartmentChange(channel, defaultDepartment)
+        }
+      }
     },
-    [canManageRecipients, selectedUserSdwtProd],
+    [
+      canManageRecipients,
+      handleRecipientSourceDepartmentChange,
+      recipientSourceDepartments,
+      resolveDefaultRecipientDepartment,
+      selectedUserSdwtProd,
+    ],
   )
 
   const handleRecipientPickerUserToggle = React.useCallback((channel, recipientKey, checked) => {

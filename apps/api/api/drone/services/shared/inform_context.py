@@ -9,6 +9,19 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from urllib.parse import urlencode, urlparse, urlunparse
+
+_DEFECT_IMAGE_PATH = "/map/api/map-image/v3/defect-map"
+_DEFECT_IMAGE_STATIC_QUERY = (
+    ("profileid", "DEFAULT"),
+    ("themeid", "DEFAULT"),
+    ("width", "500"),
+    ("height", "500"),
+    ("site", "GH"),
+    ("targetDB", "APP"),
+    ("useCache", "true"),
+    ("includeCoordinate", "false"),
+)
 
 
 def _build_eqp_cb(row: dict[str, Any]) -> str:
@@ -78,15 +91,67 @@ def _normalize_defect_url_entry(*, entry: Any, lot_id: Any = None) -> dict[str, 
         return None
     step_seq = str(entry.get("step_seq") or "").strip()
     label = str(step_seq or entry.get("label") or lot_id or map_url).strip()
-    image_rows = entry.get("image_rows")
+    map_file = str(entry.get("map_file") or "").strip()
+    normalized_image_rows = _normalize_defect_image_rows(entry)
     return {
         "map_url": map_url,
         "label": label or map_url,
         "step_seq": step_seq,
         "step_desc": str(entry.get("step_desc") or "").strip(),
-        "map_file": str(entry.get("map_file") or "").strip(),
-        "image_rows": image_rows if isinstance(image_rows, list) else [],
+        "map_file": map_file,
+        "image_rows": normalized_image_rows,
+        "image_urls": _build_defect_image_urls(
+            map_url=map_url,
+            map_file=map_file,
+            image_rows=normalized_image_rows,
+        ),
     }
+
+
+def _normalize_defect_image_rows(entry: dict[str, Any]) -> list[Any]:
+    """Defect JSON의 image_rows/images_rows 값을 호환 정규화합니다."""
+
+    image_rows = entry.get("image_rows")
+    if image_rows is None:
+        image_rows = entry.get("images_rows")
+    return image_rows if isinstance(image_rows, list) else []
+
+
+def _build_defect_image_url(*, map_url: str, map_file: str, selected_row: int) -> str | None:
+    """Defect map URL의 origin을 유지해 메일 본문용 image URL을 생성합니다."""
+
+    parsed = urlparse(map_url)
+    if not parsed.scheme or not parsed.netloc or not map_file:
+        return None
+    query = [
+        ("file", map_file),
+        ("selected_row", str(selected_row)),
+        *_DEFECT_IMAGE_STATIC_QUERY,
+    ]
+    return urlunparse(
+        (parsed.scheme, parsed.netloc, _DEFECT_IMAGE_PATH, "", urlencode(query), "")
+    )
+
+
+def _build_defect_image_urls(*, map_url: str, map_file: str, image_rows: list[Any]) -> list[str]:
+    """Defect map metadata의 selected_row 목록을 이미지 URL 목록으로 변환합니다."""
+
+    image_urls: list[str] = []
+    for row in image_rows:
+        try:
+            selected_row = int(row)
+        except (TypeError, ValueError):
+            continue
+        if selected_row < 0:
+            continue
+        image_url = _build_defect_image_url(
+            map_url=map_url,
+            map_file=map_file,
+            selected_row=selected_row,
+        )
+        if image_url:
+            image_urls.append(image_url)
+    return image_urls
 
 
 def _normalize_defect_urls(*, value: Any, lot_id: Any = None) -> list[dict[str, Any]]:

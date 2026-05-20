@@ -6332,6 +6332,91 @@ class DroneSopJiraHtmlDescriptionTests(TestCase):
         self.assertIn(">EQP-1<", description)
 
 
+class DroneSopMailHtmlBodyTests(TestCase):
+    """메일 본문 HTML 렌더링을 검증합니다."""
+
+    def test_render_mail_body_renders_every_defect_image_from_images_rows(self) -> None:
+        """메일 본문은 images_rows의 모든 defect image를 각각 표시합니다."""
+        from api.drone.services.mail import mail_sender
+
+        map_url_a = "https://app.nyms.example.net/map/api/mapg/map?dtype=PQ&file=abc_df.parquet"
+        map_url_b = "https://app.nyms.example.net/map/api/mapg/map?dtype=PQ&file=other_df.parquet"
+        body = mail_sender._render_mail_body(
+            template_key="common",
+            row={
+                "sdwt_prod": "SDWT",
+                "main_step": "ST003",
+                "ppid": "PPID",
+                "eqp_id": "EQP",
+                "chamber_ids": "1",
+                "lot_id": "LOT.1",
+                "knox_id": "knox",
+                "user_sdwt_prod": "prod",
+                "defect_url": json.dumps(
+                    [
+                        {
+                            "step_seq": "ST001",
+                            "map_url": map_url_a,
+                            "label": "ST001",
+                            "map_file": "abc_df.parquet",
+                            "images_rows": [0, 1],
+                        },
+                        {
+                            "step_seq": "ST002",
+                            "map_url": map_url_b,
+                            "label": "ST002",
+                            "map_file": "other_df.parquet",
+                            "images_rows": [3],
+                        },
+                    ]
+                ),
+            },
+        )
+
+        self.assertIn("Defect Image", body)
+        self.assertEqual(body.count("<img"), 3)
+        self.assertIn("alt=\"Defect ST001\"", body)
+        self.assertIn("alt=\"Defect ST002\"", body)
+        self.assertIn("/map/api/map-image/v3/defect-map?file=abc_df.parquet&amp;selected_row=0", body)
+        self.assertIn("/map/api/map-image/v3/defect-map?file=abc_df.parquet&amp;selected_row=1", body)
+        self.assertIn("/map/api/map-image/v3/defect-map?file=other_df.parquet&amp;selected_row=3", body)
+        self.assertIn(
+            "href=\"https://app.nyms.example.net/map/api/mapg/map?dtype=PQ&amp;file=abc_df.parquet",
+            body,
+        )
+        self.assertNotIn("Defect URL", body)
+        self.assertNotIn(">ST001</a>", body)
+        self.assertNotIn(">ST002</a>", body)
+
+    def test_render_mail_body_keeps_defect_link_when_image_is_missing(self) -> None:
+        """이미지 URL을 만들 수 없는 항목은 기존 defect link를 유지합니다."""
+        from api.drone.services.mail import mail_sender
+
+        body = mail_sender._render_mail_body(
+            template_key="common",
+            row={
+                "sdwt_prod": "SDWT",
+                "main_step": "ST003",
+                "ppid": "PPID",
+                "eqp_id": "EQP",
+                "chamber_ids": "1",
+                "lot_id": "LOT.1",
+                "defect_url": json.dumps(
+                    [
+                        {
+                            "step_seq": "ST001",
+                            "map_url": "https://example.com/defect",
+                            "label": "ST001",
+                        }
+                    ]
+                ),
+            },
+        )
+
+        self.assertIn("https://example.com/defect", body)
+        self.assertIn(">ST001</a>", body)
+
+
 class DroneSopJiraSummaryTests(TestCase):
     """Jira 요약 템플릿 적용을 검증합니다."""
 

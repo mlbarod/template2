@@ -156,7 +156,7 @@ export function UserSdwtProdReconfirmDialog({ user, onCompleted }) {
         if (!nextOpen) setDismissed(true)
       }}
     >
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>소속 재확인</DialogTitle>
           <DialogDescription>
@@ -204,7 +204,7 @@ export function UserSdwtProdReconfirmDialog({ user, onCompleted }) {
                 </Label>
                 <select
                   id="reconfirmAffiliationSelect"
-                  className="bg-background border-input focus-visible:ring-ring/50 focus-visible:ring-[3px] h-10 rounded-md border px-3 text-sm outline-none"
+                  className="bg-background border-input focus-visible:ring-ring/50 focus-visible:ring-[3px] h-10 w-full min-w-0 rounded-md border px-3 text-sm outline-none"
                   value={selectedKey}
                   onChange={(event) => setSelectedKey(event.target.value)}
                   required

@@ -24,7 +24,9 @@ function normalizeDefectUrlEntry(entry, index) {
     if (!href) return null
     const label = String(entry.label ?? entry.step_seq ?? entry.step_desc ?? index + 1).trim()
     const imageRows = Array.isArray(entry.image_rows) ? entry.image_rows : []
-    return { href, label: label || String(index + 1), imageRows }
+    const imageUrls = Array.isArray(entry.image_urls) ? entry.image_urls.map(toHttpUrl).filter(Boolean) : []
+    const mapFile = String(entry.map_file ?? "").trim()
+    return { href, label: label || String(index + 1), imageRows, imageUrls, mapFile }
   }
   return null
 }
