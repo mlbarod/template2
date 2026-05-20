@@ -1,4 +1,4 @@
-import { IconArrowRight, IconPlus } from "@tabler/icons-react"
+import { IconArrowRight, IconPlus, IconTrash } from "@tabler/icons-react"
 import { AlertCircleIcon, BadgeCheckIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -62,9 +62,11 @@ function TargetMappingSummary({
   sdwtOptionValues = [],
   error,
   isSaving,
+  deletingMappingKey,
   canManage,
   onDraftChange,
   onSubmit,
+  onDeleteMapping,
 }) {
   if (!target) {
     return (
@@ -79,15 +81,15 @@ function TargetMappingSummary({
   const isSelectDisabled = !canManage || isSaving || !hasOptions
 
   return (
-    <div className="flex flex-col rounded-md border bg-muted/30 px-3 py-2">
+    <div className="flex h-full min-h-0 flex-col rounded-md border bg-muted/30 px-3 py-2">
       <div className="flex shrink-0 items-center justify-between gap-2">
-        <span className="text-xs font-medium text-foreground">지정 조합</span>
+        <span className="text-xs font-medium text-foreground">Engr분임조 - 설비분임조 조합</span>
         <Badge variant={target.isConfigured ? "default" : "secondary"} className="text-[10px]">
           {target.isConfigured ? "설정됨" : "미설정"}
         </Badge>
       </div>
       <form
-        className="my-2 flex min-w-0 shrink-0 items-center gap-1.5"
+        className="my-1 flex min-w-0 shrink-0 items-center gap-1.5"
         onSubmit={onSubmit}
       >
         <div className="min-w-0">
@@ -96,7 +98,7 @@ function TargetMappingSummary({
             onValueChange={(value) => onDraftChange("userSdwtProd", value)}
             disabled={isSelectDisabled}
           >
-            <SelectTrigger className="h-8 min-w-0 text-[11px]">
+            <SelectTrigger className="h-8 w-40 min-w-0 text-[11px]">
               <SelectValue placeholder="엔지니어 분임조 선택" />
             </SelectTrigger>
             <SelectContent className="max-h-64">
@@ -115,7 +117,7 @@ function TargetMappingSummary({
             onValueChange={(value) => onDraftChange("sdwtProd", value)}
             disabled={isSelectDisabled}
           >
-            <SelectTrigger className="h-8 min-w-0 text-[11px]">
+            <SelectTrigger className="h-8 w-40 min-w-0 text-[11px]">
               <SelectValue placeholder="설비소속 분임조 선택" />
             </SelectTrigger>
             <SelectContent className="max-h-64">
@@ -148,20 +150,37 @@ function TargetMappingSummary({
           {error}
         </p>
       ) : null}
-      <div className="mt-2 flex flex-wrap content-start gap-1.5 pr-1">
+      <div className="mt-2 flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-1">
         {mappings.length > 0 ? (
           mappings.map((mapping) => {
             const sdwtProd = mapping.sdwtProd || "-"
             const userSdwtProd = mapping.userSdwtProd || "-"
+            const mappingKey = `${userSdwtProd.trim().toLowerCase()}::${sdwtProd.trim().toLowerCase()}`
+            const isDeleting = deletingMappingKey === mappingKey
+            const isDeleteDisabled = !canManage || isSaving || isDeleting
             return (
               <Badge
                 key={`${sdwtProd}-${userSdwtProd}`}
                 variant="outline"
-                className="max-w-full gap-1 font-mono text-sm"
+                className="group grid max-w-full grid-cols-[minmax(5.5rem,9rem)_4.5rem_auto_minmax(5.5rem,9rem)_auto_auto] items-center gap-2 rounded-lg bg-background px-2.5 py-1.5 text-[11px] shadow-sm transition-colors hover:bg-accent/50"
               >
-                <span className="truncate">{userSdwtProd}</span>
-                <span className="text-muted-foreground">-&gt;</span>
-                <span className="truncate">{sdwtProd}설비</span>
+                <span className="min-w-0 truncate text-center font-mono font-semibold text-foreground">{userSdwtProd}</span>
+                <span className="shrink-0 text-muted-foreground">분임조원이</span>
+                <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <IconArrowRight className="size-3.5" aria-hidden="true" />
+                </span>
+                <span className="min-w-0 truncate text-center font-mono font-semibold">{sdwtProd}</span>
+                <span className="shrink-0 text-muted-foreground">설비로 보낸 E-SOP</span>
+                <button
+                  type="button"
+                  disabled={isDeleteDisabled}
+                  onClick={() => onDeleteMapping(mapping)}
+                  className="flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+                  aria-label={`${userSdwtProd} - ${sdwtProd} 지정 조합 삭제`}
+                  title="지정 조합 삭제"
+                >
+                  <IconTrash className="size-3.5" aria-hidden="true" />
+                </button>
               </Badge>
             )
           })
@@ -181,6 +200,7 @@ export function NotificationTargetCard({
   canManageMappings,
   isCreatingTarget,
   isCreatingMapping,
+  deletingMappingKey,
   targetFormError,
   mappingFormError,
   mappingDraft,
@@ -192,6 +212,7 @@ export function NotificationTargetCard({
   onMappingDraftChange,
   onCreateTarget,
   onCreateTargetMapping,
+  onDeleteTargetMapping,
   onSelectTarget,
 }) {
   return (
@@ -259,7 +280,7 @@ export function NotificationTargetCard({
           </div>
         </div>
 
-        <div className="shrink-0">
+        <div className="min-h-0 flex-[1.35_1_0]">
           <TargetMappingSummary
             target={selectedNotificationTarget}
             draft={mappingDraft}
@@ -267,9 +288,11 @@ export function NotificationTargetCard({
             sdwtOptionValues={mappingOptions.sdwtProds}
             error={mappingFormError}
             isSaving={isCreatingMapping}
+            deletingMappingKey={deletingMappingKey}
             canManage={canManageMappings}
             onDraftChange={onMappingDraftChange}
             onSubmit={onCreateTargetMapping}
+            onDeleteMapping={onDeleteTargetMapping}
           />
         </div>
       </div>

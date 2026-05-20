@@ -9,6 +9,17 @@ import { toast } from "sonner"
 
 import { buildToastOptions } from "./toast"
 
+const ALARM_CHANNEL_TOAST_LABELS = {
+  jira: "Jira 채널",
+  messenger: "Teams 채널",
+  mail: "Mail 채널",
+}
+
+const NEED_TO_SEND_RULE_TOAST_LABELS = {
+  enabled: "자동 예약",
+  ignoreSampleType: "ENGR_PRODUCTION 포함 옵션",
+}
+
 export function showCreateToast() {
   toast.success("추가 완료", {
     description: "새 조기 알림 설정이 저장되었습니다.",
@@ -33,9 +44,27 @@ export function showJiraKeyToast() {
   })
 }
 
+export function showAlarmChannelApplyToast(channelKey, isEnabled) {
+  const label = ALARM_CHANNEL_TOAST_LABELS[channelKey] || "알람 채널"
+  toast.success("적용 완료", {
+    description: `${label}이 ${isEnabled ? "활성화" : "비활성화"}되었습니다.`,
+    icon: <IconDeviceFloppy className="h-5 w-5 text-[var(--normal-text)]" />,
+    ...buildToastOptions({ intent: "success" }),
+  })
+}
+
 export function showNeedToSendRuleToast() {
   toast.success("저장 완료", {
     description: "자동 예약 코멘트 규칙이 저장되었습니다.",
+    icon: <IconDeviceFloppy className="h-5 w-5 text-[var(--normal-text)]" />,
+    ...buildToastOptions({ intent: "success" }),
+  })
+}
+
+export function showNeedToSendRuleApplyToast(ruleKey, isEnabled) {
+  const label = NEED_TO_SEND_RULE_TOAST_LABELS[ruleKey] || "자동 예약 코멘트 규칙"
+  toast.success("적용 완료", {
+    description: `${label}이 ${isEnabled ? "활성화" : "비활성화"}되었습니다.`,
     icon: <IconDeviceFloppy className="h-5 w-5 text-[var(--normal-text)]" />,
     ...buildToastOptions({ intent: "success" }),
   })

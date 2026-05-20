@@ -11,7 +11,12 @@ from .recipients import (
     promote_drone_sop_external_recipients_for_user,
     replace_drone_sop_channel_recipients,
 )
-from .target_mapping import DroneSopTargetMappingDuplicateError, create_drone_sop_target_mapping
+from .target_mapping import (
+    DroneSopTargetMappingDuplicateError,
+    DroneSopTargetMappingNotFoundError,
+    create_drone_sop_target_mapping,
+    delete_drone_sop_target_mapping,
+)
 from .user_sdwt_channel import (
     ensure_drone_sop_notification_target,
     get_or_create_drone_sop_target_by_name,
@@ -21,7 +26,9 @@ from .user_sdwt_channel import (
 __all__ = [
     "DroneSopAffiliationSeedResult",
     "DroneSopTargetMappingDuplicateError",
+    "DroneSopTargetMappingNotFoundError",
     "create_drone_sop_target_mapping",
+    "delete_drone_sop_target_mapping",
     "ensure_drone_sop_notification_target",
     "get_or_create_drone_sop_target_by_name",
     "normalize_recipient_channel",

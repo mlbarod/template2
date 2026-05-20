@@ -29,9 +29,11 @@ import {
   RECIPIENT_CHANNELS,
 } from "../utils/lineSettingsConfig"
 import {
+  showAlarmChannelApplyToast,
   showCreateToast,
   showDeleteToast,
   showJiraKeyToast,
+  showNeedToSendRuleApplyToast,
   showNeedToSendRuleToast,
   showRecipientCandidatesToast,
   showRecipientsSaveToast,
@@ -50,6 +52,33 @@ import {
   mergeRecipientUsers,
   sameUserSdwtProd,
 } from "../utils/lineSettings"
+
+function findMappingDefaultOption(values, preferredValue) {
+  const options = Array.isArray(values) ? values : []
+  if (options.length === 0) return ""
+  const normalizedPreferred = String(preferredValue || "").trim().toLowerCase()
+  if (normalizedPreferred) {
+    const matched = options.find((value) => (
+      typeof value === "string" && value.trim().toLowerCase() === normalizedPreferred
+    ))
+    if (matched) return matched
+  }
+  return options[0] || ""
+}
+
+function buildDefaultMappingDraft({ targetUserSdwtProd, mappingOptions }) {
+  if (!String(targetUserSdwtProd || "").trim()) {
+    return { userSdwtProd: "", sdwtProd: "" }
+  }
+  return {
+    userSdwtProd: findMappingDefaultOption(mappingOptions?.userSdwtProds, targetUserSdwtProd),
+    sdwtProd: findMappingDefaultOption(mappingOptions?.sdwtProds, targetUserSdwtProd),
+  }
+}
+
+function buildTargetMappingKey({ userSdwtProd, sdwtProd }) {
+  return `${String(userSdwtProd || "").trim().toLowerCase()}::${String(sdwtProd || "").trim().toLowerCase()}`
+}
 
 export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   const isRecipientSettings = mode === "recipients"
@@ -89,6 +118,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     updateMessengerForceNewChatroom,
     createTarget,
     createTargetMapping,
+    deleteTargetMapping,
     updateMailRecipients,
     updateMessengerRecipients,
   } = useLineSettings({
@@ -111,6 +141,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   const [mappingDraft, setMappingDraft] = React.useState({ userSdwtProd: "", sdwtProd: "" })
   const [mappingFormError, setMappingFormError] = React.useState(null)
   const [isCreatingMapping, setIsCreatingMapping] = React.useState(false)
+  const [deletingMappingKey, setDeletingMappingKey] = React.useState("")
   const [jiraKeyDraft, setJiraKeyDraft] = React.useState("")
   const [channelEnabledDraft, setChannelEnabledDraft] = React.useState(DEFAULT_CHANNEL_ENABLED)
   const [needToSendRuleDraft, setNeedToSendRuleDraft] = React.useState(DEFAULT_NEED_TO_SEND_RULE)
@@ -415,10 +446,14 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   }, [loadMyRecipientTargets])
 
   React.useEffect(() => {
-    setMappingDraft({ userSdwtProd: "", sdwtProd: "" })
+    setMappingDraft(buildDefaultMappingDraft({
+      targetUserSdwtProd: selectedUserSdwtProd,
+      mappingOptions,
+    }))
     setMappingFormError(null)
     setIsCreatingMapping(false)
-  }, [lineId, selectedUserSdwtProd])
+    setDeletingMappingKey("")
+  }, [lineId, mappingOptions, selectedUserSdwtProd])
 
   React.useEffect(() => {
     setJiraKeyDraft(jiraKey || "")
@@ -674,6 +709,49 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     selectedUserSdwtProd,
   ])
 
+  const handleDeleteTargetMapping = React.useCallback(async (mapping) => {
+    const normalizedUserSdwtProd = String(mapping?.userSdwtProd || "").trim()
+    const normalizedSdwtProd = String(mapping?.sdwtProd || "").trim()
+    if (!selectedUserSdwtProd) {
+      setMappingFormError("알림 Target을 먼저 선택하세요.")
+      return
+    }
+    if (!normalizedUserSdwtProd || !normalizedSdwtProd) {
+      setMappingFormError("삭제할 지정 조합 값을 확인할 수 없습니다.")
+      return
+    }
+    if (!canManageMappings) {
+      setMappingFormError("지정 조합 삭제 권한이 없습니다.")
+      return
+    }
+    const confirmed = window.confirm(
+      `${normalizedUserSdwtProd} 분임조원이 ${normalizedSdwtProd} 설비로 보낸 E-SOP 지정 조합을 삭제할까요?`,
+    )
+    if (!confirmed) return
+
+    const mappingKey = buildTargetMappingKey({
+      userSdwtProd: normalizedUserSdwtProd,
+      sdwtProd: normalizedSdwtProd,
+    })
+    setDeletingMappingKey(mappingKey)
+    setMappingFormError(null)
+    try {
+      await deleteTargetMapping({
+        targetUserSdwtProd: selectedUserSdwtProd,
+        userSdwtProd: normalizedUserSdwtProd,
+        sdwtProd: normalizedSdwtProd,
+      })
+      showDeleteToast()
+    } catch (requestError) {
+      const message =
+        requestError instanceof Error ? requestError.message : "Failed to delete target mapping"
+      setMappingFormError(message)
+      showRequestErrorToast(message)
+    } finally {
+      setDeletingMappingKey("")
+    }
+  }, [canManageMappings, deleteTargetMapping, selectedUserSdwtProd])
+
   const handleJiraKeySave = React.useCallback(
     async (event) => {
       event.preventDefault()
@@ -683,6 +761,10 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
       }
 
       const normalized = jiraKeyDraft.trim()
+      if (!normalized) {
+        setJiraKeyFormError("Jira Project Key를 입력하세요.")
+        return
+      }
       if (normalized.length > MAX_JIRA_KEY_LENGTH) {
         setJiraKeyFormError(`Jira key must be ${MAX_JIRA_KEY_LENGTH} characters or fewer`)
         return
@@ -710,21 +792,93 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     [canManageChannelSettings, channelEnabledDraft, jiraKeyDraft, selectedUserSdwtProd, updateJiraKey],
   )
 
-  const handleChannelEnabledChange = React.useCallback((channelKey, isEnabled) => {
-    setChannelEnabledDraft((prev) => ({ ...prev, [channelKey]: isEnabled }))
-    setJiraKeyFormError(null)
-  }, [])
+  const handleChannelEnabledChange = React.useCallback(async (channelKey, isEnabled) => {
+    if (!selectedUserSdwtProd) {
+      setJiraKeyFormError("알림 Target을 선택하세요.")
+      return
+    }
+    if (!canManageChannelSettings) {
+      setJiraKeyFormError("알람 채널 설정 변경 권한이 없습니다.")
+      return
+    }
 
-  const handleNeedToSendRuleDraftChange = React.useCallback((key, value) => {
-    setNeedToSendRuleDraft((prev) => {
-      if (key === "commentKeyword") {
+    const previousDraft = channelEnabledDraft
+    const nextDraft = { ...channelEnabledDraft, [channelKey]: isEnabled }
+    setChannelEnabledDraft(nextDraft)
+    setIsSavingJiraKey(true)
+    setJiraKeyFormError(null)
+    try {
+      await updateJiraKey({ jiraKey: jiraKey || "", channelEnabled: nextDraft })
+      showAlarmChannelApplyToast(channelKey, isEnabled)
+    } catch (requestError) {
+      const message =
+        requestError instanceof Error ? requestError.message : "Failed to update alarm channel"
+      setChannelEnabledDraft(previousDraft)
+      setJiraKeyFormError(message)
+      showRequestErrorToast(message)
+    } finally {
+      setIsSavingJiraKey(false)
+    }
+  }, [
+    canManageChannelSettings,
+    channelEnabledDraft,
+    jiraKey,
+    selectedUserSdwtProd,
+    updateJiraKey,
+  ])
+
+  const handleNeedToSendRuleDraftChange = React.useCallback(async (key, value) => {
+    if (key === "commentKeyword") {
+      setNeedToSendRuleDraft((prev) => {
         const nextKeyword = String(value ?? "")
         return { ...prev, commentKeyword: nextKeyword, enabled: nextKeyword.trim() ? true : prev.enabled }
-      }
-      return { ...prev, [key]: value }
-    })
+      })
+      setNeedToSendRuleFormError(null)
+      return
+    }
+
+    if (!selectedUserSdwtProd) {
+      setNeedToSendRuleFormError("알림 Target을 선택하세요.")
+      return
+    }
+    if (!canManageChannelSettings) {
+      setNeedToSendRuleFormError("자동 예약 코멘트 규칙 변경 권한이 없습니다.")
+      return
+    }
+
+    const previousDraft = needToSendRuleDraft
+    const normalizedKeyword = String(needToSendRuleDraft.commentKeyword || "").trim()
+    const nextRule = {
+      commentKeyword: normalizedKeyword,
+      enabled: key === "enabled" ? Boolean(value) : Boolean(needToSendRuleDraft.enabled),
+      ignoreSampleType: key === "ignoreSampleType" ? Boolean(value) : Boolean(needToSendRuleDraft.ignoreSampleType),
+    }
+    if (nextRule.enabled && !normalizedKeyword) {
+      setNeedToSendRuleFormError("자동 예약을 활성화하려면 포함 키워드를 입력하세요.")
+      return
+    }
+
+    setNeedToSendRuleDraft(nextRule)
+    setIsSavingNeedToSendRule(true)
     setNeedToSendRuleFormError(null)
-  }, [])
+    try {
+      await updateNeedToSendRule({ needToSendRule: nextRule })
+      showNeedToSendRuleApplyToast(key, Boolean(value))
+    } catch (requestError) {
+      const message =
+        requestError instanceof Error ? requestError.message : "Failed to update needtosend rule"
+      setNeedToSendRuleDraft(previousDraft)
+      setNeedToSendRuleFormError(message)
+      showRequestErrorToast(message)
+    } finally {
+      setIsSavingNeedToSendRule(false)
+    }
+  }, [
+    canManageChannelSettings,
+    needToSendRuleDraft,
+    selectedUserSdwtProd,
+    updateNeedToSendRule,
+  ])
 
   const handleNeedToSendRuleSave = React.useCallback(
     async (event) => {
@@ -1175,6 +1329,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
       canManageMappings={canManageMappings}
       isCreatingTarget={isCreatingTarget}
       isCreatingMapping={isCreatingMapping}
+      deletingMappingKey={deletingMappingKey}
       targetFormError={targetFormError}
       mappingFormError={mappingFormError}
       mappingDraft={mappingDraft}
@@ -1186,6 +1341,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
       onMappingDraftChange={handleMappingDraftChange}
       onCreateTarget={handleCreateTarget}
       onCreateTargetMapping={handleCreateTargetMapping}
+      onDeleteTargetMapping={handleDeleteTargetMapping}
       onSelectTarget={setSelectedUserSdwtProd}
     />
   )
@@ -1278,15 +1434,15 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
           )}
 
           {isRecipientSettings ? (
-            <div className="grid h-full min-h-0 min-w-0 grid-rows-2 gap-3">
+            <div className="grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] gap-3">
               {notificationTargetCard}
               {alarmChannelSettingsCard}
             </div>
           ) : null}
 
           {isRecipientSettings ? (
-            <div className="grid h-full min-h-0 min-w-0 grid-rows-2 gap-3">
-              <div className="min-h-0">{needToSendCommentRuleCard}</div>
+            <div className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] gap-3">
+              {needToSendCommentRuleCard}
               <div className="min-h-0">{myRecipientTargetsCard}</div>
             </div>
           ) : null}

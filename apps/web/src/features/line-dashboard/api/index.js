@@ -17,6 +17,7 @@ export { fetchUserSdwtJiraKey, updateUserSdwtJiraKey } from "./lineJiraKey"
 export {
   createNotificationTargetMapping,
   createNotificationTarget,
+  deleteNotificationTargetMapping,
   fetchAccountUserPool,
   fetchMyNotificationRecipientTargets,
   fetchNotificationRecipientPermissions,

@@ -20,10 +20,10 @@ export function NeedToSendCommentRuleCard({
   const ignoreSampleTypeCheckboxId = "needtosend-rule-ignore-sample-type"
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-hidden rounded-lg border bg-background p-4 shadow-sm">
+    <div className="flex h-[236px] min-h-0 min-w-0 flex-col gap-2 overflow-hidden rounded-lg border bg-background p-4 shadow-sm">
       <div className="shrink-0 space-y-1">
         <h2 className="text-base font-medium">자동 예약 코멘트 규칙</h2>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[11px] text-muted-foreground">
           입력한 키워드가 Comment에 포함되면 자동 예약 대상이 됩니다.
         </p>
       </div>
@@ -33,27 +33,38 @@ export function NeedToSendCommentRuleCard({
           {formError}
         </p>
       ) : (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[11px] text-muted-foreground">
           예: <span className="font-mono">$SETUP_EQP</span> 저장 시 해당 문구가 포함된 Comment를 예약합니다.
         </p>
       )}
 
-      <form className="grid min-h-0 gap-3 overflow-y-auto pr-1" onSubmit={onSave}>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground" htmlFor="needtosend-comment-keyword-input">
-            포함 키워드
-          </label>
-          <Input
-            id="needtosend-comment-keyword-input"
-            value={keyword}
-            onChange={(event) => onDraftChange("commentKeyword", event.target.value)}
-            placeholder="$SETUP_EQP"
-            maxLength={maxKeywordLength}
+      <form className="grid min-h-0 gap-2" onSubmit={onSave}>
+        <div className="flex min-w-0 items-end gap-2">
+          <div className="min-w-0 flex-1 space-y-1">
+            <label className="text-xs font-medium text-muted-foreground" htmlFor="needtosend-comment-keyword-input">
+              포함 키워드
+            </label>
+            <Input
+              id="needtosend-comment-keyword-input"
+              value={keyword}
+              onChange={(event) => onDraftChange("commentKeyword", event.target.value)}
+              placeholder="$SETUP_EQP"
+              maxLength={maxKeywordLength}
+              disabled={!selectedUserSdwtProd || isLoading || isSaving || !canManage}
+              className="h-8 text-xs"
+            />
+          </div>
+          <Button
+            type="submit"
             disabled={!selectedUserSdwtProd || isLoading || isSaving || !canManage}
-          />
+            className="h-8 shrink-0 justify-center gap-1"
+          >
+            <IconDeviceFloppy className="size-4" />
+            저장
+          </Button>
         </div>
 
-        <div className="grid gap-2 rounded-md border p-3">
+        <div className="grid gap-2 rounded-md border p-2">
           <div className="flex items-center gap-2 text-xs">
             <Checkbox
               id={enabledCheckboxId}
@@ -77,15 +88,6 @@ export function NeedToSendCommentRuleCard({
             </label>
           </div>
         </div>
-
-        <Button
-          type="submit"
-          disabled={!selectedUserSdwtProd || isLoading || isSaving || !canManage}
-          className="justify-center gap-1"
-        >
-          <IconDeviceFloppy className="size-4" />
-          저장
-        </Button>
       </form>
     </div>
   )

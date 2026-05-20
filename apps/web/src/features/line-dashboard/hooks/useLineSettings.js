@@ -6,6 +6,7 @@ import {
   createNotificationTarget,
   createNotificationTargetMapping,
   createLineSetting,
+  deleteNotificationTargetMapping,
   deleteLineSetting,
   fetchNotificationRecipients,
   fetchNotificationTargets,
@@ -519,6 +520,35 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
     [lineId],
   )
 
+  const deleteTargetMapping = React.useCallback(
+    async ({ targetUserSdwtProd, sdwtProd, userSdwtProd: sourceUserSdwtProd }) => {
+      if (!lineId) {
+        throw new Error("Select a line to delete target mapping")
+      }
+      if (!targetUserSdwtProd) {
+        throw new Error("Select a notification target to delete mapping")
+      }
+      const { target } = await deleteNotificationTargetMapping({
+        lineId,
+        targetUserSdwtProd,
+        sdwtProd,
+        userSdwtProd: sourceUserSdwtProd,
+      })
+      if (target) {
+        setNotificationTargets((prev) => {
+          const key = target.targetUserSdwtProd.toLowerCase()
+          return [
+            target,
+            ...prev.filter((item) => item.targetUserSdwtProd.toLowerCase() !== key),
+          ].sort((left, right) => left.targetUserSdwtProd.localeCompare(right.targetUserSdwtProd))
+        })
+        setLastUpdatedLabel(nowLabel())
+      }
+      return target
+    },
+    [lineId],
+  )
+
   const updateMessengerRecipients = React.useCallback(
     ({ userIds, externalKnoxIds }) =>
       updateRecipients({ channel: "messenger", userIds, externalKnoxIds }),
@@ -557,6 +587,7 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
     updateMessengerForceNewChatroom,
     createTarget,
     createTargetMapping,
+    deleteTargetMapping,
     updateMailRecipients,
     updateMessengerRecipients,
   }

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { IconChevronDown, IconSearch, IconUserPlus } from "@tabler/icons-react"
 
 import { Button } from "@/components/ui/button"
@@ -12,13 +12,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   getRecipientListText,
@@ -33,10 +26,14 @@ function normalizeFilterText(value) {
   return String(value || "").trim().toLowerCase()
 }
 
-function DepartmentSearchSelect({
+function SearchSelect({
   value,
   values,
   disabled,
+  placeholder,
+  searchPlaceholder,
+  ariaLabel,
+  filterLabel,
   onChange,
 }) {
   const [open, setOpen] = useState(false)
@@ -63,7 +60,7 @@ function DepartmentSearchSelect({
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label="Department 선택"
+        aria-label={ariaLabel}
         disabled={disabled}
         onClick={() => {
           if (disabled) return
@@ -73,23 +70,23 @@ function DepartmentSearchSelect({
         className="border-input focus-visible:border-ring focus-visible:ring-ring/50 flex h-9 w-full min-w-0 items-center justify-between gap-2 rounded-md border bg-transparent px-3 py-2 text-left text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50"
       >
         <span className={value ? "truncate" : "truncate text-muted-foreground"}>
-          {value || "Department 선택"}
+          {value || placeholder}
         </span>
         <IconChevronDown className="size-4 shrink-0 opacity-50" />
       </button>
 
       {open ? (
-        <div className="bg-popover text-popover-foreground absolute top-10 left-0 z-50 grid max-h-72 w-full min-w-64 grid-rows-[auto,minmax(0,1fr)] overflow-hidden rounded-md border shadow-md">
+        <div className="bg-popover text-popover-foreground absolute top-10 left-0 z-50 grid w-[360px] max-w-[min(520px,calc(100vw-3rem))] grid-rows-[auto,minmax(0,1fr)] overflow-hidden rounded-md border shadow-md">
           <div className="border-b p-2">
             <Input
               value={filter}
               onChange={(event) => setFilter(event.target.value)}
-              placeholder="Department 검색"
-              aria-label="Department 필터"
+              placeholder={searchPlaceholder}
+              aria-label={filterLabel}
               autoFocus
             />
           </div>
-          <div role="listbox" className="min-h-0 overflow-y-auto p-1">
+          <div role="listbox" className="max-h-80 min-h-0 overflow-y-auto p-1">
             {filteredValues.length > 0 ? (
               filteredValues.map((item) => (
                 <button
@@ -235,8 +232,39 @@ export function RecipientPickerDialog({
   const groupEmptyText = !sourceDepartment
     ? "Department를 선택하세요."
     : !sourceSdwt
-      ? "소속을 선택하고 사용자 불러오기를 누르세요."
-      : "사용자 불러오기를 누르세요."
+      ? "소속을 선택하면 사용자를 자동으로 불러옵니다."
+      : "사용자를 불러오는 중입니다."
+  const onLoadSourceRecipientsRef = useRef(onLoadSourceRecipients)
+  const lastAutoLoadKeyRef = useRef("")
+
+  useEffect(() => {
+    onLoadSourceRecipientsRef.current = onLoadSourceRecipients
+  }, [onLoadSourceRecipients])
+
+  useEffect(() => {
+    const autoLoadKey =
+      open && activeTab === "group" && canManageRecipients && sourceDepartment && sourceSdwt
+        ? `${sourceDepartment}\u0000${sourceSdwt}`
+        : ""
+
+    if (!autoLoadKey) {
+      lastAutoLoadKeyRef.current = ""
+      return
+    }
+    if (isLoadingSourceGroups || isLoadingSourceUsers) return
+    if (lastAutoLoadKeyRef.current === autoLoadKey) return
+
+    lastAutoLoadKeyRef.current = autoLoadKey
+    onLoadSourceRecipientsRef.current()
+  }, [
+    activeTab,
+    canManageRecipients,
+    isLoadingSourceGroups,
+    isLoadingSourceUsers,
+    open,
+    sourceDepartment,
+    sourceSdwt,
+  ])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -259,42 +287,32 @@ export function RecipientPickerDialog({
             className="h-full min-h-0 grid-rows-[auto,minmax(0,1fr)] gap-3 overflow-hidden data-[state=active]:grid data-[state=inactive]:hidden"
           >
             <div className="grid gap-2">
-              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2">
-                <DepartmentSearchSelect
+              <div className="grid grid-cols-2 gap-2">
+                <SearchSelect
                   value={sourceDepartment}
                   values={accountDepartmentValues}
                   disabled={!canManageRecipients || accountDepartmentValues.length === 0 || isLoadingSourceGroups}
+                  placeholder="Department 선택"
+                  searchPlaceholder="Department 검색"
+                  ariaLabel="Department 선택"
+                  filterLabel="Department 필터"
                   onChange={handleSourceDepartmentChange}
                 />
-                <Select
-                  value={sourceSdwt || undefined}
-                  onValueChange={handleSourceSdwtChange}
+                <SearchSelect
+                  value={sourceSdwt}
+                  values={accountUserSdwtValues}
                   disabled={
                     !canManageRecipients ||
                     !sourceDepartment ||
                     accountUserSdwtValues.length === 0 ||
                     isLoadingSourceGroups
                   }
-                >
-                  <SelectTrigger className="w-full" aria-label="소속 선택">
-                    <SelectValue placeholder="소속 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {accountUserSdwtValues.map((value) => (
-                      <SelectItem key={value} value={value}>
-                        {value}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={!canManageRecipients || !sourceDepartment || !sourceSdwt || isLoadingSourceUsers}
-                  onClick={() => onLoadSourceRecipients()}
-                >
-                  사용자 불러오기
-                </Button>
+                  placeholder="소속 선택"
+                  searchPlaceholder="소속 검색"
+                  ariaLabel="소속 선택"
+                  filterLabel="소속 필터"
+                  onChange={handleSourceSdwtChange}
+                />
               </div>
             </div>
 

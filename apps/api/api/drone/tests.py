@@ -422,6 +422,10 @@ class DroneSopPop3ParsingTests(TestCase):
             ("SSB FULLAUTO", "SSB FULLAUTO"),
             ("ISOP", "ISOP"),
             ("  auto_skew  $@$ reserved", "AUTO_SKEW"),
+            ("manual comment $@$ AUTO_SKEW", "AUTO_SKEW"),
+            ("prefix AUTO_SKEW suffix", "AUTO_SKEW"),
+            ("예약 요청: ssb fullauto 알림", "SSB FULLAUTO"),
+            ("manual isop fallback", "ISOP"),
         ]
 
         for comment, expected in cases:
@@ -3124,6 +3128,77 @@ class DroneSopTargetRecipientTests(TestCase):
                 target_user_sdwt_prod="CUSTOM_TARGET",
             ).exists()
         )
+
+    def test_notification_target_mapping_endpoint_deletes_mapping(self) -> None:
+        """지정 조합 삭제 API가 대상 mapping row를 제거하고 갱신된 target을 반환해야 합니다."""
+
+        target = _upsert_target(line_id="L1", target_user_sdwt_prod="CUSTOM_TARGET")
+        DroneSopTargetMapping.objects.create(
+            sdwt_prod="SDWT_A",
+            user_sdwt_prod="USER_A",
+            target=target,
+        )
+        DroneSopTargetMapping.objects.create(
+            sdwt_prod="SDWT_B",
+            user_sdwt_prod="USER_B",
+            target=target,
+        )
+
+        self.client.force_login(self.actor)
+        response = self.client.delete(
+            reverse("line-dashboard-notification-target-mappings"),
+            data=json.dumps(
+                {
+                    "lineId": "L1",
+                    "targetUserSdwtProd": "CUSTOM_TARGET",
+                    "sdwtProd": "sdwt_a",
+                    "userSdwtProd": "user_a",
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["deleted"], {"sdwtProd": "sdwt_a", "userSdwtProd": "user_a"})
+        self.assertEqual(
+            payload["target"]["mappings"],
+            [{"sdwtProd": "SDWT_B", "userSdwtProd": "USER_B"}],
+        )
+        self.assertFalse(
+            DroneSopTargetMapping.objects.filter(
+                sdwt_prod="SDWT_A",
+                user_sdwt_prod="USER_A",
+                target__target_user_sdwt_prod="CUSTOM_TARGET",
+            ).exists()
+        )
+        self.assertTrue(
+            DroneSopTargetMapping.objects.filter(
+                sdwt_prod="SDWT_B",
+                user_sdwt_prod="USER_B",
+                target__target_user_sdwt_prod="CUSTOM_TARGET",
+            ).exists()
+        )
+
+    def test_notification_target_mapping_endpoint_delete_returns_404_for_missing_mapping(self) -> None:
+        """삭제할 지정 조합이 없으면 404를 반환해야 합니다."""
+
+        self.client.force_login(self.actor)
+        response = self.client.delete(
+            reverse("line-dashboard-notification-target-mappings"),
+            data=json.dumps(
+                {
+                    "lineId": "L1",
+                    "targetUserSdwtProd": "CUSTOM_TARGET",
+                    "sdwtProd": "SDWT_A",
+                    "userSdwtProd": "USER_A",
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["error"], "target mapping not found")
 
     def test_notification_target_mapping_endpoint_rejects_same_pair_for_multiple_targets(self) -> None:
         """같은 지정 조합은 다른 알림 target에도 중복 연결할 수 없어야 합니다."""

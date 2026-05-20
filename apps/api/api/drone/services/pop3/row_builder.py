@@ -30,6 +30,7 @@ AUTOMATION_COMMENT_ACTOR_FALLBACKS = {
     "auto_skew": "AUTO_SKEW",
     "ssb fullauto": "SSB FULLAUTO",
     "isop": "ISOP",
+    "autonomous": "AUTONOMOUS",
 }
 
 
@@ -70,10 +71,13 @@ def _resolve_missing_actor_fallback(comment: Any) -> str:
     """
 
     # -------------------------------------------------------------------------
-    # 1) 자동화 suffix 이전의 실제 comment 문구만 비교합니다.
+    # 1) 전체 comment 문구에서 자동화 키워드를 찾습니다.
     # -------------------------------------------------------------------------
-    normalized_comment = str(comment or "").split("$@$", 1)[0].strip().casefold()
-    return AUTOMATION_COMMENT_ACTOR_FALLBACKS.get(normalized_comment, SYSTEM_ACTOR_FALLBACK)
+    normalized_comment = str(comment or "").strip().casefold()
+    for keyword, fallback in AUTOMATION_COMMENT_ACTOR_FALLBACKS.items():
+        if keyword in normalized_comment:
+            return fallback
+    return SYSTEM_ACTOR_FALLBACK
 
 
 def _extract_first_data_tag(html: str) -> dict[str, str]:

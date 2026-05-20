@@ -852,7 +852,7 @@ class DroneNotificationTargetView(DroneAuthenticatedView):
 
 @method_decorator(csrf_exempt, name="dispatch")
 class DroneNotificationTargetMappingView(DroneAuthenticatedView):
-    """라인별 Drone SOP 알림 target 지정 조합 생성 엔드포인트입니다."""
+    """라인별 Drone SOP 알림 target 지정 조합 생성/삭제 엔드포인트입니다."""
 
     @staticmethod
     def _find_response_target(*, line_id: str, target_user_sdwt_prod: str) -> dict[str, object]:
@@ -930,6 +930,64 @@ class DroneNotificationTargetMappingView(DroneAuthenticatedView):
                 "mapping": {
                     "sdwtProd": mapping.sdwt_prod or "",
                     "userSdwtProd": mapping.user_sdwt_prod or "",
+                },
+            }
+        )
+
+    def delete(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """알림 target에 연결된 sdwt_prod/user_sdwt_prod 지정 조합을 삭제합니다.
+
+        예시 요청:
+        - DELETE /api/v1/line-dashboard/notification-target-mappings
+          {"lineId":"L1","targetUserSdwtProd":"TARGET_A","sdwtProd":"SDWT_A","userSdwtProd":"USR_A"}
+        """
+
+        auth_response = self._authorize_user(request)
+        if auth_response is not None:
+            return auth_response
+        if not selectors.user_can_manage_drone_sop_recipients(user=request.user):
+            return JsonResponse({"error": "forbidden"}, status=403)
+
+        payload, error_response = _parse_json_body_or_error(request)
+        if error_response is not None:
+            return error_response
+
+        line_id = normalize_line_id(payload.get("lineId"))
+        target_user_sdwt_prod = normalize_target_text(payload.get("targetUserSdwtProd"))
+        sdwt_prod = normalize_target_text(payload.get("sdwtProd"))
+        user_sdwt_prod = normalize_target_text(payload.get("userSdwtProd"))
+        if not line_id:
+            return JsonResponse({"error": "lineId is required"}, status=400)
+        if not target_user_sdwt_prod:
+            return JsonResponse({"error": "targetUserSdwtProd is required"}, status=400)
+        if not sdwt_prod:
+            return JsonResponse({"error": "sdwtProd is required"}, status=400)
+        if not user_sdwt_prod:
+            return JsonResponse({"error": "userSdwtProd is required"}, status=400)
+
+        try:
+            services.delete_drone_sop_target_mapping(
+                line_id=line_id,
+                target_user_sdwt_prod=target_user_sdwt_prod,
+                sdwt_prod=sdwt_prod,
+                user_sdwt_prod=user_sdwt_prod,
+            )
+        except services.DroneSopTargetMappingNotFoundError as exc:
+            return JsonResponse({"error": str(exc)}, status=404)
+        except ValueError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
+
+        target = self._find_response_target(
+            line_id=line_id,
+            target_user_sdwt_prod=target_user_sdwt_prod,
+        )
+        return JsonResponse(
+            {
+                "lineId": line_id,
+                "target": target,
+                "deleted": {
+                    "sdwtProd": sdwt_prod,
+                    "userSdwtProd": user_sdwt_prod,
                 },
             }
         )

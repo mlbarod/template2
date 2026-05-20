@@ -1,6 +1,7 @@
 // 파일 경로: src/features/line-dashboard/components/DataTableColumnRenderers.jsx
 // 컬럼별로 서로 다른 UI 표현을 담당하는 렌더러 모음입니다.
 import * as React from "react"
+import { createPortal } from "react-dom"
 import { ExternalLink } from "lucide-react"
 import { toast } from "sonner"
 
@@ -117,20 +118,20 @@ function buildDefectImageUrls(link) {
     })
 }
 
-function DefectImagePreview({ link }) {
+function DefectImagePreview({ link, centered = false }) {
   const imageUrls = buildDefectImageUrls(link)
 
   if (!imageUrls.length) {
     return (
-      <div className="flex h-28 w-64 items-center justify-center rounded-md border border-dashed border-border bg-muted/40 px-3 text-center text-xs text-muted-foreground">
+      <div className={`${centered ? "h-56 w-[min(720px,calc(100vw-2rem))]" : "h-28 w-64"} flex items-center justify-center rounded-xl border border-dashed border-border bg-popover px-4 text-center text-sm text-muted-foreground shadow-xl`}>
         Preview image 없음
       </div>
     )
   }
 
   return (
-    <div className="max-h-[420px] w-[360px] max-w-[70vw] overflow-y-auto rounded-md border border-border bg-popover p-2 shadow-md">
-      <div className="mb-2 flex items-center justify-between gap-2 text-xs">
+    <div className={`${centered ? "max-h-[min(78vh,760px)] w-[min(820px,calc(100vw-2rem))] p-3" : "max-h-[420px] w-[360px] max-w-[70vw] p-2"} overflow-y-auto rounded-xl border border-border bg-popover shadow-xl`}>
+      <div className="mb-3 flex items-center justify-between gap-2 text-sm">
         <span className="min-w-0 truncate font-medium text-popover-foreground" title={link?.label}>
           {link?.label || "Defect"}
         </span>
@@ -138,27 +139,53 @@ function DefectImagePreview({ link }) {
           {imageUrls.length} images
         </span>
       </div>
-      <div className="grid grid-cols-2 gap-2">
-        {imageUrls.map((src, index) => (
-          <a
-            key={`${src}:${index}`}
-            href={src}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block overflow-hidden rounded border border-border bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            title={src}
-          >
+      <div className={`grid ${centered && imageUrls.length === 1 ? "grid-cols-1" : "grid-cols-2"} gap-3`}>
+        {imageUrls.map((src, index) => {
+          const image = (
             <img
               src={src}
               alt={`${link?.label || "Defect"} preview ${index + 1}`}
-              className="aspect-square w-full object-contain"
+              className={`${centered ? "max-h-[620px]" : "aspect-square"} w-full object-contain`}
               loading="lazy"
               referrerPolicy="no-referrer"
             />
-          </a>
-        ))}
+          )
+          const frameClassName = "block overflow-hidden rounded border border-border bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+
+          if (centered) {
+            return (
+              <div key={`${src}:${index}`} className={frameClassName} title={src}>
+                {image}
+              </div>
+            )
+          }
+
+          return (
+            <a
+              key={`${src}:${index}`}
+              href={src}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={frameClassName}
+              title={src}
+            >
+              {image}
+            </a>
+          )
+        })}
       </div>
     </div>
+  )
+}
+
+function CenteredDefectMapPreview({ link, open }) {
+  if (!open || typeof document === "undefined") return null
+
+  return createPortal(
+    <div className="pointer-events-none fixed inset-0 z-[70] flex items-center justify-center px-4 py-6">
+      <DefectImagePreview link={link} centered />
+    </div>,
+    document.body
   )
 }
 
@@ -188,6 +215,8 @@ function DefectUrlHoverList({ links }) {
 
   React.useEffect(() => () => clearCloseTimer(), [clearCloseTimer])
 
+  const activeLink = links[activeIndex] ?? links[0]
+
   return (
     <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
@@ -207,32 +236,30 @@ function DefectUrlHoverList({ links }) {
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="center"
-        className="flex w-auto gap-2 p-2"
+        className="w-52 p-2"
         onMouseEnter={openList}
         onMouseLeave={scheduleClose}
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
-        <div className="w-52 p-1">
-          {links.map((link, index) => (
-            <DropdownMenuItem key={`${link.href}:${index}`} asChild>
-              <a
-                href={link.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex cursor-pointer items-center justify-between gap-2"
-                title={link.href}
-                aria-label={`Open defect URL ${link.label || index + 1} in a new tab`}
-                onMouseEnter={() => setActiveIndex(index)}
-                onFocus={() => setActiveIndex(index)}
-              >
-                <span className="min-w-0 truncate">{link.label || index + 1}</span>
-                <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              </a>
-            </DropdownMenuItem>
-          ))}
-        </div>
-        <DefectImagePreview link={links[activeIndex] ?? links[0]} />
+        {links.map((link, index) => (
+          <DropdownMenuItem key={`${link.href}:${index}`} asChild>
+            <a
+              href={link.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex cursor-pointer items-center justify-between gap-2"
+              title={link.href}
+              aria-label={`Open defect URL ${link.label || index + 1} in a new tab`}
+              onMouseEnter={() => setActiveIndex(index)}
+              onFocus={() => setActiveIndex(index)}
+            >
+              <span className="min-w-0 truncate">{link.label || index + 1}</span>
+              <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            </a>
+          </DropdownMenuItem>
+        ))}
       </DropdownMenuContent>
+      <CenteredDefectMapPreview link={activeLink} open={open} />
     </DropdownMenu>
   )
 }
@@ -263,32 +290,22 @@ function DefectUrlPreviewLink({ link }) {
   React.useEffect(() => () => clearCloseTimer(), [clearCloseTimer])
 
   return (
-    <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex items-center gap-1 text-primary transition-colors hover:text-primary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          aria-label="Open defect URL in a new tab"
-          title={`${link.label}: ${link.href}`}
-          onMouseEnter={openPreview}
-          onMouseLeave={scheduleClose}
-          onFocus={openPreview}
-          onBlur={scheduleClose}
-          onClick={() => openExternalUrl(link.href)}
-        >
-          <ExternalLink className="h-4 w-4" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="center"
-        className="p-2"
+    <>
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 text-primary transition-colors hover:text-primary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        aria-label="Open defect URL in a new tab"
+        title={`${link.label}: ${link.href}`}
         onMouseEnter={openPreview}
         onMouseLeave={scheduleClose}
-        onCloseAutoFocus={(event) => event.preventDefault()}
+        onFocus={openPreview}
+        onBlur={scheduleClose}
+        onClick={() => openExternalUrl(link.href)}
       >
-        <DefectImagePreview link={link} />
-      </DropdownMenuContent>
-    </DropdownMenu>
+        <ExternalLink className="h-4 w-4" />
+      </button>
+      <CenteredDefectMapPreview link={link} open={open} />
+    </>
   )
 }
 

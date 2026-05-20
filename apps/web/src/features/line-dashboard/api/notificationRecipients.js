@@ -228,6 +228,35 @@ export async function createNotificationTargetMapping({
   }
 }
 
+export async function deleteNotificationTargetMapping({
+  lineId,
+  targetUserSdwtProd,
+  sdwtProd,
+  userSdwtProd,
+}) {
+  const response = await fetch(buildBackendUrl(NOTIFICATION_TARGET_MAPPINGS_PATH), {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ lineId, targetUserSdwtProd, sdwtProd, userSdwtProd }),
+  })
+  const payload = await safeParseJson(response)
+
+  if (!response.ok) {
+    throw buildApiError(
+      response,
+      payload,
+      `Failed to delete target mapping (status ${response.status})`,
+    )
+  }
+
+  return {
+    lineId: payload?.lineId || lineId,
+    target: normalizeTarget(payload?.target, payload?.lineId || lineId),
+    deleted: normalizeTargetMappings([payload?.deleted])[0] || null,
+  }
+}
+
 export async function fetchNotificationRecipients({ lineId, targetUserSdwtProd, channel = "mail" }) {
   if (!lineId || !targetUserSdwtProd) {
     return { recipients: [] }
