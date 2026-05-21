@@ -9,8 +9,21 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select"
+
+function resolveSelectedOptionValue(values, selectedValue) {
+  const normalizedSelectedValue = String(selectedValue || "").trim()
+  if (!normalizedSelectedValue) return ""
+  return values.includes(normalizedSelectedValue) ? normalizedSelectedValue : ""
+}
+
+function SelectTriggerText({ value, placeholder }) {
+  return (
+    <span className={value ? "truncate" : "truncate text-muted-foreground"}>
+      {value || placeholder}
+    </span>
+  )
+}
 
 function LineUserSdwtBadges({ lineId, values, selectedValue, onSelect }) {
   if (!lineId) {
@@ -79,6 +92,9 @@ function TargetMappingSummary({
   const mappings = Array.isArray(target.mappings) ? target.mappings : []
   const hasOptions = userOptionValues.length > 0 && sdwtOptionValues.length > 0
   const isSelectDisabled = !canManage || isSaving || !hasOptions
+  const selectedUserSdwtProd = resolveSelectedOptionValue(userOptionValues, draft.userSdwtProd)
+  const selectedSdwtProd = resolveSelectedOptionValue(sdwtOptionValues, draft.sdwtProd)
+  const canSubmitMapping = Boolean(selectedUserSdwtProd && selectedSdwtProd)
 
   return (
     <div className="flex h-full min-h-0 flex-col rounded-md border bg-muted/30 px-3 py-2">
@@ -90,16 +106,22 @@ function TargetMappingSummary({
       </div>
       <form
         className="my-1 flex min-w-0 shrink-0 items-center gap-1.5"
-        onSubmit={onSubmit}
+        onSubmit={(event) => {
+          if (!canSubmitMapping) {
+            event.preventDefault()
+            return
+          }
+          onSubmit(event)
+        }}
       >
         <div className="min-w-0">
           <Select
-            value={draft.userSdwtProd}
+            value={selectedUserSdwtProd}
             onValueChange={(value) => onDraftChange("userSdwtProd", value)}
             disabled={isSelectDisabled}
           >
             <SelectTrigger className="h-8 w-40 min-w-0 text-[11px]">
-              <SelectValue placeholder="엔지니어 분임조 선택" />
+              <SelectTriggerText value={selectedUserSdwtProd} placeholder="엔지니어 분임조 선택" />
             </SelectTrigger>
             <SelectContent className="max-h-64">
               {userOptionValues.map((value) => (
@@ -113,12 +135,12 @@ function TargetMappingSummary({
         <IconArrowRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
         <div className="min-w-0 flex-1">
           <Select
-            value={draft.sdwtProd}
+            value={selectedSdwtProd}
             onValueChange={(value) => onDraftChange("sdwtProd", value)}
             disabled={isSelectDisabled}
           >
             <SelectTrigger className="h-8 w-40 min-w-0 text-[11px]">
-              <SelectValue placeholder="설비소속 분임조 선택" />
+              <SelectTriggerText value={selectedSdwtProd} placeholder="설비소속 분임조 선택" />
             </SelectTrigger>
             <SelectContent className="max-h-64">
               {sdwtOptionValues.map((value) => (
@@ -133,7 +155,7 @@ function TargetMappingSummary({
           type="submit"
           size="sm"
           variant="outline"
-          disabled={isSelectDisabled || !draft.userSdwtProd.trim() || !draft.sdwtProd.trim()}
+          disabled={isSelectDisabled || !canSubmitMapping}
           className="h-8 shrink-0"
         >
           <IconPlus className="mr-1 size-3" />

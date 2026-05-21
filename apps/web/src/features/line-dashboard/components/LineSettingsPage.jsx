@@ -685,7 +685,6 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
         sdwtProd: normalizedSdwtProd,
       })
       if (target?.targetUserSdwtProd) {
-        setMappingDraft({ userSdwtProd: "", sdwtProd: "" })
         showTargetMappingCreateToast(normalizedUserSdwtProd, normalizedSdwtProd)
       }
     } catch (requestError) {

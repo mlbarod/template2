@@ -199,14 +199,14 @@ export function CommentCell({ meta, recordId, baseValue }) {
           */}
           <button
             type="button"
-            title={baseVisibleText || "Tap to add a comment"}
-            className="block w-full cursor-pointer truncate rounded-md border border-transparent px-2 py-1 text-left text-sm transition-colors hover:border-border hover:bg-muted focus:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+            title="Comment 수정시 수정된 내용으로 발송됩니다."
+            className="block w-full cursor-pointer truncate rounded-md border px-2 py-1 text-left text-sm transition-colors hover:border-border hover:bg-muted focus:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
             aria-label="Open comment editor"
           >
             {baseVisibleText.length > 0 ? (
               <span className="block truncate">{baseVisibleText}</span>
             ) : (
-              <span className="text-muted-foreground">Tap to add a comment</span>
+              <span className="block min-h-[1.25rem] text-muted-foreground" aria-hidden="true" />
             )}
           </button>
         </DialogTrigger>

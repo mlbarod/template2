@@ -261,11 +261,11 @@ function DefectUrlHoverList({ links }) {
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-border px-1.5 text-xs font-medium text-primary transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          className="inline-flex items-center gap-1 text-primary transition-colors hover:text-primary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           aria-label={`${links.length} defect URLs`}
           title={`${links.length} defect URLs`}
         >
-          {links.length}
+          <ImageIcon className="h-4 w-4" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
