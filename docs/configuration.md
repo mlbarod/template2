@@ -23,6 +23,7 @@
 | 보안/proxy | `DJANGO_SECURE`, `SECURE_SSL_REDIRECT`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`, `USE_X_FORWARDED_HOST` | HTTPS, cookie, reverse proxy 설정 |
 | `DJANGO_DB_*` / 기본 DB | `DJANGO_DB_ENGINE`, `DJANGO_DB_NAME`, `DJANGO_DB_USER`, `DJANGO_DB_PASSWORD`, `DJANGO_DB_HOST`, `DJANGO_DB_PORT` | Django 기본 PostgreSQL |
 | `TIMELINE_DB_*` / Timeline DB | `TIMELINE_DB_ENGINE`, `TIMELINE_DB_NAME`, `TIMELINE_DB_USER`, `TIMELINE_DB_PASSWORD`, `TIMELINE_DB_HOST`, `TIMELINE_DB_PORT`, `TIMELINE_QUERY_DAYS` | Timeline 전용 PostgreSQL과 기본 조회 기간 |
+| `L3_SPIDER_*` / L3 Spider 파일 데이터 | `L3_SPIDER_DATA_ROOT`, `L3_SPIDER_MAX_CHART_POINTS_PER_PANEL` | read-only mount된 `daily_anomaly` Parquet 데이터 경로와 차트 sampling 제한 |
 | `OIDC_*` / `ADFS_*` / Auth/OIDC | `OIDC_CLIENT_ID`, `OIDC_ISSUER`, `ADFS_AUTH_URL`, `ADFS_LOGOUT_URL`, `OIDC_REDIRECT_URI`, `ADFS_CER_PATH`, `ALLOWED_REDIRECT_HOSTS` | ADFS/OIDC 로그인 |
 | Airflow trigger | `AIRFLOW_TRIGGER_TOKEN` | 수집/동기화 trigger 보호용 Bearer token |
 | Emails POP3/OCR | `EMAIL_POP3_*`, `EMAIL_OCR_INTERNAL_TOKEN`, `EMAIL_EXCLUDED_SUBJECT_PREFIXES` | 메일 수집과 OCR worker |
@@ -53,3 +54,4 @@
 - Mail/Email 계약 변경: `env/api*.env`, `apps/adfs_dummy`, `docs/modules/emails.md`, `docs/api/emails.md`
 - Drone/Jira/Messenger 계약 변경: `env/api*.env`, `apps/adfs_dummy`, `docs/modules/line-dashboard.md`, `docs/api/line-dashboard.md`
 - Timeline DB 계약 변경: `env/api*.env`, `docs/modules/timeline.md`, `docs/api/timeline.md`, `docs/data-model.md`
+- L3 Spider 데이터 경로 변경: `env/api*.env`, `docker-compose*.yml`, `docs/api/l3-spider.md`, `docs/inventory.md`

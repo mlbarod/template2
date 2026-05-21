@@ -17,6 +17,7 @@ services:
       - ./apps/api:/app
       - api_data:/data
       - api_static:/app/staticfiles
+      - ${L3_SPIDER_DATA_HOST_PATH:-./data/l3_spider/daily_anomaly}:/data/l3_spider/daily_anomaly:ro
     ports:
       - "8000:8000"
     entrypoint:

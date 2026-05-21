@@ -11,6 +11,7 @@ export const navigationItems = [
     items: [
       { title: 'Appstore', href: '/appstore' },
       { title: 'ESOP Dashboard', href: '/esop_dashboard' },
+      { title: 'L3 Spider', href: '/l3_spider' },
       { title: 'Timeline', href: '/timeline' },
       { title: '메일함', href: '/emails/inbox' },
     ]

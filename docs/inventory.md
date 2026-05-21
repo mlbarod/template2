@@ -13,6 +13,7 @@
 | Emails | `/api/v1/emails/` | `apps/api/api/emails/urls.py` | `inbox/`, `sent/`, `mailboxes/`, `mailboxes/summary/`, `mailboxes/members/`, `unassigned/`, `unassigned/claim/`, `ingest/`, `outbox/process/`, `assets/ocr/claim/`, `assets/ocr/update/`, `bulk-delete/`, `move/`, `<email_id>/`, `<email_id>/assets/<sequence>/`, `<email_id>/html/` |
 | Assistant | `/api/v1/assistant/` | `apps/api/api/assistant/urls.py` | `chat`, `rag-indexes` |
 | Line Dashboard / Drone | `/api/v1/line-dashboard/` | `apps/api/api/drone/urls.py` | `early-inform`, `tables`, `tables/update`, `jira-keys`, `notification-targets`, `notification-target-mappings`, `jira-user-sdwt-prods`, `notification-recipients`, `notification-recipient-permissions`, `my-notification-recipient-targets`, `history`, `line-ids`, `sop/<sop_id>/instant-inform`, `sop/<sop_id>/retry-channel`, `sop/ingest/pop3/trigger`, `sop/precheck`, `sop/trigger` |
+| L3 Spider | `/api/v1/l3_spider/` | `apps/api/api/l3_spider/urls.py` | `meta`, `summary`, `data` |
 | Timeline | `/api/v1/timeline/` | `apps/api/api/timeline/urls.py` | `lines`, `sdwts`, `prc-groups`, `equipments`, `equipment-info/<line_id>/<eqp_id>`, `equipment-info/<eqp_id>`, `logs`, `logs/eqp`, `logs/tip`, `logs/ctttm`, `logs/racb`, `logs/drone` |
 | AppStore | `/api/v1/appstore/` | `apps/api/api/appstore/urls.py` | `apps`, `apps/<app_id>`, `apps/<app_id>/cover`, `apps/<app_id>/like`, `apps/<app_id>/view`, `apps/<app_id>/comments`, `apps/<app_id>/comments/<comment_id>`, `apps/<app_id>/comments/<comment_id>/like` |
 | VOC | `/api/v1/voc/` | `apps/api/api/voc/urls.py` | `posts`, `posts/<post_id>`, `posts/<post_id>/replies` |
@@ -31,6 +32,7 @@
 | Emails | `/emails/inbox`, `/emails/sent`, `/emails/members` | `apps/web/src/features/emails/routes.jsx` | `apps/web/src/features/emails/index.js` |
 | Assistant | `/assistant` | `apps/web/src/features/assistant/routes.jsx` | `apps/web/src/features/assistant/index.js` |
 | Line Dashboard | `/ESOP_Dashboard`, `/ESOP_Dashboard/status/:lineId`, `/ESOP_Dashboard/history/:lineId`, `/ESOP_Dashboard/settings/:lineId`, `/ESOP_Dashboard/settings/notification/:lineId`, `/ESOP_Dashboard/settings/recipients/:lineId`, `/ESOP_Dashboard/overview` | `apps/web/src/features/line-dashboard/routes.jsx` | `apps/web/src/features/line-dashboard/index.js` |
+| L3 Spider | `/l3_spider` | `apps/web/src/features/l3-spider/routes.jsx` | `apps/web/src/features/l3-spider/index.js` |
 | Timeline | `/timeline`, `/timeline/:eqpId` | `apps/web/src/features/timeline/routes.jsx` | `apps/web/src/features/timeline/index.js` |
 | AppStore | `/appstore` | `apps/web/src/features/appstore/routes.jsx` | `apps/web/src/features/appstore/index.js` |
 | VOC | `/voc` | `apps/web/src/features/voc/routes.jsx` | `apps/web/src/features/voc/index.js` |
@@ -47,7 +49,7 @@
 | `api.drone` | `DroneSOP`, `DroneSopTarget`, `DroneSopTargetChannelConfig`, `DroneSopNeedToSendRule`, `DroneSopTargetMapping`, `DroneSopTargetRecipient`, `DroneSopTargetDispatch`, `DroneSopDelivery`, `DroneEarlyInform` |
 | `api.emails` | `Email`, `EmailOutbox`, `EmailAsset` |
 | `api.voc` | `VocPost`, `VocReply` |
-| `api.auth`, `api.assistant`, `api.rag`, `api.timeline`, `api.health`, `api.common` | 자체 업무 model 없이 account/common/external DB 또는 외부 API를 사용 |
+| `api.auth`, `api.assistant`, `api.rag`, `api.timeline`, `api.l3_spider`, `api.health`, `api.common` | 자체 업무 model 없이 account/common/external DB 또는 외부 API/파일을 사용 |
 
 ## Management command
 
@@ -73,4 +75,4 @@
 | `env/web.prod.env` | 운영 web 설정 템플릿 |
 | `minio.env` | 로컬 MinIO 계정과 endpoint |
 
-주요 env group은 `DJANGO_*`, `DJANGO_DB_*`, `TIMELINE_DB_*`, `OIDC_*`, `ADFS_*`, `AIRFLOW_TRIGGER_TOKEN`, `EMAIL_POP3_*`, `DRONE_*`, `KNOX_MESSENGER_*`, `ASSISTANT_*`, `RAG_*`, `MAIL_API_*`, `MINIO_*`, `VITE_*`입니다.
+주요 env group은 `DJANGO_*`, `DJANGO_DB_*`, `TIMELINE_DB_*`, `L3_SPIDER_*`, `OIDC_*`, `ADFS_*`, `AIRFLOW_TRIGGER_TOKEN`, `EMAIL_POP3_*`, `DRONE_*`, `KNOX_MESSENGER_*`, `ASSISTANT_*`, `RAG_*`, `MAIL_API_*`, `MINIO_*`, `VITE_*`입니다.

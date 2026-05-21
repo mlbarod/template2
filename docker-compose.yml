@@ -16,6 +16,7 @@ services:
     volumes:
       - api_data:/data
       - api_static:/app/staticfiles
+      - ${L3_SPIDER_DATA_HOST_PATH:-./data/l3_spider/daily_anomaly}:/data/l3_spider/daily_anomaly:ro
     expose:
       - "8000"
     networks:

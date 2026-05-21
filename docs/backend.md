@@ -51,6 +51,7 @@
 | `/api/v1/emails/` | `api.emails` | `docs/api/emails.md` |
 | `/api/v1/assistant/` | `api.assistant` | `docs/api/assistant.md` |
 | `/api/v1/line-dashboard/` | `api.drone` | `docs/api/line-dashboard.md` |
+| `/api/v1/l3_spider/` | `api.l3_spider` | `docs/api/l3-spider.md` |
 | `/api/v1/timeline/` | `api.timeline` | `docs/api/timeline.md` |
 | `/api/v1/appstore/` | `api.appstore` | `docs/api/appstore.md` |
 | `/api/v1/voc/` | `api.voc` | `docs/api/voc.md` |

@@ -110,6 +110,7 @@ Content-Type: application/json
 - `docs/api/emails.md`
 - `docs/api/assistant.md`
 - `docs/api/line-dashboard.md`
+- `docs/api/l3-spider.md`
 - `docs/api/timeline.md`
 - `docs/api/appstore.md`
 - `docs/api/voc.md`

@@ -8,6 +8,7 @@ import { authRoutes } from "@/features/auth"
 import { RouteErrorPage, errorRoutes } from "@/features/errors"
 import { GlobalNavbarShell, homeRoutes } from "@/features/home"
 import { lineDashboardRoutes } from "@/features/line-dashboard"
+import { l3SpiderRoutes } from "@/features/l3-spider"
 import { teamstaffRoutes } from "@/features/teamstaff"
 import { timelineRoutes } from "@/features/timeline"
 import { vocRoutes } from "@/features/voc"
@@ -18,6 +19,7 @@ import { accountRoutes } from "@/features/account"
 const protectedFeatureRoutes = [
   ...teamstaffRoutes,
   ...lineDashboardRoutes,
+  ...l3SpiderRoutes,
   ...appstoreRoutes,
   ...emailsRoutes,
   ...vocRoutes,
