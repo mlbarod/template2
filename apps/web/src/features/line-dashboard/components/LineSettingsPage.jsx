@@ -11,6 +11,7 @@ import { NotificationTargetCard } from "./cards/NotificationTargetCard"
 import { RecipientSettingsCards } from "./sections/RecipientSettingsCards"
 import {
   fetchAccountUserPool,
+  getLineSdwtOptions,
   fetchMyNotificationRecipientTargets,
   fetchNotificationRecipientPermissions,
 } from "../api"
@@ -53,6 +54,12 @@ import {
   sameUserSdwtProd,
 } from "../utils/lineSettings"
 
+const EMPTY_LINE_SDWT_OPTIONS = { lines: [], userSdwtProds: [] }
+
+function normalizeMappingOptionValue(value) {
+  return typeof value === "string" ? value.trim() : String(value ?? "").trim()
+}
+
 function findMappingDefaultOption(values, preferredValue) {
   const options = Array.isArray(values) ? values : []
   if (options.length === 0) return ""
@@ -66,14 +73,64 @@ function findMappingDefaultOption(values, preferredValue) {
   return options[0] || ""
 }
 
-function buildDefaultMappingDraft({ targetUserSdwtProd, mappingOptions }) {
-  if (!String(targetUserSdwtProd || "").trim()) {
-    return { userSdwtProd: "", sdwtProd: "" }
-  }
-  return {
-    userSdwtProd: findMappingDefaultOption(mappingOptions?.userSdwtProds, targetUserSdwtProd),
-    sdwtProd: findMappingDefaultOption(mappingOptions?.sdwtProds, targetUserSdwtProd),
-  }
+function buildMappingOptionsFromValues(values) {
+  const normalizedValues = Array.isArray(values)
+    ? values.map(normalizeMappingOptionValue).filter(Boolean)
+    : []
+  const uniqueValues = Array.from(new Set(normalizedValues))
+  return { userSdwtProds: uniqueValues, sdwtProds: uniqueValues }
+}
+
+function buildMappingLineOptions({ lineRows, currentLineId, currentValues }) {
+  const currentLine = normalizeMappingOptionValue(currentLineId)
+  const normalizedCurrentLineId = normalizeMappingOptionValue(currentLineId).toLowerCase()
+  const currentOption = currentLine
+    ? {
+        lineId: currentLine,
+        values: buildMappingOptionsFromValues(currentValues).userSdwtProds,
+      }
+    : null
+  const otherOptions = (Array.isArray(lineRows) ? lineRows : [])
+    .map((row) => {
+      const rowLineId = normalizeMappingOptionValue(row?.lineId)
+      if (!rowLineId || rowLineId.toLowerCase() === normalizedCurrentLineId) return null
+      const values = buildMappingOptionsFromValues(row?.userSdwtProds).userSdwtProds
+      return values.length > 0 ? { lineId: rowLineId, values } : null
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.lineId.localeCompare(b.lineId))
+
+  return currentOption ? [currentOption, ...otherOptions] : otherOptions
+}
+
+function getMappingLineOptionValues(lineOptions, selectedLineId) {
+  const normalizedSelectedLineId = normalizeMappingOptionValue(selectedLineId)
+  const option = (Array.isArray(lineOptions) ? lineOptions : []).find((row) => (
+    normalizeMappingOptionValue(row?.lineId).toLowerCase() === normalizedSelectedLineId.toLowerCase()
+  ))
+  return Array.isArray(option?.values) ? option.values : []
+}
+
+function buildMappingValueLineLabels(lineRows, currentLineId) {
+  const normalizedCurrentLineId = normalizeMappingOptionValue(currentLineId).toLowerCase()
+  const labels = {}
+
+  if (!Array.isArray(lineRows)) return {}
+
+  lineRows.forEach((row) => {
+    const rowLineId = normalizeMappingOptionValue(row?.lineId)
+    const values = Array.isArray(row?.userSdwtProds) ? row.userSdwtProds : []
+    values.forEach((value) => {
+      const normalizedValue = normalizeMappingOptionValue(value)
+      if (!rowLineId || !normalizedValue) return
+      const key = normalizedValue.toLowerCase()
+      if (rowLineId.toLowerCase() !== normalizedCurrentLineId) {
+        labels[key] = rowLineId
+      }
+    })
+  })
+
+  return labels
 }
 
 function buildTargetMappingKey({ userSdwtProd, sdwtProd }) {
@@ -140,6 +197,11 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   const [isCreatingTarget, setIsCreatingTarget] = React.useState(false)
   const [mappingDraft, setMappingDraft] = React.useState({ userSdwtProd: "", sdwtProd: "" })
   const [mappingFormError, setMappingFormError] = React.useState(null)
+  const [mappingUserLineId, setMappingUserLineId] = React.useState("")
+  const [mappingSdwtLineId, setMappingSdwtLineId] = React.useState("")
+  const [lineSdwtOptions, setLineSdwtOptions] = React.useState(EMPTY_LINE_SDWT_OPTIONS)
+  const [lineSdwtOptionsError, setLineSdwtOptionsError] = React.useState(null)
+  const [isLineSdwtOptionsLoading, setIsLineSdwtOptionsLoading] = React.useState(false)
   const [isCreatingMapping, setIsCreatingMapping] = React.useState(false)
   const [deletingMappingKey, setDeletingMappingKey] = React.useState("")
   const [jiraKeyDraft, setJiraKeyDraft] = React.useState("")
@@ -193,6 +255,33 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   const canManageChannelSettings = Boolean(lineId && selectedUserSdwtProd && user?.is_superuser)
   const canCreateTarget = Boolean(lineId && isGlobalOperator)
   const canManageMappings = Boolean(selectedNotificationTarget && isGlobalOperator)
+  const mappingUserLineOptions = React.useMemo(
+    () => buildMappingLineOptions({
+      lineRows: lineSdwtOptions.lines,
+      currentLineId: lineId,
+      currentValues: mappingOptions?.userSdwtProds,
+    }),
+    [lineId, lineSdwtOptions.lines, mappingOptions?.userSdwtProds],
+  )
+  const mappingSdwtLineOptions = React.useMemo(
+    () => buildMappingLineOptions({
+      lineRows: lineSdwtOptions.lines,
+      currentLineId: lineId,
+      currentValues: mappingOptions?.sdwtProds,
+    }),
+    [lineId, lineSdwtOptions.lines, mappingOptions?.sdwtProds],
+  )
+  const effectiveMappingOptions = React.useMemo(
+    () => ({
+      userSdwtProds: getMappingLineOptionValues(mappingUserLineOptions, mappingUserLineId),
+      sdwtProds: getMappingLineOptionValues(mappingSdwtLineOptions, mappingSdwtLineId),
+    }),
+    [mappingSdwtLineId, mappingSdwtLineOptions, mappingUserLineId, mappingUserLineOptions],
+  )
+  const mappingValueLineLabels = React.useMemo(
+    () => buildMappingValueLineLabels(lineSdwtOptions.lines, lineId),
+    [lineId, lineSdwtOptions.lines],
+  )
   const isRecipientDraftCurrent = React.useMemo(
     () => ({
       mail: sameUserSdwtProd(recipientDraftTargets.mail, selectedUserSdwtProd),
@@ -442,18 +531,85 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   }, [lineId])
 
   React.useEffect(() => {
+    setMappingUserLineId(lineId || "")
+    setMappingSdwtLineId(lineId || "")
+  }, [lineId, selectedUserSdwtProd])
+
+  React.useEffect(() => {
+    let isActive = true
+
+    if (!isRecipientSettings || !lineId) {
+      setLineSdwtOptions(EMPTY_LINE_SDWT_OPTIONS)
+      setLineSdwtOptionsError(null)
+      setIsLineSdwtOptionsLoading(false)
+      return undefined
+    }
+
+    async function loadLineSdwtOptions() {
+      setIsLineSdwtOptionsLoading(true)
+      setLineSdwtOptionsError(null)
+      try {
+        const loadedOptions = await getLineSdwtOptions()
+        if (isActive) {
+          setLineSdwtOptions(loadedOptions || EMPTY_LINE_SDWT_OPTIONS)
+        }
+      } catch (requestError) {
+        if (isActive) {
+          const message =
+            requestError instanceof Error ? requestError.message : "Failed to load line SDWT options"
+          setLineSdwtOptions(EMPTY_LINE_SDWT_OPTIONS)
+          setLineSdwtOptionsError(message)
+        }
+      } finally {
+        if (isActive) {
+          setIsLineSdwtOptionsLoading(false)
+        }
+      }
+    }
+
+    void loadLineSdwtOptions()
+    return () => {
+      isActive = false
+    }
+  }, [isRecipientSettings, lineId])
+
+  React.useEffect(() => {
+    if (!lineId) {
+      if (mappingUserLineId) setMappingUserLineId("")
+      if (mappingSdwtLineId) setMappingSdwtLineId("")
+      return
+    }
+
+    if (mappingUserLineOptions.length > 0 && !mappingUserLineOptions.some((option) => option.lineId === mappingUserLineId)) {
+      const defaultUserOption = mappingUserLineOptions.find((option) => option.lineId === lineId) || mappingUserLineOptions[0]
+      setMappingUserLineId(defaultUserOption.lineId)
+    }
+
+    if (mappingSdwtLineOptions.length > 0 && !mappingSdwtLineOptions.some((option) => option.lineId === mappingSdwtLineId)) {
+      const defaultSdwtOption = mappingSdwtLineOptions.find((option) => option.lineId === lineId) || mappingSdwtLineOptions[0]
+      setMappingSdwtLineId(defaultSdwtOption.lineId)
+    }
+  }, [lineId, mappingSdwtLineId, mappingSdwtLineOptions, mappingUserLineId, mappingUserLineOptions])
+
+  React.useEffect(() => {
     void loadMyRecipientTargets()
   }, [loadMyRecipientTargets])
 
   React.useEffect(() => {
-    setMappingDraft(buildDefaultMappingDraft({
-      targetUserSdwtProd: selectedUserSdwtProd,
-      mappingOptions,
-    }))
+    setMappingDraft((prev) => {
+      const nextUserSdwtProd = effectiveMappingOptions.userSdwtProds.includes(prev.userSdwtProd)
+        ? prev.userSdwtProd
+        : findMappingDefaultOption(effectiveMappingOptions.userSdwtProds, selectedUserSdwtProd)
+      const nextSdwtProd = effectiveMappingOptions.sdwtProds.includes(prev.sdwtProd)
+        ? prev.sdwtProd
+        : findMappingDefaultOption(effectiveMappingOptions.sdwtProds, selectedUserSdwtProd)
+      if (prev.userSdwtProd === nextUserSdwtProd && prev.sdwtProd === nextSdwtProd) return prev
+      return { userSdwtProd: nextUserSdwtProd, sdwtProd: nextSdwtProd }
+    })
     setMappingFormError(null)
     setIsCreatingMapping(false)
     setDeletingMappingKey("")
-  }, [lineId, mappingOptions, selectedUserSdwtProd])
+  }, [effectiveMappingOptions, lineId, selectedUserSdwtProd])
 
   React.useEffect(() => {
     setJiraKeyDraft(jiraKey || "")
@@ -633,6 +789,16 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
 
   const handleMappingDraftChange = React.useCallback((key, value) => {
     setMappingDraft((prev) => ({ ...prev, [key]: value }))
+  }, [])
+
+  const handleMappingUserLineChange = React.useCallback((value) => {
+    setMappingUserLineId(value)
+    setMappingFormError(null)
+  }, [])
+
+  const handleMappingSdwtLineChange = React.useCallback((value) => {
+    setMappingSdwtLineId(value)
+    setMappingFormError(null)
   }, [])
 
   const handleCreateTargetMapping = React.useCallback(async (event) => {
@@ -1332,12 +1498,21 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
       targetFormError={targetFormError}
       mappingFormError={mappingFormError}
       mappingDraft={mappingDraft}
-      mappingOptions={mappingOptions}
+      mappingOptions={effectiveMappingOptions}
+      mappingUserLineId={mappingUserLineId}
+      mappingSdwtLineId={mappingSdwtLineId}
+      mappingUserLineOptions={mappingUserLineOptions}
+      mappingSdwtLineOptions={mappingSdwtLineOptions}
+      mappingOptionLinesError={lineSdwtOptionsError}
+      mappingValueLineLabels={mappingValueLineLabels}
+      isMappingOptionLinesLoading={isLineSdwtOptionsLoading}
       userSdwtValues={userSdwtValues}
       selectedUserSdwtProd={selectedUserSdwtProd}
       selectedNotificationTarget={selectedNotificationTarget}
       onTargetDraftChange={setNewTargetDraft}
       onMappingDraftChange={handleMappingDraftChange}
+      onMappingUserLineChange={handleMappingUserLineChange}
+      onMappingSdwtLineChange={handleMappingSdwtLineChange}
       onCreateTarget={handleCreateTarget}
       onCreateTargetMapping={handleCreateTargetMapping}
       onDeleteTargetMapping={handleDeleteTargetMapping}
@@ -1433,14 +1608,14 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
           )}
 
           {isRecipientSettings ? (
-            <div className="grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] gap-3">
+            <div className="h-full min-h-0 min-w-0">
               {notificationTargetCard}
-              {alarmChannelSettingsCard}
             </div>
           ) : null}
 
           {isRecipientSettings ? (
-            <div className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] gap-3">
+            <div className="grid h-full min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-3">
+              {alarmChannelSettingsCard}
               {needToSendCommentRuleCard}
               <div className="min-h-0">{myRecipientTargetsCard}</div>
             </div>

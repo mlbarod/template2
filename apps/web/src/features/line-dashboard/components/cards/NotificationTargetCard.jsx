@@ -1,21 +1,185 @@
-import { IconArrowRight, IconPlus, IconTrash } from "@tabler/icons-react"
+import * as React from "react"
+import { IconArrowRight, IconCheck, IconChevronDown, IconPlus, IconTrash } from "@tabler/icons-react"
 import { AlertCircleIcon, BadgeCheckIcon } from "lucide-react"
 
+import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Input } from "@/components/ui/input"
 
 function resolveSelectedOptionValue(values, selectedValue) {
   const normalizedSelectedValue = String(selectedValue || "").trim()
   if (!normalizedSelectedValue) return ""
   return values.includes(normalizedSelectedValue) ? normalizedSelectedValue : ""
+}
+
+function getMappingValueLineLabel(labels, value) {
+  const key = String(value || "").trim().toLowerCase()
+  return key ? labels?.[key] || "" : ""
+}
+
+function formatMappingLineLabel(optionLineId, currentLineId) {
+  return optionLineId === currentLineId ? `현재 Line · ${optionLineId}` : optionLineId
+}
+
+function findLineOption(lineOptions, lineId) {
+  const normalizedLineId = String(lineId || "").trim().toLowerCase()
+  return (Array.isArray(lineOptions) ? lineOptions : []).find((option) => (
+    String(option?.lineId || "").trim().toLowerCase() === normalizedLineId
+  )) || null
+}
+
+function MappingAffiliationDropdown({
+  label,
+  placeholder,
+  currentLineId,
+  selectedLineId,
+  selectedValue,
+  lineOptions = [],
+  disabled,
+  onSelect,
+}) {
+  const [open, setOpen] = React.useState(false)
+  const [activeLineId, setActiveLineId] = React.useState(selectedLineId || currentLineId || "")
+
+  React.useEffect(() => {
+    if (!open) {
+      setActiveLineId(selectedLineId || currentLineId || "")
+    }
+  }, [currentLineId, open, selectedLineId])
+
+  React.useEffect(() => {
+    if (!activeLineId && lineOptions.length > 0) {
+      setActiveLineId(lineOptions[0].lineId)
+    }
+  }, [activeLineId, lineOptions])
+
+  const selectedLineLabel = selectedLineId ? formatMappingLineLabel(selectedLineId, currentLineId) : ""
+  const displayValue = selectedValue
+    ? `${selectedLineLabel ? `${selectedLineLabel} · ` : ""}${selectedValue}`
+    : placeholder
+  const activeLineOption = findLineOption(lineOptions, activeLineId)
+  const activeValues = Array.isArray(activeLineOption?.values) ? activeLineOption.values : []
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          disabled={disabled}
+          className={cn(
+            "flex h-8 w-46 min-w-0 items-center justify-between rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+            selectedValue && "border-primary bg-primary/10 text-primary",
+          )}
+          aria-label={`${label} 선택`}
+          title={displayValue}
+        >
+          <span className={cn("truncate", !selectedValue && "text-muted-foreground")}>
+            {displayValue}
+          </span>
+          <IconChevronDown className="size-4 shrink-0" aria-hidden />
+        </button>
+      </DropdownMenuTrigger>
+
+      <DropdownMenuContent align="start" className="w-96 p-2">
+        <div className="grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)] gap-2">
+          <div className="rounded-md border p-1">
+            <div className="px-1 pb-1 text-[10px] font-semibold text-muted-foreground">
+              Line 선택
+            </div>
+            <div className="flex max-h-52 flex-col gap-1 overflow-y-auto pr-1">
+              {lineOptions.length > 0 ? (
+                lineOptions.map((option) => {
+                  const isActive = option.lineId === activeLineId
+                  const isSelectedLine = option.lineId === selectedLineId
+                  return (
+                    <button
+                      key={option.lineId}
+                      type="button"
+                      onClick={(event) => {
+                        event.preventDefault()
+                        setActiveLineId(option.lineId)
+                      }}
+                      className={cn(
+                        "flex w-full items-center gap-2 rounded-md border border-transparent px-2 py-1 text-left text-xs transition-colors",
+                        isActive ? "bg-primary/10 text-primary" : "hover:bg-muted",
+                      )}
+                    >
+                      <span className="flex h-4 w-4 items-center justify-center">
+                        {isSelectedLine ? <IconCheck className="size-4 text-primary" aria-hidden /> : null}
+                      </span>
+                      <span className="truncate">{formatMappingLineLabel(option.lineId, currentLineId)}</span>
+                    </button>
+                  )
+                })
+              ) : (
+                <div className="px-2 py-1 text-[11px] text-muted-foreground">
+                  선택 가능한 Line이 없습니다.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-md border p-1">
+            <div className="flex items-center justify-between gap-2 px-1 pb-1 text-[10px] font-semibold text-muted-foreground">
+              <span>{label} 선택</span>
+              <span
+                className={cn(
+                  "min-w-0 truncate rounded px-1 py-[2px] text-[10px] font-medium",
+                  activeLineId ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground",
+                )}
+                title={activeLineId || "Line 미선택"}
+              >
+                {activeLineId ? formatMappingLineLabel(activeLineId, currentLineId) : "Line 미선택"}
+              </span>
+            </div>
+            {activeLineId ? (
+              <div className="flex max-h-52 flex-col gap-1 overflow-y-auto pr-1">
+                {activeValues.length > 0 ? (
+                  activeValues.map((value) => {
+                    const isSelected = activeLineId === selectedLineId && value === selectedValue
+                    return (
+                      <button
+                        key={`${activeLineId}-${value}`}
+                        type="button"
+                        onClick={(event) => {
+                          event.preventDefault()
+                          onSelect?.({ lineId: activeLineId, value })
+                          setOpen(false)
+                        }}
+                        className={cn(
+                          "flex w-full items-center gap-2 rounded-md border border-transparent px-2 py-1 text-left text-xs transition-colors",
+                          isSelected ? "bg-primary/10 text-primary" : "hover:bg-muted",
+                        )}
+                      >
+                        <span className="flex h-4 w-4 items-center justify-center">
+                          {isSelected ? <IconCheck className="size-4 text-primary" aria-hidden /> : null}
+                        </span>
+                        <span className="truncate">{value}</span>
+                      </button>
+                    )
+                  })
+                ) : (
+                  <div className="px-2 py-1 text-[11px] text-muted-foreground">
+                    선택 가능한 소속이 없습니다.
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="px-2 py-1 text-[11px] text-muted-foreground">
+                Line을 먼저 선택하세요.
+              </div>
+            )}
+          </div>
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
 }
 
 function LineUserSdwtBadges({ lineId, values, selectedValue, onSelect }) {
@@ -62,15 +226,25 @@ function LineUserSdwtBadges({ lineId, values, selectedValue, onSelect }) {
 }
 
 function TargetMappingSummary({
+  lineId,
   target,
   draft,
   userOptionValues = [],
   sdwtOptionValues = [],
+  mappingUserLineId,
+  mappingSdwtLineId,
+  mappingUserLineOptions = [],
+  mappingSdwtLineOptions = [],
+  mappingOptionLinesError,
+  mappingValueLineLabels = {},
+  isMappingOptionLinesLoading,
   error,
   isSaving,
   deletingMappingKey,
   canManage,
   onDraftChange,
+  onMappingUserLineChange,
+  onMappingSdwtLineChange,
   onSubmit,
   onDeleteMapping,
 }) {
@@ -84,7 +258,9 @@ function TargetMappingSummary({
 
   const mappings = Array.isArray(target.mappings) ? target.mappings : []
   const hasOptions = userOptionValues.length > 0 && sdwtOptionValues.length > 0
-  const isSelectDisabled = !canManage || isSaving || !hasOptions
+  const hasLineOptions = mappingUserLineOptions.length > 0 && mappingSdwtLineOptions.length > 0
+  const isControlDisabled = !canManage || isSaving
+  const isSelectDisabled = isControlDisabled || !hasOptions
   const selectedUserSdwtProd = resolveSelectedOptionValue(userOptionValues, draft.userSdwtProd)
   const selectedSdwtProd = resolveSelectedOptionValue(sdwtOptionValues, draft.sdwtProd)
   const canSubmitMapping = Boolean(selectedUserSdwtProd && selectedSdwtProd)
@@ -97,8 +273,18 @@ function TargetMappingSummary({
           {target.isConfigured ? "설정됨" : "미설정"}
         </Badge>
       </div>
+      {mappingOptionLinesError ? (
+        <p className="mt-1 shrink-0 text-[11px] text-destructive" role="alert">
+          Line 옵션을 불러오지 못했습니다. {mappingOptionLinesError}
+        </p>
+      ) : null}
+      {isMappingOptionLinesLoading ? (
+        <p className="mt-1 shrink-0 text-[11px] text-muted-foreground">
+          Line 옵션을 불러오는 중입니다.
+        </p>
+      ) : null}
       <form
-        className="my-1 flex min-w-0 shrink-0 items-center gap-1.5"
+        className="my-2 flex min-w-0 shrink-0 items-end gap-1.5"
         onSubmit={(event) => {
           if (!canSubmitMapping) {
             event.preventDefault()
@@ -107,42 +293,44 @@ function TargetMappingSummary({
           onSubmit(event)
         }}
       >
-        <div className="min-w-0">
-          <Select
-            value={selectedUserSdwtProd}
-            onValueChange={(value) => onDraftChange("userSdwtProd", value)}
-            disabled={isSelectDisabled}
-          >
-            <SelectTrigger className="h-8 w-40 min-w-0 text-[11px]">
-              <SelectValue placeholder="엔지니어 분임조 선택" />
-            </SelectTrigger>
-            <SelectContent className="max-h-64">
-              {userOptionValues.map((value) => (
-                <SelectItem key={`user-${value}`} value={value}>
-                  {value}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="min-w-0 space-y-1">
+          <span className="block truncate text-[10px] font-medium text-muted-foreground">
+            Engr 분임조
+          </span>
+          <MappingAffiliationDropdown
+            label="Engr"
+            placeholder="Engr 선택"
+            currentLineId={lineId}
+            selectedLineId={mappingUserLineId}
+            selectedValue={selectedUserSdwtProd}
+            lineOptions={mappingUserLineOptions}
+            disabled={isControlDisabled || !hasLineOptions}
+            onSelect={({ lineId: nextLineId, value }) => {
+              onMappingUserLineChange(nextLineId)
+              onDraftChange("userSdwtProd", value)
+            }}
+          />
         </div>
-        <IconArrowRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-        <div className="min-w-0 flex-1">
-          <Select
-            value={selectedSdwtProd}
-            onValueChange={(value) => onDraftChange("sdwtProd", value)}
-            disabled={isSelectDisabled}
-          >
-            <SelectTrigger className="h-8 w-40 min-w-0 text-[11px]">
-              <SelectValue placeholder="설비소속 분임조 선택" />
-            </SelectTrigger>
-            <SelectContent className="max-h-64">
-              {sdwtOptionValues.map((value) => (
-                <SelectItem key={`sdwt-${value}`} value={value}>
-                  {value}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <span className="flex h-8 shrink-0 items-center">
+          <IconArrowRight className="size-4 text-muted-foreground" aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1 space-y-1">
+          <span className="block truncate text-[10px] font-medium text-muted-foreground">
+            설비 분임조
+          </span>
+          <MappingAffiliationDropdown
+            label="설비"
+            placeholder="설비 선택"
+            currentLineId={lineId}
+            selectedLineId={mappingSdwtLineId}
+            selectedValue={selectedSdwtProd}
+            lineOptions={mappingSdwtLineOptions}
+            disabled={isControlDisabled || !hasLineOptions}
+            onSelect={({ lineId: nextLineId, value }) => {
+              onMappingSdwtLineChange(nextLineId)
+              onDraftChange("sdwtProd", value)
+            }}
+          />
         </div>
         <Button
           type="submit"
@@ -170,6 +358,12 @@ function TargetMappingSummary({
           mappings.map((mapping) => {
             const sdwtProd = mapping.sdwtProd || "-"
             const userSdwtProd = mapping.userSdwtProd || "-"
+            const sdwtProdLineLabel = getMappingValueLineLabel(mappingValueLineLabels, sdwtProd)
+            const userSdwtProdLineLabel = getMappingValueLineLabel(mappingValueLineLabels, userSdwtProd)
+            const sdwtProdLabel = sdwtProdLineLabel ? `${sdwtProdLineLabel} · ${sdwtProd}` : sdwtProd
+            const userSdwtProdLabel = userSdwtProdLineLabel
+              ? `${userSdwtProdLineLabel} · ${userSdwtProd}`
+              : userSdwtProd
             const mappingKey = `${userSdwtProd.trim().toLowerCase()}::${sdwtProd.trim().toLowerCase()}`
             const isDeleting = deletingMappingKey === mappingKey
             const isDeleteDisabled = !canManage || isSaving || isDeleting
@@ -179,12 +373,16 @@ function TargetMappingSummary({
                 variant="outline"
                 className="group grid max-w-full grid-cols-[minmax(5.5rem,9rem)_4.5rem_auto_minmax(5.5rem,9rem)_auto_auto] items-center gap-2 rounded-lg bg-background px-2.5 py-1.5 text-[11px] shadow-sm transition-colors hover:bg-accent/50"
               >
-                <span className="min-w-0 truncate text-center font-mono font-semibold text-foreground">{userSdwtProd}</span>
+                <span className="min-w-0 truncate text-center font-mono font-semibold text-foreground" title={userSdwtProdLabel}>
+                  {userSdwtProdLabel}
+                </span>
                 <span className="shrink-0 text-muted-foreground">분임조원이</span>
                 <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
                   <IconArrowRight className="size-3.5" aria-hidden="true" />
                 </span>
-                <span className="min-w-0 truncate text-center font-mono font-semibold">{sdwtProd}</span>
+                <span className="min-w-0 truncate text-center font-mono font-semibold" title={sdwtProdLabel}>
+                  {sdwtProdLabel}
+                </span>
                 <span className="shrink-0 text-muted-foreground">설비로 보낸 E-SOP</span>
                 <button
                   type="button"
@@ -220,11 +418,20 @@ export function NotificationTargetCard({
   mappingFormError,
   mappingDraft,
   mappingOptions = { userSdwtProds: [], sdwtProds: [] },
+  mappingUserLineId = "",
+  mappingSdwtLineId = "",
+  mappingUserLineOptions = [],
+  mappingSdwtLineOptions = [],
+  mappingOptionLinesError,
+  mappingValueLineLabels = {},
+  isMappingOptionLinesLoading = false,
   userSdwtValues,
   selectedUserSdwtProd,
   selectedNotificationTarget,
   onTargetDraftChange,
   onMappingDraftChange,
+  onMappingUserLineChange,
+  onMappingSdwtLineChange,
   onCreateTarget,
   onCreateTargetMapping,
   onDeleteTargetMapping,
@@ -255,7 +462,7 @@ export function NotificationTargetCard({
       ) : null}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-hidden">
-        <div className="min-h-0 flex-1">
+        <div className="min-h-0 flex-[0.75_1_0]">
           <LineUserSdwtBadges
             lineId={lineId}
             values={userSdwtValues}
@@ -295,17 +502,27 @@ export function NotificationTargetCard({
           </div>
         </div>
 
-        <div className="min-h-0 flex-[1.35_1_0]">
+        <div className="min-h-0 flex-[2_1_0]">
           <TargetMappingSummary
+            lineId={lineId}
             target={selectedNotificationTarget}
             draft={mappingDraft}
             userOptionValues={mappingOptions.userSdwtProds}
             sdwtOptionValues={mappingOptions.sdwtProds}
+            mappingUserLineId={mappingUserLineId}
+            mappingSdwtLineId={mappingSdwtLineId}
+            mappingUserLineOptions={mappingUserLineOptions}
+            mappingSdwtLineOptions={mappingSdwtLineOptions}
+            mappingOptionLinesError={mappingOptionLinesError}
+            mappingValueLineLabels={mappingValueLineLabels}
+            isMappingOptionLinesLoading={isMappingOptionLinesLoading}
             error={mappingFormError}
             isSaving={isCreatingMapping}
             deletingMappingKey={deletingMappingKey}
             canManage={canManageMappings}
             onDraftChange={onMappingDraftChange}
+            onMappingUserLineChange={onMappingUserLineChange}
+            onMappingSdwtLineChange={onMappingSdwtLineChange}
             onSubmit={onCreateTargetMapping}
             onDeleteMapping={onDeleteTargetMapping}
           />
