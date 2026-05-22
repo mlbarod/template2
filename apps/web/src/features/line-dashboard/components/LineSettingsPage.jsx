@@ -11,7 +11,6 @@ import { NotificationTargetCard } from "./cards/NotificationTargetCard"
 import { RecipientSettingsCards } from "./sections/RecipientSettingsCards"
 import {
   fetchAccountUserPool,
-  getLineSdwtOptions,
   fetchMyNotificationRecipientTargets,
   fetchNotificationRecipientPermissions,
 } from "../api"
@@ -53,8 +52,6 @@ import {
   mergeRecipientUsers,
   sameUserSdwtProd,
 } from "../utils/lineSettings"
-
-const EMPTY_LINE_SDWT_OPTIONS = { lines: [], userSdwtProds: [] }
 
 function normalizeMappingOptionValue(value) {
   return typeof value === "string" ? value.trim() : String(value ?? "").trim()
@@ -149,6 +146,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     notificationTargets,
     userSdwtValues,
     mappingOptions,
+    mappingOptionLines,
     jiraKey,
     channelEnabled,
     needToSendRule,
@@ -200,9 +198,6 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   const [mappingFormError, setMappingFormError] = React.useState(null)
   const [mappingUserLineId, setMappingUserLineId] = React.useState("")
   const [mappingSdwtLineId, setMappingSdwtLineId] = React.useState("")
-  const [lineSdwtOptions, setLineSdwtOptions] = React.useState(EMPTY_LINE_SDWT_OPTIONS)
-  const [lineSdwtOptionsError, setLineSdwtOptionsError] = React.useState(null)
-  const [isLineSdwtOptionsLoading, setIsLineSdwtOptionsLoading] = React.useState(false)
   const [isCreatingMapping, setIsCreatingMapping] = React.useState(false)
   const [deletingMappingKey, setDeletingMappingKey] = React.useState("")
   const [jiraKeyDraft, setJiraKeyDraft] = React.useState("")
@@ -258,19 +253,19 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   const canManageMappings = Boolean(selectedNotificationTarget && isGlobalOperator)
   const mappingUserLineOptions = React.useMemo(
     () => buildMappingLineOptions({
-      lineRows: lineSdwtOptions.lines,
+      lineRows: mappingOptionLines,
       currentLineId: lineId,
       currentValues: mappingOptions?.userSdwtProds,
     }),
-    [lineId, lineSdwtOptions.lines, mappingOptions?.userSdwtProds],
+    [lineId, mappingOptionLines, mappingOptions?.userSdwtProds],
   )
   const mappingSdwtLineOptions = React.useMemo(
     () => buildMappingLineOptions({
-      lineRows: lineSdwtOptions.lines,
+      lineRows: mappingOptionLines,
       currentLineId: lineId,
       currentValues: mappingOptions?.sdwtProds,
     }),
-    [lineId, lineSdwtOptions.lines, mappingOptions?.sdwtProds],
+    [lineId, mappingOptionLines, mappingOptions?.sdwtProds],
   )
   const effectiveMappingOptions = React.useMemo(
     () => ({
@@ -280,8 +275,8 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     [mappingSdwtLineId, mappingSdwtLineOptions, mappingUserLineId, mappingUserLineOptions],
   )
   const mappingValueLineLabels = React.useMemo(
-    () => buildMappingValueLineLabels(lineSdwtOptions.lines, lineId),
-    [lineId, lineSdwtOptions.lines],
+    () => buildMappingValueLineLabels(mappingOptionLines, lineId),
+    [lineId, mappingOptionLines],
   )
   const isRecipientDraftCurrent = React.useMemo(
     () => ({
@@ -535,44 +530,6 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     setMappingUserLineId(lineId || "")
     setMappingSdwtLineId(lineId || "")
   }, [lineId, selectedUserSdwtProd])
-
-  React.useEffect(() => {
-    let isActive = true
-
-    if (!isRecipientSettings || !lineId) {
-      setLineSdwtOptions(EMPTY_LINE_SDWT_OPTIONS)
-      setLineSdwtOptionsError(null)
-      setIsLineSdwtOptionsLoading(false)
-      return undefined
-    }
-
-    async function loadLineSdwtOptions() {
-      setIsLineSdwtOptionsLoading(true)
-      setLineSdwtOptionsError(null)
-      try {
-        const loadedOptions = await getLineSdwtOptions()
-        if (isActive) {
-          setLineSdwtOptions(loadedOptions || EMPTY_LINE_SDWT_OPTIONS)
-        }
-      } catch (requestError) {
-        if (isActive) {
-          const message =
-            requestError instanceof Error ? requestError.message : "Failed to load line SDWT options"
-          setLineSdwtOptions(EMPTY_LINE_SDWT_OPTIONS)
-          setLineSdwtOptionsError(message)
-        }
-      } finally {
-        if (isActive) {
-          setIsLineSdwtOptionsLoading(false)
-        }
-      }
-    }
-
-    void loadLineSdwtOptions()
-    return () => {
-      isActive = false
-    }
-  }, [isRecipientSettings, lineId])
 
   React.useEffect(() => {
     if (!lineId) {
@@ -1508,9 +1465,9 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
       mappingSdwtLineId={mappingSdwtLineId}
       mappingUserLineOptions={mappingUserLineOptions}
       mappingSdwtLineOptions={mappingSdwtLineOptions}
-      mappingOptionLinesError={lineSdwtOptionsError}
+      mappingOptionLinesError={null}
       mappingValueLineLabels={mappingValueLineLabels}
-      isMappingOptionLinesLoading={isLineSdwtOptionsLoading}
+      isMappingOptionLinesLoading={false}
       userSdwtValues={userSdwtValues}
       selectedUserSdwtProd={selectedUserSdwtProd}
       selectedNotificationTarget={selectedNotificationTarget}

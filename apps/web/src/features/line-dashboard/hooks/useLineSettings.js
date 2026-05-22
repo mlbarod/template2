@@ -21,6 +21,7 @@ import { sortEntries } from "../utils/lineSettings"
 
 const EMPTY_TIMESTAMP = "-"
 const EMPTY_MAPPING_OPTIONS = { userSdwtProds: [], sdwtProds: [] }
+const EMPTY_MAPPING_OPTION_LINES = []
 const DEFAULT_CHANNEL_ENABLED = { jira: true, messenger: true, mail: true }
 const DEFAULT_NEED_TO_SEND_RULE = { commentKeyword: "", enabled: false, ignoreSampleType: false }
 const DEFAULT_MESSENGER_FORCE_NEW_CHATROOM = false
@@ -32,6 +33,7 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
   const [entries, setEntries] = React.useState([])
   const [userSdwtValues, setUserSdwtValues] = React.useState([])
   const [mappingOptions, setMappingOptions] = React.useState(EMPTY_MAPPING_OPTIONS)
+  const [mappingOptionLines, setMappingOptionLines] = React.useState(EMPTY_MAPPING_OPTION_LINES)
   const [notificationTargets, setNotificationTargets] = React.useState([])
   const [jiraKey, setJiraKey] = React.useState("")
   const [channelEnabled, setChannelEnabled] = React.useState(DEFAULT_CHANNEL_ENABLED)
@@ -69,6 +71,7 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
     setEntries([])
     setUserSdwtValues([])
     setMappingOptions(EMPTY_MAPPING_OPTIONS)
+    setMappingOptionLines(EMPTY_MAPPING_OPTION_LINES)
     setNotificationTargets([])
     setJiraKey("")
     setChannelEnabled(DEFAULT_CHANNEL_ENABLED)
@@ -201,6 +204,7 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
         setNotificationTargets(targetsResult.value?.targets || [])
         setUserSdwtValues(targetsResult.value?.targetUserSdwtProds || [])
         setMappingOptions(targetsResult.value?.mappingOptions || EMPTY_MAPPING_OPTIONS)
+        setMappingOptionLines(targetsResult.value?.mappingOptionLines || EMPTY_MAPPING_OPTION_LINES)
       } else {
         const message =
           targetsResult.reason instanceof Error
@@ -210,6 +214,7 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
         setNotificationTargets([])
         setUserSdwtValues([])
         setMappingOptions(EMPTY_MAPPING_OPTIONS)
+        setMappingOptionLines(EMPTY_MAPPING_OPTION_LINES)
         ok = false
       }
 
@@ -481,6 +486,28 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
           const values = Array.from(new Set([target.targetUserSdwtProd, ...prev]))
           return values.sort()
         })
+        setMappingOptions((prev) => {
+          const values = Array.from(new Set([target.targetUserSdwtProd, ...(prev?.userSdwtProds || [])])).sort()
+          return { userSdwtProds: values, sdwtProds: values }
+        })
+        setMappingOptionLines((prev) => {
+          const normalizedLineId = String(target.lineId || lineId || "").trim()
+          if (!normalizedLineId) return prev
+          const nextValue = target.targetUserSdwtProd
+          let found = false
+          const nextLines = (Array.isArray(prev) ? prev : []).map((line) => {
+            if (String(line?.lineId || "").trim().toLowerCase() !== normalizedLineId.toLowerCase()) {
+              return line
+            }
+            found = true
+            return {
+              lineId: line.lineId,
+              userSdwtProds: Array.from(new Set([nextValue, ...(line.userSdwtProds || [])])).sort(),
+            }
+          })
+          if (found) return nextLines
+          return [...nextLines, { lineId: normalizedLineId, userSdwtProds: [nextValue] }]
+        })
       }
       return target
     },
@@ -559,6 +586,7 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
     entries,
     userSdwtValues,
     mappingOptions,
+    mappingOptionLines,
     notificationTargets,
     jiraKey,
     channelEnabled,

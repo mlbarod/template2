@@ -3012,8 +3012,8 @@ class DroneSopTargetRecipientTests(TestCase):
         targets = response.json()["targets"]
         self.assertEqual([row["targetUserSdwtProd"] for row in targets], ["DIFF_A"])
 
-    def test_notification_target_endpoint_uses_drone_targets_and_observed_options(self) -> None:
-        """알림 target 목록은 Drone target만, 옵션은 mapping/SOP 관측값까지 반환합니다."""
+    def test_notification_target_endpoint_uses_drone_targets_for_mapping_options(self) -> None:
+        """알림 target 및 지정 조합 옵션은 Drone target 기준으로 반환합니다."""
 
         _upsert_target(
             line_id="L1",
@@ -3021,6 +3021,10 @@ class DroneSopTargetRecipientTests(TestCase):
             jira_enabled=False,
             messenger_enabled=True,
             mail_enabled=False,
+        )
+        _upsert_target(
+            line_id="L2",
+            target_user_sdwt_prod="OTHER_LINE_TARGET",
         )
         _ensure_target_mapping(
             sdwt_prod="SDWT_A",
@@ -3079,11 +3083,18 @@ class DroneSopTargetRecipientTests(TestCase):
         )
         self.assertEqual(
             payload["mappingOptions"]["userSdwtProds"],
-            ["CUSTOM_TARGET", "SOP_ONLY_U", "USER_A"],
+            ["CUSTOM_TARGET"],
         )
         self.assertEqual(
             payload["mappingOptions"]["sdwtProds"],
-            ["CUSTOM_TARGET", "SDWT_A", "SOP_ONLY_S"],
+            ["CUSTOM_TARGET"],
+        )
+        self.assertEqual(
+            payload["mappingOptionLines"],
+            [
+                {"lineId": "L1", "userSdwtProds": ["CUSTOM_TARGET"]},
+                {"lineId": "L2", "userSdwtProds": ["OTHER_LINE_TARGET"]},
+            ],
         )
 
     def test_notification_target_endpoint_creates_custom_target(self) -> None:

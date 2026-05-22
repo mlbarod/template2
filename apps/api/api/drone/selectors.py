@@ -891,7 +891,7 @@ def affiliation_exists_for_user_sdwt_prod(*, user_sdwt_prod: str) -> bool:
 
 
 def list_drone_sop_mapping_option_values_for_line(*, line_id: str) -> dict[str, list[str]]:
-    """라인별 Drone 지정 조합 드롭다운 옵션을 조회합니다.
+    """라인별 Drone target 기준 지정 조합 드롭다운 옵션을 조회합니다.
 
     인자:
         line_id: 라인 ID.
@@ -914,42 +914,47 @@ def list_drone_sop_mapping_option_values_for_line(*, line_id: str) -> dict[str, 
         .values_list("target_user_sdwt_prod", flat=True)
         .distinct()
     )
-    mapping_user_values = list(
-        DroneSopTargetMapping.objects.filter(target__line_id__iexact=normalized_line_id)
-        .exclude(user_sdwt_prod__isnull=True)
-        .exclude(user_sdwt_prod__exact="")
-        .values_list("user_sdwt_prod", flat=True)
-        .distinct()
-    )
-    mapping_sdwt_values = list(
-        DroneSopTargetMapping.objects.filter(target__line_id__iexact=normalized_line_id)
-        .exclude(sdwt_prod__isnull=True)
-        .exclude(sdwt_prod__exact="")
-        .values_list("sdwt_prod", flat=True)
-        .distinct()
-    )
-    observed_user_values = list(
-        DroneSOP.objects.filter(line_id__iexact=normalized_line_id)
-        .exclude(user_sdwt_prod__isnull=True)
-        .exclude(user_sdwt_prod__exact="")
-        .values_list("user_sdwt_prod", flat=True)
-        .distinct()
-    )
-    observed_sdwt_values = list(
-        DroneSOP.objects.filter(line_id__iexact=normalized_line_id)
-        .exclude(sdwt_prod__isnull=True)
-        .exclude(sdwt_prod__exact="")
-        .values_list("sdwt_prod", flat=True)
-        .distinct()
-    )
+    options = collapse_display_values(target_values)
     return {
-        "userSdwtProds": collapse_display_values(
-            [*target_values, *mapping_user_values, *observed_user_values],
-        ),
-        "sdwtProds": collapse_display_values(
-            [*target_values, *mapping_sdwt_values, *observed_sdwt_values],
-        ),
+        "userSdwtProds": options,
+        "sdwtProds": options,
     }
+
+
+def list_drone_sop_mapping_option_lines() -> list[dict[str, object]]:
+    """Drone target 기준 line별 지정 조합 드롭다운 옵션을 조회합니다.
+
+    반환:
+        [{"lineId": "...", "userSdwtProds": [...]}] 형태의 옵션 목록.
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+    """
+
+    rows = (
+        DroneSopTarget.objects.exclude(line_id__isnull=True)
+        .exclude(line_id__exact="")
+        .exclude(target_user_sdwt_prod__isnull=True)
+        .exclude(target_user_sdwt_prod__exact="")
+        .values("line_id", "target_user_sdwt_prod")
+        .distinct()
+        .order_by("line_id", "target_user_sdwt_prod")
+    )
+    grouped: dict[str, list[str]] = {}
+    for row in rows:
+        line_id = normalize_text(row.get("line_id"))
+        target_value = normalize_text(row.get("target_user_sdwt_prod"))
+        if not line_id or not target_value:
+            continue
+        grouped.setdefault(line_id, []).append(target_value)
+
+    return [
+        {
+            "lineId": line_id,
+            "userSdwtProds": collapse_display_values(values),
+        }
+        for line_id, values in grouped.items()
+    ]
 
 
 def list_drone_sop_target_user_sdwt_prod_values() -> list[str]:

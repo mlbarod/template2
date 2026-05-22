@@ -98,12 +98,15 @@ export function RecipientChannelCard({
           ) : recipients.length === 0 ? (
             <div className="px-3 py-6 text-center text-xs text-muted-foreground">{config.emptyText}</div>
           ) : (
-            recipients.map((recipient) => (
+            recipients.map((recipient, index) => (
               <div
                 key={getRecipientKey(recipient)}
                 className="flex min-w-0 items-center justify-between gap-2 border-b px-3 py-2 last:border-b-0"
               >
-                <div className="min-w-0">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="w-5 shrink-0 text-right text-xs font-medium text-muted-foreground">
+                    {index + 1}.
+                  </span>
                   <div className="truncate text-xs font-medium">{getRecipientListText(recipient)}</div>
                 </div>
                 <Button

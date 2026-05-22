@@ -62,6 +62,17 @@ function normalizeMappingOptions(rawOptions) {
   }
 }
 
+function normalizeMappingOptionLines(values) {
+  return (Array.isArray(values) ? values : [])
+    .map((line) => {
+      const lineId = typeof line?.lineId === "string" ? line.lineId.trim() : ""
+      const userSdwtProds = normalizeTextValues(line?.userSdwtProds)
+      if (!lineId || userSdwtProds.length === 0) return null
+      return { lineId, userSdwtProds }
+    })
+    .filter(Boolean)
+}
+
 function normalizeTargetMappings(values) {
   return (Array.isArray(values) ? values : [])
     .map((mapping) => {
@@ -124,6 +135,7 @@ export async function fetchNotificationTargets({ lineId }) {
       targets: [],
       targetUserSdwtProds: [],
       mappingOptions: { userSdwtProds: [], sdwtProds: [] },
+      mappingOptionLines: [],
     }
   }
 
@@ -147,6 +159,7 @@ export async function fetchNotificationTargets({ lineId }) {
     targets,
     targetUserSdwtProds: targets.map((target) => target.targetUserSdwtProd),
     mappingOptions: normalizeMappingOptions(payload?.mappingOptions),
+    mappingOptionLines: normalizeMappingOptionLines(payload?.mappingOptionLines),
   }
 }
 

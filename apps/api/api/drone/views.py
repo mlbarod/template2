@@ -774,12 +774,14 @@ class DroneNotificationTargetView(DroneAuthenticatedView):
 
         targets = selectors.list_drone_sop_notification_targets_for_line(line_id=line_id)
         mapping_options = selectors.list_drone_sop_mapping_option_values_for_line(line_id=line_id)
+        mapping_option_lines = selectors.list_drone_sop_mapping_option_lines()
         return JsonResponse(
             {
                 "lineId": line_id,
                 "targets": targets,
                 "targetUserSdwtProds": [row["targetUserSdwtProd"] for row in targets],
                 "mappingOptions": mapping_options,
+                "mappingOptionLines": mapping_option_lines,
             }
         )
 

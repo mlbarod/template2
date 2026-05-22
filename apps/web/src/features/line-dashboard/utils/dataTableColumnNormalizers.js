@@ -22,7 +22,10 @@ function normalizeDefectUrlEntry(entry, index) {
   if (typeof entry === "object" && !Array.isArray(entry)) {
     const href = toHttpUrl(entry.map_url)
     if (!href) return null
-    const label = String(entry.label ?? entry.step_seq ?? entry.step_desc ?? index + 1).trim()
+    const stepSeq = String(entry.step_seq ?? "").trim()
+    const stepDesc = String(entry.step_desc ?? "").trim()
+    const combinedStepLabel = stepSeq && stepDesc ? `${stepSeq} - ${stepDesc}` : ""
+    const label = String(combinedStepLabel || entry.label || stepSeq || stepDesc || index + 1).trim()
     const imageRows = Array.isArray(entry.image_rows) ? entry.image_rows : []
     const imageUrls = Array.isArray(entry.image_urls) ? entry.image_urls.map(toHttpUrl).filter(Boolean) : []
     const mapFile = String(entry.map_file ?? "").trim()
