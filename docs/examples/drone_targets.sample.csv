@@ -1,3 +1,3 @@
-department,line,target_user_sdwt_prod,recipient_user_sdwt_prod,jira_enabled,jira_template_key,jira_project_key,messenger_enabled,messenger_template_key,messenger_chatroom_id,messenger_force_new_chatroom,mail_enabled,mail_template_key,mapping_sdwt_prod,mapping_user_sdwt_prod,needtosend_enabled,needtosend_comment_keyword,needtosend_ignore_sample_type
-ENGR,L1,ETCH_A,ETCH_A,false,common,DRONE,true,common,,true,true,common,ETCH_A,ETCH_A,false,$SETUP_EQP,false
-설비,L1,EQP_A,EQP_A,false,common,DRONE,true,common,,true,true,common,EQP_A,EQP_A,false,$SETUP_EQP,false
+department,line,target_user_sdwt_prod,recipient_user_sdwt_prod,jira_enabled,jira_template_key,jira_project_key,messenger_enabled,messenger_template_key,messenger_chatroom_id,messenger_force_new_chatroom,mail_enabled,mail_template_key,mappings,needtosend_enabled,needtosend_comment_keyword,needtosend_ignore_sample_type
+ENGR,L1,ETCH_A,ETCH_A,false,common,DRONE,true,common,,true,true,common,"[{""sdwt_prod"":""ETCH_A"",""user_sdwt_prod"":""ETCH_A""}]",false,$SETUP_EQP,false
+설비,L1,EQP_A,EQP_A,false,common,DRONE,true,common,,true,true,common,"[{""sdwt_prod"":""EQP_A"",""user_sdwt_prod"":""EQP_A""}]",false,$SETUP_EQP,false

@@ -3800,8 +3800,8 @@ class DroneSopJsonTargetSeedTests(TestCase):
         self.assertIn("dry-run:", output.getvalue())
         self.assertFalse(DroneSopTarget.objects.filter(target_user_sdwt_prod="SEED_A").exists())
 
-    def test_seed_targets_from_csv_groups_multiple_mapping_rows(self) -> None:
-        """CSV seed command는 같은 target의 여러 mapping 행을 하나로 묶습니다."""
+    def test_seed_targets_from_csv_applies_mappings_json_cell(self) -> None:
+        """CSV seed command는 mappings JSON 셀의 여러 mapping을 생성합니다."""
 
         csv_body = "\n".join(
             [
@@ -3810,18 +3810,15 @@ class DroneSopJsonTargetSeedTests(TestCase):
                     "jira_enabled,jira_template_key,jira_project_key,"
                     "messenger_enabled,messenger_template_key,messenger_chatroom_id,"
                     "messenger_force_new_chatroom,mail_enabled,mail_template_key,"
-                    "mapping_sdwt_prod,mapping_user_sdwt_prod,"
+                    "mappings,"
                     "needtosend_enabled,needtosend_comment_keyword,needtosend_ignore_sample_type"
                 ),
                 (
                     "Dept,LCSV,TARGET_A,SEED_A,true,jira-custom,DRONE,"
                     "false,msg-custom,12345,false,true,mail-custom,"
-                    "SOURCE_SDWT,SOURCE_USER,true,$AUTO_SEND,true"
-                ),
-                (
-                    "Dept,LCSV,TARGET_A,SEED_A,true,jira-custom,DRONE,"
-                    "false,msg-custom,12345,false,true,mail-custom,"
-                    "SOURCE_ONLY,,true,$AUTO_SEND,true"
+                    '"[{""sdwt_prod"":""SOURCE_SDWT"",""user_sdwt_prod"":""SOURCE_USER""},'
+                    '{""sdwt_prod"":""SOURCE_ONLY"",""user_sdwt_prod"":""""}]",'
+                    "true,$AUTO_SEND,true"
                 ),
             ]
         )
@@ -3873,14 +3870,14 @@ class DroneSopJsonTargetSeedTests(TestCase):
         self.assertEqual(target.needtosend_rule.comment_keyword, "$AUTO_SEND")
         self.assertTrue(target.needtosend_rule.ignore_sample_type)
 
-    def test_seed_targets_from_csv_rejects_conflicting_repeated_target_rows(self) -> None:
-        """CSV seed command는 같은 target의 설정 충돌을 오류로 처리합니다."""
+    def test_seed_targets_from_csv_rejects_duplicate_target_rows(self) -> None:
+        """CSV seed command는 같은 target의 반복 row를 오류로 처리합니다."""
 
         csv_body = "\n".join(
             [
-                "department,line,target_user_sdwt_prod,mapping_sdwt_prod,mapping_user_sdwt_prod,mail_enabled",
-                "Dept,LCSV,TARGET_A,SOURCE_A,USER_A,true",
-                "Dept,LCSV,TARGET_A,SOURCE_B,USER_B,false",
+                "department,line,target_user_sdwt_prod,mappings",
+                'Dept,LCSV,TARGET_A,"[{""sdwt_prod"":""SOURCE_A"",""user_sdwt_prod"":""USER_A""}]"',
+                'Dept,LCSV,TARGET_A,"[{""sdwt_prod"":""SOURCE_B"",""user_sdwt_prod"":""USER_B""}]"',
             ]
         )
         with NamedTemporaryFile("w", encoding="utf-8", suffix=".csv", delete=False) as handle:
@@ -3889,7 +3886,7 @@ class DroneSopJsonTargetSeedTests(TestCase):
             file_path = handle.name
 
         try:
-            with self.assertRaisesMessage(CommandError, "conflicts with previous rows"):
+            with self.assertRaisesMessage(CommandError, "duplicates target_user_sdwt_prod"):
                 call_command("seed_drone_targets_from_file", "--file", file_path)
         finally:
             os.unlink(file_path)

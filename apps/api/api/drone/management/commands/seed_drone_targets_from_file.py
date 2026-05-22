@@ -140,31 +140,36 @@ def _build_csv_needtosend_rule(row: dict[str, Any], *, row_index: int) -> dict[s
     return rule
 
 
-def _build_csv_mapping(row: dict[str, Any]) -> dict[str, str] | None:
-    """CSV mapping 컬럼을 mapping entry로 변환합니다."""
+def _build_csv_mappings(row: dict[str, Any], *, row_index: int) -> list[dict[str, str]] | None:
+    """CSV mappings JSON 셀을 기존 JSON mappings 구조로 변환합니다."""
 
-    sdwt_prod = _normalize_text(row.get("mapping_sdwt_prod"))
-    user_sdwt_prod = _normalize_text(row.get("mapping_user_sdwt_prod"))
-    if not sdwt_prod and not user_sdwt_prod:
+    raw_mappings = _normalize_text(row.get("mappings"))
+    if not raw_mappings:
         return None
-    return {"sdwt_prod": sdwt_prod, "user_sdwt_prod": user_sdwt_prod}
 
+    try:
+        payload = json.loads(raw_mappings)
+    except json.JSONDecodeError as exc:
+        raise CommandError(f"CSV row {row_index}.mappings must be a JSON array") from exc
+    if not isinstance(payload, list):
+        raise CommandError(f"CSV row {row_index}.mappings must be a JSON array")
 
-def _csv_target_signature(row: dict[str, Any]) -> dict[str, Any]:
-    """동일 target의 반복 행에서 mapping 외 설정 충돌을 검출할 기준을 만듭니다."""
-
-    return {
-        "department": row.get("department"),
-        "line_id": row.get("line_id"),
-        "target_user_sdwt_prod": row.get("target_user_sdwt_prod"),
-        "recipient_user_sdwt_prod": row.get("recipient_user_sdwt_prod"),
-        "channels": row.get("channels"),
-        "needtosend_rule": row.get("needtosend_rule"),
-    }
+    mappings: list[dict[str, str]] = []
+    for mapping_index, mapping in enumerate(payload, start=1):
+        if not isinstance(mapping, dict):
+            raise CommandError(f"CSV row {row_index}.mappings[{mapping_index}] must be an object")
+        sdwt_prod = _normalize_text(mapping.get("sdwt_prod"))
+        user_sdwt_prod = _normalize_text(mapping.get("user_sdwt_prod"))
+        if not sdwt_prod and not user_sdwt_prod:
+            raise CommandError(
+                f"CSV row {row_index}.mappings[{mapping_index}] requires sdwt_prod or user_sdwt_prod"
+            )
+        mappings.append({"sdwt_prod": sdwt_prod, "user_sdwt_prod": user_sdwt_prod})
+    return mappings
 
 
 def _load_csv_seed_rows(*, path: Path) -> list[dict[str, Any]]:
-    """CSV 파일을 읽어 target별 mapping을 묶은 seed row 목록으로 변환합니다."""
+    """CSV 파일을 읽어 target row 목록으로 변환합니다."""
 
     try:
         with path.open("r", encoding="utf-8-sig", newline="") as handle:
@@ -172,8 +177,8 @@ def _load_csv_seed_rows(*, path: Path) -> list[dict[str, Any]]:
             if not reader.fieldnames:
                 raise CommandError("CSV file must include a header row")
 
-            rows_by_target: dict[str, dict[str, Any]] = {}
-            signatures_by_target: dict[str, dict[str, Any]] = {}
+            rows: list[dict[str, Any]] = []
+            seen_targets: set[str] = set()
             for row_index, raw_row in enumerate(reader, start=2):
                 row = dict(raw_row)
                 line = _normalize_text(row.get("line")) or _normalize_text(row.get("line_id"))
@@ -185,6 +190,13 @@ def _load_csv_seed_rows(*, path: Path) -> list[dict[str, Any]]:
                 if not target_user_sdwt_prod:
                     raise CommandError(f"CSV row {row_index}.target_user_sdwt_prod is required")
 
+                target_key = target_user_sdwt_prod.casefold()
+                if target_key in seen_targets:
+                    raise CommandError(
+                        f"CSV row {row_index} duplicates target_user_sdwt_prod={target_user_sdwt_prod}"
+                    )
+                seen_targets.add(target_key)
+
                 seed_row = {
                     "department": _normalize_text(row.get("department")),
                     "line_id": line,
@@ -192,34 +204,14 @@ def _load_csv_seed_rows(*, path: Path) -> list[dict[str, Any]]:
                     "recipient_user_sdwt_prod": _normalize_text(row.get("recipient_user_sdwt_prod")),
                     "channels": _build_csv_channels(row, row_index=row_index),
                     "needtosend_rule": _build_csv_needtosend_rule(row, row_index=row_index),
-                    "mappings": [],
                 }
-                mapping = _build_csv_mapping(row)
-                if mapping is not None:
-                    seed_row["mappings"].append(mapping)
-
-                target_key = target_user_sdwt_prod.casefold()
-                signature = _csv_target_signature(seed_row)
-                existing_signature = signatures_by_target.get(target_key)
-                if existing_signature is not None and existing_signature != signature:
-                    raise CommandError(
-                        f"CSV row {row_index} conflicts with previous rows for target_user_sdwt_prod="
-                        f"{target_user_sdwt_prod}"
-                    )
-
-                existing_row = rows_by_target.get(target_key)
-                if existing_row is None:
-                    rows_by_target[target_key] = seed_row
-                    signatures_by_target[target_key] = signature
-                    continue
-                existing_row["mappings"].extend(seed_row["mappings"])
+                mappings = _build_csv_mappings(row, row_index=row_index)
+                if mappings is not None:
+                    seed_row["mappings"] = mappings
+                rows.append(seed_row)
     except OSError as exc:
         raise CommandError(f"failed to read file: {path}") from exc
 
-    rows = list(rows_by_target.values())
-    for row in rows:
-        if not row["mappings"]:
-            row.pop("mappings")
     return rows
 
 
