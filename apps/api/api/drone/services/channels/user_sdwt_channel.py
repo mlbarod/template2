@@ -11,7 +11,6 @@ from typing import Any
 
 from django.db import IntegrityError, transaction
 
-from ... import selectors
 from ...models import DroneSopNeedToSendRule, DroneSopTarget, DroneSopTargetChannelConfig
 from .normalization import UNSET as _UNSET, same_text as _same_text
 from .user_sdwt_upsert import (
@@ -322,13 +321,6 @@ def upsert_drone_sop_user_sdwt_channel(
     )
     if not fields.has_any_field():
         raise ValueError("at least one field is required")
-    if (
-        fields.line_id is not _UNSET
-        and fields.line_id
-        and not selectors.line_id_exists(line_id=fields.line_id)
-    ):
-        raise ValueError("line_id must be an existing line")
-
     # -----------------------------------------------------------------------------
     # 2) 행 조회/생성 및 업데이트
     # -----------------------------------------------------------------------------

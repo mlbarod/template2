@@ -13,11 +13,12 @@ from typing import Any, Optional, Sequence
 
 from api.common.services.db import run_query
 from .table_filters import (
+    DRONE_TARGET_MAPPING_TABLE_NAME,
+    DRONE_TARGET_TABLE_NAME,
     LINE_FILTER_MODE_LEGACY,
     LINE_FILTER_MODE_SDWT,
     LINE_FILTER_MODE_TARGET_USER_SDWT,
     LINE_FILTER_MODE_USER_SDWT,
-    LINE_SDWT_TABLE_NAME,
     build_date_range_filters,
     build_line_filters,
     ensure_date_bounds,
@@ -131,7 +132,8 @@ def resolve_table_schema(
 __all__ = [
     "DATE_COLUMN_CANDIDATES",
     "DEFAULT_TABLE",
-    "LINE_SDWT_TABLE_NAME",
+    "DRONE_TARGET_MAPPING_TABLE_NAME",
+    "DRONE_TARGET_TABLE_NAME",
     "SAFE_IDENTIFIER",
     "TableSchema",
     "build_date_range_filters",

@@ -6,7 +6,8 @@ import re
 from datetime import datetime
 from typing import Any, Optional, Sequence
 
-LINE_SDWT_TABLE_NAME = "account_affiliation"
+DRONE_TARGET_TABLE_NAME = "drone_sop_target"
+DRONE_TARGET_MAPPING_TABLE_NAME = "drone_sop_target_mapping"
 LINE_FILTER_MODE_LEGACY = "legacy"
 LINE_FILTER_MODE_SDWT = "sdwt_prod"
 LINE_FILTER_MODE_USER_SDWT = "user_sdwt_prod"
@@ -76,17 +77,55 @@ def find_column(column_names: Sequence[str], target: str) -> Optional[str]:
     return None
 
 
-def _build_line_sdwt_subquery_filter(*, column_name: str) -> str:
-    """account_affiliation(line, user_sdwt_prod) 서브쿼리 기반 필터를 생성합니다."""
+def _build_drone_target_subquery_filter(*, column_name: str) -> str:
+    """Drone target 소유 line 기준 target 필터를 생성합니다."""
 
     return (
         "LOWER({col}) IN ("
-        "SELECT LOWER(user_sdwt_prod) FROM {table} "
-        "WHERE line = %s "
-        "AND user_sdwt_prod IS NOT NULL "
-        "AND user_sdwt_prod <> ''"
-        ")".format(col=column_name, table=LINE_SDWT_TABLE_NAME)
+        "SELECT LOWER(target_user_sdwt_prod) FROM {table} "
+        "WHERE LOWER(line_id) = LOWER(%s) "
+        "AND target_user_sdwt_prod IS NOT NULL "
+        "AND target_user_sdwt_prod <> ''"
+        ")".format(col=column_name, table=DRONE_TARGET_TABLE_NAME)
     )
+
+
+def _build_drone_mapping_subquery_filter(*, column_name: str, mapping_column: str) -> str:
+    """Drone target mapping 기준 source 소속 필터를 생성합니다."""
+
+    return (
+        "LOWER({col}) IN ("
+        "SELECT LOWER(mapping.{mapping_column}) "
+        "FROM {mapping_table} mapping "
+        "JOIN {target_table} target ON target.id = mapping.target_id "
+        "WHERE LOWER(target.line_id) = LOWER(%s) "
+        "AND mapping.{mapping_column} IS NOT NULL "
+        "AND mapping.{mapping_column} <> ''"
+        ")"
+    ).format(
+        col=column_name,
+        mapping_column=mapping_column,
+        mapping_table=DRONE_TARGET_MAPPING_TABLE_NAME,
+        target_table=DRONE_TARGET_TABLE_NAME,
+    )
+
+
+def _append_line_filter(
+    *,
+    filters: list[str],
+    params: list[Any],
+    base_filter: str,
+    line_column: str | None,
+    line_id: str,
+) -> None:
+    """Drone target 필터와 원본 line_id fallback을 함께 추가합니다."""
+
+    if line_column:
+        filters.append(f"({base_filter} OR LOWER({line_column}) = LOWER(%s))")
+        params.extend([line_id, line_id])
+        return
+    filters.append(base_filter)
+    params.append(line_id)
 
 
 def build_line_filters(
@@ -107,56 +146,106 @@ def build_line_filters(
         filter_mode,
         default=LINE_FILTER_MODE_LEGACY,
     )
+    line_col = find_column(column_names, "line_id")
 
     if normalized_mode == LINE_FILTER_MODE_TARGET_USER_SDWT:
         target_col = find_column(column_names, "target_user_sdwt_prod")
         if target_col:
-            filters.append(_build_line_sdwt_subquery_filter(column_name=target_col))
-            params.append(line_id)
+            _append_line_filter(
+                filters=filters,
+                params=params,
+                base_filter=_build_drone_target_subquery_filter(column_name=target_col),
+                line_column=line_col,
+                line_id=line_id,
+            )
             return {"filters": filters, "params": params}
 
         user_sdwt_col = find_column(column_names, "user_sdwt_prod")
         if user_sdwt_col:
-            filters.append(_build_line_sdwt_subquery_filter(column_name=user_sdwt_col))
-            params.append(line_id)
+            _append_line_filter(
+                filters=filters,
+                params=params,
+                base_filter=_build_drone_mapping_subquery_filter(
+                    column_name=user_sdwt_col,
+                    mapping_column="user_sdwt_prod",
+                ),
+                line_column=line_col,
+                line_id=line_id,
+            )
             return {"filters": filters, "params": params}
 
     if normalized_mode == LINE_FILTER_MODE_USER_SDWT:
         user_sdwt_col = find_column(column_names, "user_sdwt_prod")
         if user_sdwt_col:
-            filters.append(_build_line_sdwt_subquery_filter(column_name=user_sdwt_col))
-            params.append(line_id)
+            _append_line_filter(
+                filters=filters,
+                params=params,
+                base_filter=_build_drone_mapping_subquery_filter(
+                    column_name=user_sdwt_col,
+                    mapping_column="user_sdwt_prod",
+                ),
+                line_column=line_col,
+                line_id=line_id,
+            )
             return {"filters": filters, "params": params}
 
         target_col = find_column(column_names, "target_user_sdwt_prod")
         if target_col:
-            filters.append(_build_line_sdwt_subquery_filter(column_name=target_col))
-            params.append(line_id)
+            _append_line_filter(
+                filters=filters,
+                params=params,
+                base_filter=_build_drone_target_subquery_filter(column_name=target_col),
+                line_column=line_col,
+                line_id=line_id,
+            )
             return {"filters": filters, "params": params}
 
     if normalized_mode == LINE_FILTER_MODE_SDWT:
         sdwt_col = find_column(column_names, "sdwt_prod")
         if sdwt_col:
-            filters.append(_build_line_sdwt_subquery_filter(column_name=sdwt_col))
-            params.append(line_id)
+            _append_line_filter(
+                filters=filters,
+                params=params,
+                base_filter=_build_drone_mapping_subquery_filter(
+                    column_name=sdwt_col,
+                    mapping_column="sdwt_prod",
+                ),
+                line_column=line_col,
+                line_id=line_id,
+            )
             return {"filters": filters, "params": params}
 
     if normalized_mode == LINE_FILTER_MODE_LEGACY:
         sdwt_col = find_column(column_names, "sdwt_prod")
         if sdwt_col:
-            filters.append(_build_line_sdwt_subquery_filter(column_name=sdwt_col))
-            params.append(line_id)
+            _append_line_filter(
+                filters=filters,
+                params=params,
+                base_filter=_build_drone_mapping_subquery_filter(
+                    column_name=sdwt_col,
+                    mapping_column="sdwt_prod",
+                ),
+                line_column=line_col,
+                line_id=line_id,
+            )
             return {"filters": filters, "params": params}
 
         user_sdwt_col = find_column(column_names, "user_sdwt_prod")
         if user_sdwt_col:
-            filters.append(_build_line_sdwt_subquery_filter(column_name=user_sdwt_col))
-            params.append(line_id)
+            _append_line_filter(
+                filters=filters,
+                params=params,
+                base_filter=_build_drone_mapping_subquery_filter(
+                    column_name=user_sdwt_col,
+                    mapping_column="user_sdwt_prod",
+                ),
+                line_column=line_col,
+                line_id=line_id,
+            )
             return {"filters": filters, "params": params}
 
-    line_col = find_column(column_names, "line_id")
     if line_col:
-        filters.append(f"{line_col} = %s")
+        filters.append(f"LOWER({line_col}) = LOWER(%s)")
         params.append(line_id)
 
     return {"filters": filters, "params": params}
@@ -183,11 +272,12 @@ def build_date_range_filters(
 
 
 __all__ = [
+    "DRONE_TARGET_MAPPING_TABLE_NAME",
+    "DRONE_TARGET_TABLE_NAME",
     "LINE_FILTER_MODE_LEGACY",
     "LINE_FILTER_MODE_SDWT",
     "LINE_FILTER_MODE_TARGET_USER_SDWT",
     "LINE_FILTER_MODE_USER_SDWT",
-    "LINE_SDWT_TABLE_NAME",
     "build_date_range_filters",
     "build_line_filters",
     "ensure_date_bounds",

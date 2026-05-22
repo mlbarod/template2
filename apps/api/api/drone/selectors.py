@@ -36,7 +36,6 @@ from .serializers import (
 )
 from .services.table_schema import (
     DEFAULT_TABLE,
-    LINE_SDWT_TABLE_NAME,
     build_line_filters,
     ensure_date_bounds,
     find_column,
@@ -312,7 +311,7 @@ def list_drone_sop_jira_templates_by_target_user_sdwt_prods(
 def load_drone_sop_custom_end_step_map() -> dict[tuple[str, str], str | None]:
     """(user_sdwt_prod, main_step) → custom_end_step 맵을 로드합니다.
 
-    drone_early_inform(line_id, main_step) 설정을 account_affiliation(line, user_sdwt_prod)와 조인해,
+    drone_early_inform(line_id, main_step) 설정을 Drone target/관측 소속과 조인해,
     Drone SOP 수집 시 custom_end_step 계산에 사용할 캐시 dict를 구성합니다.
 
     반환:
@@ -323,18 +322,41 @@ def load_drone_sop_custom_end_step_map() -> dict[tuple[str, str], str | None]:
     """
 
     # -----------------------------------------------------------------------------
-    # 1) 조기 알림 + 소속 매핑 조인 조회
+    # 1) 조기 알림 + Drone runtime 소속 후보 조인 조회
     # -----------------------------------------------------------------------------
     rows = run_query(
         """
         SELECT
-            aff.user_sdwt_prod AS user_sdwt_prod,
+            candidate.user_sdwt_prod AS user_sdwt_prod,
             ei.main_step AS main_step,
             ei.custom_end_step AS custom_end_step
         FROM drone_early_inform AS ei
-        JOIN {table} AS aff
-          ON aff.line = ei.line_id
-        """.format(table=LINE_SDWT_TABLE_NAME)
+        JOIN (
+            SELECT line_id, target_user_sdwt_prod AS user_sdwt_prod
+            FROM drone_sop_target
+            WHERE line_id IS NOT NULL
+              AND line_id <> ''
+              AND target_user_sdwt_prod IS NOT NULL
+              AND target_user_sdwt_prod <> ''
+            UNION
+            SELECT line_id, user_sdwt_prod
+            FROM drone_sop
+            WHERE line_id IS NOT NULL
+              AND line_id <> ''
+              AND user_sdwt_prod IS NOT NULL
+              AND user_sdwt_prod <> ''
+            UNION
+            SELECT target.line_id, mapping.user_sdwt_prod
+            FROM drone_sop_target_mapping AS mapping
+            JOIN drone_sop_target AS target
+              ON target.id = mapping.target_id
+            WHERE target.line_id IS NOT NULL
+              AND target.line_id <> ''
+              AND mapping.user_sdwt_prod IS NOT NULL
+              AND mapping.user_sdwt_prod <> ''
+        ) AS candidate
+          ON LOWER(candidate.line_id) = LOWER(ei.line_id)
+        """
     )
 
     # -----------------------------------------------------------------------------
@@ -714,7 +736,7 @@ def load_drone_sop_ctttm_workorders_map(
 
 
 def list_user_sdwt_prod_values_for_line(*, line_id: str) -> list[str]:
-    """라인 ID에 매핑되는 user_sdwt_prod 값을 조회합니다.
+    """Drone 기준 line에 연결된 user_sdwt_prod 후보를 조회합니다.
 
     인자:
         line_id: 라인 ID.
@@ -726,61 +748,58 @@ def list_user_sdwt_prod_values_for_line(*, line_id: str) -> list[str]:
         없음. 읽기 전용 조회입니다.
     """
 
-    rows = run_query(
-        """
-        SELECT DISTINCT user_sdwt_prod
-        FROM {table}
-        WHERE line = %s
-          AND user_sdwt_prod IS NOT NULL
-          AND user_sdwt_prod <> ''
-        """.format(table=LINE_SDWT_TABLE_NAME),
-        [line_id],
+    normalized_line_id = normalize_text(line_id)
+    if not normalized_line_id:
+        return []
+
+    values: list[Any] = []
+    values.extend(
+        DroneSopTarget.objects.filter(line_id__iexact=normalized_line_id)
+        .exclude(target_user_sdwt_prod__isnull=True)
+        .exclude(target_user_sdwt_prod__exact="")
+        .values_list("target_user_sdwt_prod", flat=True)
+        .distinct()
     )
-    values: list[str] = []
-    for row in rows:
-        raw = row.get("user_sdwt_prod")
-        if isinstance(raw, str):
-            trimmed = raw.strip()
-            if trimmed:
-                values.append(trimmed)
-    return values
+    values.extend(
+        DroneSopTargetMapping.objects.filter(target__line_id__iexact=normalized_line_id)
+        .exclude(user_sdwt_prod__isnull=True)
+        .exclude(user_sdwt_prod__exact="")
+        .values_list("user_sdwt_prod", flat=True)
+        .distinct()
+    )
+    values.extend(
+        DroneSOP.objects.filter(line_id__iexact=normalized_line_id)
+        .exclude(user_sdwt_prod__isnull=True)
+        .exclude(user_sdwt_prod__exact="")
+        .values_list("user_sdwt_prod", flat=True)
+        .distinct()
+    )
+    values.extend(
+        DroneSOP.objects.filter(line_id__iexact=normalized_line_id)
+        .exclude(target_user_sdwt_prod__isnull=True)
+        .exclude(target_user_sdwt_prod__exact="")
+        .values_list("target_user_sdwt_prod", flat=True)
+        .distinct()
+    )
+    return collapse_display_values(values)
 
 
 def line_id_exists(*, line_id: str) -> bool:
-    """account_affiliation에 등록된 line_id인지 확인합니다."""
+    """Drone target 생성에 사용할 수 있는 line_id인지 확인합니다."""
 
     normalized_line_id = normalize_text(line_id)
-    if not normalized_line_id:
-        return False
-
-    rows = run_query(
-        """
-        SELECT 1 AS exists_flag
-        FROM {table}
-        WHERE LOWER(line) = LOWER(%s)
-          AND line IS NOT NULL
-          AND line <> ''
-        LIMIT 1
-        """.format(table=LINE_SDWT_TABLE_NAME),
-        [normalized_line_id],
-    )
-    return bool(rows)
+    return bool(normalized_line_id)
 
 
 def _derive_target_source(*, target_user_sdwt_prod: str) -> str:
-    """account affiliation 존재 여부로 target source 표시값을 계산합니다."""
+    """Drone runtime에서는 명시 생성된 target을 custom source로 표시합니다."""
 
-    return (
-        DroneSopTarget.Sources.AFFILIATION
-        if affiliation_exists_for_user_sdwt_prod(user_sdwt_prod=target_user_sdwt_prod)
-        else DroneSopTarget.Sources.CUSTOM
-    )
+    return DroneSopTarget.Sources.CUSTOM
 
 
 def list_drone_sop_notification_targets_for_line(*, line_id: str) -> list[dict[str, object]]:
     """라인별 Drone SOP 알림 target 목록을 조회합니다.
 
-    account_affiliation 값은 초기 선택을 돕는 추천값으로만 병합하고,
     실제 설정 소유권은 DroneSopTarget.line_id를 기준으로 판단합니다.
 
     인자:
@@ -821,24 +840,6 @@ def list_drone_sop_notification_targets_for_line(*, line_id: str) -> list[dict[s
             "mailEnabled": bool(row.mail_enabled),
         }
 
-    for target_value in list_user_sdwt_prod_values_for_line(line_id=normalized_line_id):
-        normalized_target = normalize_text(target_value)
-        if not normalized_target:
-            continue
-        targets_by_key.setdefault(
-            normalized_target.casefold(),
-            {
-                "lineId": normalized_line_id,
-                "targetUserSdwtProd": normalized_target,
-                "source": DroneSopTarget.Sources.AFFILIATION,
-                "isConfigured": False,
-                "jiraKey": None,
-                "jiraEnabled": True,
-                "messengerEnabled": True,
-                "mailEnabled": True,
-            },
-        )
-
     for mapping in (
         DroneSopTargetMapping.objects.select_related("target")
         .exclude(target__target_user_sdwt_prod__isnull=True)
@@ -871,23 +872,26 @@ def list_drone_sop_notification_targets_for_line(*, line_id: str) -> list[dict[s
 
 
 def affiliation_exists_for_user_sdwt_prod(*, user_sdwt_prod: str) -> bool:
-    """user_sdwt_prod에 대응하는 소속 존재 여부를 확인합니다.
+    """target_user_sdwt_prod에 대응하는 Drone target 존재 여부를 확인합니다.
 
     인자:
-        user_sdwt_prod: 사용자 소속 값.
+        user_sdwt_prod: target 식별자.
 
     반환:
-        소속 존재 여부(bool).
+        Drone target 존재 여부(bool).
 
     부작용:
         없음. 읽기 전용 조회입니다.
     """
 
-    return account_selectors.affiliation_exists_for_user_sdwt_prod(user_sdwt_prod=user_sdwt_prod)
+    normalized = normalize_text(user_sdwt_prod)
+    if not normalized:
+        return False
+    return DroneSopTarget.objects.filter(target_user_sdwt_prod__iexact=normalized).exists()
 
 
 def list_drone_sop_mapping_option_values_for_line(*, line_id: str) -> dict[str, list[str]]:
-    """라인별 account_affiliation 지정 조합 드롭다운 옵션을 조회합니다.
+    """라인별 Drone 지정 조합 드롭다운 옵션을 조회합니다.
 
     인자:
         line_id: 라인 ID.
@@ -903,12 +907,48 @@ def list_drone_sop_mapping_option_values_for_line(*, line_id: str) -> dict[str, 
     if not normalized_line_id:
         return {"userSdwtProds": [], "sdwtProds": []}
 
-    user_sdwt_values = account_selectors.list_user_sdwt_prod_values_for_line(
-        line_id=normalized_line_id,
+    target_values = list(
+        DroneSopTarget.objects.filter(line_id__iexact=normalized_line_id)
+        .exclude(target_user_sdwt_prod__isnull=True)
+        .exclude(target_user_sdwt_prod__exact="")
+        .values_list("target_user_sdwt_prod", flat=True)
+        .distinct()
+    )
+    mapping_user_values = list(
+        DroneSopTargetMapping.objects.filter(target__line_id__iexact=normalized_line_id)
+        .exclude(user_sdwt_prod__isnull=True)
+        .exclude(user_sdwt_prod__exact="")
+        .values_list("user_sdwt_prod", flat=True)
+        .distinct()
+    )
+    mapping_sdwt_values = list(
+        DroneSopTargetMapping.objects.filter(target__line_id__iexact=normalized_line_id)
+        .exclude(sdwt_prod__isnull=True)
+        .exclude(sdwt_prod__exact="")
+        .values_list("sdwt_prod", flat=True)
+        .distinct()
+    )
+    observed_user_values = list(
+        DroneSOP.objects.filter(line_id__iexact=normalized_line_id)
+        .exclude(user_sdwt_prod__isnull=True)
+        .exclude(user_sdwt_prod__exact="")
+        .values_list("user_sdwt_prod", flat=True)
+        .distinct()
+    )
+    observed_sdwt_values = list(
+        DroneSOP.objects.filter(line_id__iexact=normalized_line_id)
+        .exclude(sdwt_prod__isnull=True)
+        .exclude(sdwt_prod__exact="")
+        .values_list("sdwt_prod", flat=True)
+        .distinct()
     )
     return {
-        "userSdwtProds": collapse_display_values(user_sdwt_values),
-        "sdwtProds": collapse_display_values(user_sdwt_values),
+        "userSdwtProds": collapse_display_values(
+            [*target_values, *mapping_user_values, *observed_user_values],
+        ),
+        "sdwtProds": collapse_display_values(
+            [*target_values, *mapping_sdwt_values, *observed_sdwt_values],
+        ),
     }
 
 
@@ -926,9 +966,9 @@ def list_drone_sop_target_user_sdwt_prod_values() -> list[str]:
     """
 
     # -----------------------------------------------------------------------------
-    # 1) account 사용자 pool과 Drone 설정 테이블의 대상값을 병합
+    # 1) Drone runtime에서 확인 가능한 target 값을 병합
     # -----------------------------------------------------------------------------
-    values: list[Any] = list(account_selectors.list_distinct_active_user_sdwt_prod_values())
+    values: list[Any] = []
     values.extend(
         DroneSopTarget.objects.exclude(target_user_sdwt_prod="")
         .values_list("target_user_sdwt_prod", flat=True)
@@ -938,6 +978,12 @@ def list_drone_sop_target_user_sdwt_prod_values() -> list[str]:
         DroneSopTargetMapping.objects.exclude(target__target_user_sdwt_prod__isnull=True)
         .exclude(target__target_user_sdwt_prod="")
         .values_list("target__target_user_sdwt_prod", flat=True)
+        .distinct()
+    )
+    values.extend(
+        DroneSOP.objects.exclude(target_user_sdwt_prod__isnull=True)
+        .exclude(target_user_sdwt_prod__exact="")
+        .values_list("target_user_sdwt_prod", flat=True)
         .distinct()
     )
     return collapse_display_values(values)
@@ -1090,7 +1136,7 @@ def list_drone_sop_channel_recipients(
 ) -> list[dict[str, object]]:
     """Drone SOP target/channel에 등록된 수신인을 조회합니다.
 
-    커스텀 target_user_sdwt_prod를 허용하므로 account_affiliation 매핑은 요구하지 않습니다.
+    커스텀 target_user_sdwt_prod를 허용하므로 외부 소속표 매핑은 요구하지 않습니다.
 
     인자:
         line_id: 호환성을 위해 받는 라인 ID. 실제 수신인은 target 기준으로 조회합니다.
@@ -1383,7 +1429,7 @@ def list_drone_sop_jira_project_keys_by_target_user_sdwt_prods(
 
 
 def list_line_ids_for_user_sdwt_prod(*, user_sdwt_prod: str) -> list[str]:
-    """user_sdwt_prod에 매핑되는 line_id 목록을 조회합니다.
+    """Drone target/mapping/SOP 기준으로 user_sdwt_prod에 연결된 line_id를 조회합니다.
 
     인자:
         user_sdwt_prod: 사용자 소속 값.
@@ -1403,24 +1449,41 @@ def list_line_ids_for_user_sdwt_prod(*, user_sdwt_prod: str) -> list[str]:
         return []
 
     # -----------------------------------------------------------------------------
-    # 2) 쿼리 실행 및 결과 정리
+    # 2) Drone target, mapping, SOP 관측값 기준으로 line 후보 병합
     # -----------------------------------------------------------------------------
-    rows = run_query(
-        """
-        SELECT DISTINCT line AS line_id
-        FROM {table}
-        WHERE LOWER(user_sdwt_prod) = LOWER(%s)
-          AND line IS NOT NULL
-          AND line <> ''
-        ORDER BY line_id
-        """.format(table=LINE_SDWT_TABLE_NAME),
-        [normalized],
+    values: list[Any] = []
+    values.extend(
+        DroneSopTarget.objects.filter(target_user_sdwt_prod__iexact=normalized)
+        .exclude(line_id__isnull=True)
+        .exclude(line_id__exact="")
+        .values_list("line_id", flat=True)
+        .distinct()
     )
-    return normalize_text_list([row.get("line_id") for row in rows])
+    values.extend(
+        DroneSopTargetMapping.objects.filter(
+            Q(user_sdwt_prod__iexact=normalized) | Q(sdwt_prod__iexact=normalized),
+        )
+        .exclude(target__line_id__isnull=True)
+        .exclude(target__line_id__exact="")
+        .values_list("target__line_id", flat=True)
+        .distinct()
+    )
+    values.extend(
+        DroneSOP.objects.filter(
+            Q(target_user_sdwt_prod__iexact=normalized)
+            | Q(user_sdwt_prod__iexact=normalized)
+            | Q(sdwt_prod__iexact=normalized),
+        )
+        .exclude(line_id__isnull=True)
+        .exclude(line_id__exact="")
+        .values_list("line_id", flat=True)
+        .distinct()
+    )
+    return collapse_display_values(values)
 
 
 def list_distinct_line_ids() -> list[str]:
-    """사이드바 필터용 line_id 고유값 목록을 조회합니다.
+    """사이드바 필터용 Drone line_id 고유값 목록을 조회합니다.
 
     반환:
         line_id 문자열 리스트.
@@ -1429,15 +1492,20 @@ def list_distinct_line_ids() -> list[str]:
         없음. 읽기 전용 조회입니다.
     """
 
-    rows = run_query(
-        """
-        SELECT DISTINCT line AS line_id
-        FROM {table}
-        WHERE line IS NOT NULL AND line <> ''
-        ORDER BY line_id
-        """.format(table=LINE_SDWT_TABLE_NAME)
+    values: list[Any] = []
+    values.extend(
+        DroneSopTarget.objects.exclude(line_id__isnull=True)
+        .exclude(line_id__exact="")
+        .values_list("line_id", flat=True)
+        .distinct()
     )
-    return collapse_display_values([row.get("line_id") for row in rows])
+    values.extend(
+        DroneSOP.objects.exclude(line_id__isnull=True)
+        .exclude(line_id__exact="")
+        .values_list("line_id", flat=True)
+        .distinct()
+    )
+    return collapse_display_values(values)
 
 
 def get_line_history_payload(

@@ -417,6 +417,20 @@ class DroneSopPop3ParsingTests(TestCase):
         self.assertEqual(row["knox_id"], "System")
         self.assertEqual(row["user_sdwt_prod"], "EARSAUTO")
 
+    def test_build_drone_sop_row_maps_rpa_operator_id(self) -> None:
+        """operator_id에 .rpa가 포함되면 user_sdwt_prod를 RPA로 저장합니다."""
+        html = """
+        <data>
+          <operator_id>dummy.rpa.operator</operator_id>
+          <comment>system-comment</comment>
+        </data>
+        """
+
+        row = build_drone_sop_row(html=html, early_inform_map={})
+        assert row is not None
+        self.assertEqual(row["knox_id"], "System")
+        self.assertEqual(row["user_sdwt_prod"], "RPA")
+
     def test_build_drone_sop_row_falls_back_to_system_when_operator_id_missing(self) -> None:
         """operator_id도 없으면 기존처럼 System 소속 fallback을 사용합니다."""
         html = """
@@ -1073,22 +1087,24 @@ class DroneSopJiraUpdateTests(TestCase):
 class DroneSelectorCaseInsensitiveTests(TestCase):
     """sdwt/user/target 소속 비교의 대소문자 비구분 동작을 검증합니다."""
 
-    def test_list_distinct_line_ids_excludes_custom_target_lines(self) -> None:
-        """line 선택지는 커스텀 target line이 아니라 기존 소속 line만 사용해야 합니다."""
+    def test_list_distinct_line_ids_uses_drone_targets_and_observed_lines(self) -> None:
+        """line 선택지는 Drone target과 실제 SOP 관측 line을 병합해야 합니다."""
 
-        account_services.ensure_affiliation_option(
-            department="Dept",
-            line="L1",
-            user_sdwt_prod="TARGET-SDWT",
-        )
         _upsert_target(
             line_id="CUSTOM_LINE",
             target_user_sdwt_prod="CUSTOM_TARGET",
         )
+        DroneSOP.objects.create(
+            line_id="L1",
+            eqp_id="EQP-LINE",
+            chamber_ids="CH-LINE",
+            lot_id="LOT-LINE",
+            main_step="STEP-LINE",
+        )
 
         self.assertTrue(selectors.line_id_exists(line_id="l1"))
-        self.assertFalse(selectors.line_id_exists(line_id="CUSTOM_LINE"))
-        self.assertEqual(selectors.list_distinct_line_ids(), ["L1"])
+        self.assertTrue(selectors.line_id_exists(line_id="CUSTOM_LINE"))
+        self.assertEqual(selectors.list_distinct_line_ids(), ["CUSTOM_LINE", "L1"])
 
     def test_selector_lookups_ignore_case_for_user_sdwt_prod_and_target(self) -> None:
         """소속/채널/수신자 조회가 대소문자를 무시하는지 확인합니다."""
@@ -1106,6 +1122,7 @@ class DroneSelectorCaseInsensitiveTests(TestCase):
             user_sdwt_prod="TARGET-SDWT",
         )
         _upsert_target(
+            line_id="L1",
             target_user_sdwt_prod="TARGET-SDWT",
             jira_key="PROJ",
             jira_template_key="common",
@@ -1149,11 +1166,7 @@ class DroneSelectorCaseInsensitiveTests(TestCase):
 
     def test_build_drone_sop_row_applies_custom_end_step_case_insensitively(self) -> None:
         """조기 알림 custom_end_step 매핑이 user_sdwt_prod 대소문자를 무시하는지 확인합니다."""
-        account_services.ensure_affiliation_option(
-            department="Dept",
-            line="L1",
-            user_sdwt_prod="TARGET-SDWT",
-        )
+        _upsert_target(line_id="L1", target_user_sdwt_prod="TARGET-SDWT")
         DroneEarlyInform.objects.create(
             line_id="L1",
             main_step="MS",
@@ -2466,8 +2479,8 @@ class DroneSopTargetRecipientTests(TestCase):
         self.assertEqual(payload["targetUserSdwtProd"], "ETCH_A")
         self.assertEqual([row["userId"] for row in payload["recipients"]], [self.mail_user.id])
 
-    def test_replace_preserves_existing_affiliation_target_source(self) -> None:
-        """수신인 저장이 기존 affiliation target을 custom으로 바꾸지 않아야 합니다."""
+    def test_replace_keeps_existing_target_source_payload_custom(self) -> None:
+        """Drone runtime target source는 account 소속과 무관하게 custom으로 표시합니다."""
 
         target = _upsert_target(
             line_id="L1",
@@ -2486,10 +2499,10 @@ class DroneSopTargetRecipientTests(TestCase):
         self.assertEqual(target.line_id, "L1")
         targets = selectors.list_drone_sop_notification_targets_for_line(line_id="L1")
         target_row = next(row for row in targets if row["targetUserSdwtProd"] == "ETCH_A")
-        self.assertEqual(target_row["source"], DroneSopTarget.Sources.AFFILIATION)
+        self.assertEqual(target_row["source"], DroneSopTarget.Sources.CUSTOM)
 
     def test_replace_allows_custom_target_without_affiliation(self) -> None:
-        """account_affiliation에 없는 커스텀 target도 기존 line 안에서는 저장할 수 있어야 합니다."""
+        """외부 소속표에 없는 커스텀 target도 Drone target으로 저장할 수 있어야 합니다."""
 
         custom_target = "CUSTOM_TARGET"
 
@@ -2501,7 +2514,7 @@ class DroneSopTargetRecipientTests(TestCase):
             actor=self.actor,
         )
 
-        self.assertFalse(selectors.affiliation_exists_for_user_sdwt_prod(user_sdwt_prod=custom_target))
+        self.assertTrue(selectors.affiliation_exists_for_user_sdwt_prod(user_sdwt_prod=custom_target))
         self.assertEqual(result["lineId"], "L1")
         self.assertEqual(result["targetUserSdwtProd"], custom_target)
         self.assertEqual(result["recipients"][0]["userId"], self.mail_user.id)
@@ -2523,19 +2536,19 @@ class DroneSopTargetRecipientTests(TestCase):
             ["mail-user@example.com"],
         )
 
-    def test_replace_rejects_custom_target_for_unknown_line(self) -> None:
-        """커스텀 target이 신규 line_id를 만들 수 없도록 차단합니다."""
+    def test_replace_allows_custom_target_for_new_line(self) -> None:
+        """커스텀 target은 account에 없는 신규 line_id에도 생성할 수 있습니다."""
 
-        with self.assertRaisesMessage(ValueError, "line_id must be an existing line"):
-            services.replace_drone_sop_channel_recipients(
-                line_id="CUSTOM_LINE",
-                target_user_sdwt_prod="CUSTOM_TARGET",
-                channel="mail",
-                user_ids=[self.mail_user.id],
-                actor=self.actor,
-            )
+        result = services.replace_drone_sop_channel_recipients(
+            line_id="CUSTOM_LINE",
+            target_user_sdwt_prod="CUSTOM_TARGET",
+            channel="mail",
+            user_ids=[self.mail_user.id],
+            actor=self.actor,
+        )
 
-        self.assertFalse(
+        self.assertEqual(result["lineId"], "CUSTOM_LINE")
+        self.assertTrue(
             DroneSopTarget.objects.filter(
                 line_id="CUSTOM_LINE",
                 target_user_sdwt_prod="CUSTOM_TARGET",
@@ -2926,6 +2939,8 @@ class DroneSopTargetRecipientTests(TestCase):
     def test_notification_recipient_permission_endpoint_operator_can_manage_all_targets(self) -> None:
         """운영자는 모든 Drone SOP 대상 관리 권한을 가져야 합니다."""
 
+        _upsert_target(line_id="L1", target_user_sdwt_prod="ETCH_A")
+
         self.client.force_login(self.actor)
         response = self.client.get(reverse("line-dashboard-notification-recipient-permissions"))
 
@@ -2995,8 +3010,8 @@ class DroneSopTargetRecipientTests(TestCase):
         targets = response.json()["targets"]
         self.assertEqual([row["targetUserSdwtProd"] for row in targets], ["DIFF_A"])
 
-    def test_notification_target_endpoint_lists_configured_and_affiliation_targets(self) -> None:
-        """알림 target 목록은 설정된 target과 account_affiliation 추천값을 함께 반환해야 합니다."""
+    def test_notification_target_endpoint_uses_drone_targets_and_observed_options(self) -> None:
+        """알림 target 목록은 Drone target만, 옵션은 mapping/SOP 관측값까지 반환합니다."""
 
         _upsert_target(
             line_id="L1",
@@ -3013,12 +3028,7 @@ class DroneSopTargetRecipientTests(TestCase):
         account_services.ensure_affiliation_option(
             department="Dept",
             line="L1",
-            user_sdwt_prod="USER_A",
-        )
-        account_services.ensure_affiliation_option(
-            department="Dept",
-            line="L1",
-            user_sdwt_prod="SDWT_A",
+            user_sdwt_prod="ETCH_A",
         )
         DroneSOP.objects.create(
             line_id="L1",
@@ -3054,7 +3064,7 @@ class DroneSopTargetRecipientTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertIn("CUSTOM_TARGET", payload["targetUserSdwtProds"])
-        self.assertIn("ETCH_A", payload["targetUserSdwtProds"])
+        self.assertNotIn("ETCH_A", payload["targetUserSdwtProds"])
         custom_target = next(
             row for row in payload["targets"] if row["targetUserSdwtProd"] == "CUSTOM_TARGET"
         )
@@ -3065,22 +3075,28 @@ class DroneSopTargetRecipientTests(TestCase):
             custom_target["mappings"],
             [{"sdwtProd": "SDWT_A", "userSdwtProd": "USER_A"}],
         )
-        self.assertEqual(payload["mappingOptions"]["userSdwtProds"], ["ETCH_A", "SDWT_A", "USER_A"])
-        self.assertEqual(payload["mappingOptions"]["sdwtProds"], ["ETCH_A", "SDWT_A", "USER_A"])
+        self.assertEqual(
+            payload["mappingOptions"]["userSdwtProds"],
+            ["CUSTOM_TARGET", "SOP_ONLY_U", "USER_A"],
+        )
+        self.assertEqual(
+            payload["mappingOptions"]["sdwtProds"],
+            ["CUSTOM_TARGET", "SDWT_A", "SOP_ONLY_S"],
+        )
 
     def test_notification_target_endpoint_creates_custom_target(self) -> None:
-        """account_affiliation에 없는 커스텀 target도 기존 line 소유 target으로 생성할 수 있어야 합니다."""
+        """외부 소속표에 없는 임의 line에도 커스텀 target을 생성할 수 있어야 합니다."""
 
         self.client.force_login(self.actor)
         response = self.client.post(
             reverse("line-dashboard-notification-targets"),
-            data=json.dumps({"lineId": "L1", "targetUserSdwtProd": "L1_NIGHT_SHIFT"}),
+            data=json.dumps({"lineId": "BRAND_NEW_LINE", "targetUserSdwtProd": "L1_NIGHT_SHIFT"}),
             content_type="application/json",
         )
 
         self.assertEqual(response.status_code, 200)
         target = DroneSopTarget.objects.get(target_user_sdwt_prod="L1_NIGHT_SHIFT")
-        self.assertEqual(target.line_id, "L1")
+        self.assertEqual(target.line_id, "BRAND_NEW_LINE")
         self.assertEqual(response.json()["target"]["source"], DroneSopTarget.Sources.CUSTOM)
 
     def test_notification_target_endpoint_rejects_duplicate_target(self) -> None:
@@ -3305,8 +3321,8 @@ class DroneSopTargetRecipientTests(TestCase):
                     target=duplicate_target,
                 )
 
-    def test_notification_target_endpoint_rejects_unknown_line(self) -> None:
-        """알림 target 생성은 기존 line 안에서만 허용해야 합니다."""
+    def test_notification_target_endpoint_allows_new_line(self) -> None:
+        """알림 target 생성은 account에 없는 신규 line도 허용해야 합니다."""
 
         self.client.force_login(self.actor)
         response = self.client.post(
@@ -3315,9 +3331,13 @@ class DroneSopTargetRecipientTests(TestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json()["error"], "line_id must be an existing line")
-        self.assertFalse(DroneSopTarget.objects.filter(line_id="CUSTOM_LINE").exists())
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            DroneSopTarget.objects.filter(
+                line_id="CUSTOM_LINE",
+                target_user_sdwt_prod="CUSTOM_TARGET",
+            ).exists()
+        )
 
     def test_notification_recipient_endpoint_empty_list_deletes_recipients(self) -> None:
         """빈 userIds 저장은 기존 수신인을 모두 삭제해야 합니다."""
@@ -6960,22 +6980,23 @@ class DroneTableSchemaHelpersTests(SimpleTestCase):
         )
 
     def test_build_line_filters_prefers_sdwt_prod(self) -> None:
-        """sdwt_prod가 있으면 sdwt_prod 기준 필터를 사용하는지 확인합니다."""
+        """sdwt_prod가 있으면 Drone mapping 기준 필터를 사용하는지 확인합니다."""
 
         from api.drone.services import table_schema
 
         result = table_schema.build_line_filters(["user_sdwt_prod", "sdwt_prod", "line_id"], "L1")
 
         expected = (
-            "LOWER(sdwt_prod) IN ("
-            f"SELECT LOWER(user_sdwt_prod) FROM {table_schema.LINE_SDWT_TABLE_NAME} "
-            "WHERE line = %s "
-            "AND user_sdwt_prod IS NOT NULL "
-            "AND user_sdwt_prod <> ''"
-            ")"
+            "(LOWER(sdwt_prod) IN ("
+            f"SELECT LOWER(mapping.sdwt_prod) FROM {table_schema.DRONE_TARGET_MAPPING_TABLE_NAME} mapping "
+            f"JOIN {table_schema.DRONE_TARGET_TABLE_NAME} target ON target.id = mapping.target_id "
+            "WHERE LOWER(target.line_id) = LOWER(%s) "
+            "AND mapping.sdwt_prod IS NOT NULL "
+            "AND mapping.sdwt_prod <> ''"
+            ") OR LOWER(line_id) = LOWER(%s))"
         )
         self.assertEqual(result["filters"], [expected])
-        self.assertEqual(result["params"], ["L1"])
+        self.assertEqual(result["params"], ["L1", "L1"])
 
     def test_build_line_filters_uses_target_user_sdwt_prod_when_requested(self) -> None:
         """target_user_sdwt_prod 모드에서 target_user_sdwt_prod 기준 필터를 사용하는지 확인합니다."""
@@ -6989,15 +7010,15 @@ class DroneTableSchemaHelpersTests(SimpleTestCase):
         )
 
         expected = (
-            "LOWER(target_user_sdwt_prod) IN ("
-            f"SELECT LOWER(user_sdwt_prod) FROM {table_schema.LINE_SDWT_TABLE_NAME} "
-            "WHERE line = %s "
-            "AND user_sdwt_prod IS NOT NULL "
-            "AND user_sdwt_prod <> ''"
-            ")"
+            "(LOWER(target_user_sdwt_prod) IN ("
+            f"SELECT LOWER(target_user_sdwt_prod) FROM {table_schema.DRONE_TARGET_TABLE_NAME} "
+            "WHERE LOWER(line_id) = LOWER(%s) "
+            "AND target_user_sdwt_prod IS NOT NULL "
+            "AND target_user_sdwt_prod <> ''"
+            ") OR LOWER(line_id) = LOWER(%s))"
         )
         self.assertEqual(result["filters"], [expected])
-        self.assertEqual(result["params"], ["L1"])
+        self.assertEqual(result["params"], ["L1", "L1"])
 
     def test_build_line_filters_uses_user_sdwt_prod_when_requested(self) -> None:
         """user_sdwt_prod 모드에서 user_sdwt_prod 기준 필터를 사용하는지 확인합니다."""
@@ -7011,15 +7032,16 @@ class DroneTableSchemaHelpersTests(SimpleTestCase):
         )
 
         expected = (
-            "LOWER(user_sdwt_prod) IN ("
-            f"SELECT LOWER(user_sdwt_prod) FROM {table_schema.LINE_SDWT_TABLE_NAME} "
-            "WHERE line = %s "
-            "AND user_sdwt_prod IS NOT NULL "
-            "AND user_sdwt_prod <> ''"
-            ")"
+            "(LOWER(user_sdwt_prod) IN ("
+            f"SELECT LOWER(mapping.user_sdwt_prod) FROM {table_schema.DRONE_TARGET_MAPPING_TABLE_NAME} mapping "
+            f"JOIN {table_schema.DRONE_TARGET_TABLE_NAME} target ON target.id = mapping.target_id "
+            "WHERE LOWER(target.line_id) = LOWER(%s) "
+            "AND mapping.user_sdwt_prod IS NOT NULL "
+            "AND mapping.user_sdwt_prod <> ''"
+            ") OR LOWER(line_id) = LOWER(%s))"
         )
         self.assertEqual(result["filters"], [expected])
-        self.assertEqual(result["params"], ["L1"])
+        self.assertEqual(result["params"], ["L1", "L1"])
 
     def test_build_line_filters_uses_sdwt_prod_only_when_requested(self) -> None:
         """sdwt_prod 모드에서 sdwt_prod 기준 필터를 사용하는지 확인합니다."""
@@ -7033,15 +7055,16 @@ class DroneTableSchemaHelpersTests(SimpleTestCase):
         )
 
         expected = (
-            "LOWER(sdwt_prod) IN ("
-            f"SELECT LOWER(user_sdwt_prod) FROM {table_schema.LINE_SDWT_TABLE_NAME} "
-            "WHERE line = %s "
-            "AND user_sdwt_prod IS NOT NULL "
-            "AND user_sdwt_prod <> ''"
-            ")"
+            "(LOWER(sdwt_prod) IN ("
+            f"SELECT LOWER(mapping.sdwt_prod) FROM {table_schema.DRONE_TARGET_MAPPING_TABLE_NAME} mapping "
+            f"JOIN {table_schema.DRONE_TARGET_TABLE_NAME} target ON target.id = mapping.target_id "
+            "WHERE LOWER(target.line_id) = LOWER(%s) "
+            "AND mapping.sdwt_prod IS NOT NULL "
+            "AND mapping.sdwt_prod <> ''"
+            ") OR LOWER(line_id) = LOWER(%s))"
         )
         self.assertEqual(result["filters"], [expected])
-        self.assertEqual(result["params"], ["L1"])
+        self.assertEqual(result["params"], ["L1", "L1"])
 
     def test_build_line_filters_uses_user_sdwt_prod_when_sdwt_missing(self) -> None:
         """sdwt_prod가 없으면 user_sdwt_prod 기준 필터를 사용하는지 확인합니다."""
@@ -7051,15 +7074,16 @@ class DroneTableSchemaHelpersTests(SimpleTestCase):
         result = table_schema.build_line_filters(["user_sdwt_prod", "line_id"], "L1")
 
         expected = (
-            "LOWER(user_sdwt_prod) IN ("
-            f"SELECT LOWER(user_sdwt_prod) FROM {table_schema.LINE_SDWT_TABLE_NAME} "
-            "WHERE line = %s "
-            "AND user_sdwt_prod IS NOT NULL "
-            "AND user_sdwt_prod <> ''"
-            ")"
+            "(LOWER(user_sdwt_prod) IN ("
+            f"SELECT LOWER(mapping.user_sdwt_prod) FROM {table_schema.DRONE_TARGET_MAPPING_TABLE_NAME} mapping "
+            f"JOIN {table_schema.DRONE_TARGET_TABLE_NAME} target ON target.id = mapping.target_id "
+            "WHERE LOWER(target.line_id) = LOWER(%s) "
+            "AND mapping.user_sdwt_prod IS NOT NULL "
+            "AND mapping.user_sdwt_prod <> ''"
+            ") OR LOWER(line_id) = LOWER(%s))"
         )
         self.assertEqual(result["filters"], [expected])
-        self.assertEqual(result["params"], ["L1"])
+        self.assertEqual(result["params"], ["L1", "L1"])
 
     def test_build_line_filters_falls_back_to_line_id(self) -> None:
         """sdwt_prod가 없으면 line_id 직접 비교로 fallback 되는지 확인합니다."""
@@ -7068,7 +7092,7 @@ class DroneTableSchemaHelpersTests(SimpleTestCase):
 
         result = table_schema.build_line_filters(["line_id", "created_at"], "L1")
 
-        self.assertEqual(result["filters"], ["line_id = %s"])
+        self.assertEqual(result["filters"], ["LOWER(line_id) = LOWER(%s)"])
         self.assertEqual(result["params"], ["L1"])
 
 
