@@ -16,9 +16,12 @@ from django.db import IntegrityError, transaction
 import api.account.selectors as account_selectors
 
 from ...models import (
+    DroneSOP,
+    DroneSopDelivery,
     DroneSopNeedToSendRule,
     DroneSopTarget,
     DroneSopTargetChannelConfig,
+    DroneSopTargetDispatch,
     DroneSopTargetMapping,
     DroneSopTargetRecipient,
 )
@@ -43,6 +46,9 @@ class DroneSopAffiliationSeedResult:
     channel_configs_deleted: int = 0
     needtosend_rules_deleted: int = 0
     recipients_deleted: int = 0
+    sop_rows_deleted: int = 0
+    dispatches_deleted: int = 0
+    deliveries_deleted: int = 0
 
     @property
     def recipients_created(self) -> int:
@@ -69,6 +75,9 @@ class DroneSopAffiliationSeedResult:
             "channel_configs_deleted": self.channel_configs_deleted,
             "needtosend_rules_deleted": self.needtosend_rules_deleted,
             "recipients_deleted": self.recipients_deleted,
+            "sop_rows_deleted": self.sop_rows_deleted,
+            "dispatches_deleted": self.dispatches_deleted,
+            "deliveries_deleted": self.deliveries_deleted,
         }
 
 
@@ -145,8 +154,11 @@ def _get_or_create_target_from_affiliation(
 
 
 def _reset_notification_settings() -> dict[str, int]:
-    """Drone 알림 설정 테이블을 초기화하고 삭제 카운트를 반환합니다."""
+    """Drone SOP/발송 이력/알림 설정 테이블을 초기화하고 삭제 카운트를 반환합니다."""
 
+    deliveries_deleted, _ = DroneSopDelivery.objects.all().delete()
+    dispatches_deleted, _ = DroneSopTargetDispatch.objects.all().delete()
+    sop_rows_deleted, _ = DroneSOP.objects.all().delete()
     recipients_deleted, _ = DroneSopTargetRecipient.objects.all().delete()
     mappings_deleted, _ = DroneSopTargetMapping.objects.all().delete()
     channel_configs_deleted, _ = DroneSopTargetChannelConfig.objects.all().delete()
@@ -158,6 +170,9 @@ def _reset_notification_settings() -> dict[str, int]:
         "channel_configs_deleted": channel_configs_deleted,
         "needtosend_rules_deleted": needtosend_rules_deleted,
         "recipients_deleted": recipients_deleted,
+        "sop_rows_deleted": sop_rows_deleted,
+        "dispatches_deleted": dispatches_deleted,
+        "deliveries_deleted": deliveries_deleted,
     }
 
 
@@ -325,8 +340,8 @@ def seed_drone_sop_notification_defaults_from_rows(
     - DroneSopAffiliationSeedResult: 삭제, 생성 및 skip 카운트
 
     부작용:
-    - 기존 Drone 알림 설정을 삭제하고 `drone_sop_target`, mapping, channel config,
-      needtosend rule, recipient row를 생성할 수 있습니다.
+    - 기존 Drone SOP/발송 이력/알림 설정을 삭제하고 `drone_sop_target`, mapping,
+      channel config, needtosend rule, recipient row를 생성할 수 있습니다.
 
     오류:
     - 없음. 필수값이 비어 있는 row는 seed 대상에서 제외합니다.
@@ -344,6 +359,9 @@ def seed_drone_sop_notification_defaults_from_rows(
         result.channel_configs_deleted = reset_counts["channel_configs_deleted"]
         result.needtosend_rules_deleted = reset_counts["needtosend_rules_deleted"]
         result.recipients_deleted = reset_counts["recipients_deleted"]
+        result.sop_rows_deleted = reset_counts["sop_rows_deleted"]
+        result.dispatches_deleted = reset_counts["dispatches_deleted"]
+        result.deliveries_deleted = reset_counts["deliveries_deleted"]
 
         for row in seed_rows:
             department = _normalize_text(row.get("department"))

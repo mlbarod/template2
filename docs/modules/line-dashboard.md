@@ -57,6 +57,40 @@ Line Dashboard는 Drone SOP 데이터를 보고, 조기 알림과 멀티 채널 
 - 알림 대상 문제는 Account 소속, target mapping, recipient 설정을 함께 확인합니다.
 - 테이블 수정 문제는 허용 컬럼과 ActivityLog 기록 여부를 확인합니다.
 
+## Drone target seed
+
+운영 초기 주입은 `seed_drone_targets_from_file` command를 사용합니다.
+JSON에는 `department`, `line`, `user_sdwt_prod`만 작성하고, command가 다음 데이터를 자동 생성합니다.
+
+- `drone_sop_target`
+- `drone_sop_target_mapping`
+- `drone_sop_target_channel_config`
+- `drone_sop_needtosend_rule`
+- `drone_sop_target_recipient`
+
+수신인은 JSON의 `department + user_sdwt_prod` 조합으로 account 활성 사용자와
+external affiliation snapshot에서 자동 수집합니다.
+
+실행 예시:
+
+```bash
+docker compose -f docker-compose.dev.yml exec -T api \
+  python manage.py seed_drone_targets_from_file \
+  --file /app/config/drone_targets.json \
+  --dry-run
+
+docker compose -f docker-compose.dev.yml exec -T api \
+  python manage.py seed_drone_targets_from_file \
+  --file /app/config/drone_targets.json
+```
+
+이 command는 실행 시 기존 Drone SOP/발송 이력/알림 설정을 초기화합니다.
+운영 반영 전 `--dry-run`으로 삭제/생성 카운트를 확인해야 합니다.
+
+샘플 파일:
+
+- `docs/examples/drone_targets.sample.json`
+
 ## 관련 API
 
 - `docs/api/line-dashboard.md`

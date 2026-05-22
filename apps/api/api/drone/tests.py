@@ -3536,6 +3536,20 @@ class DroneSopAffiliationNotificationSeedTests(TestCase):
             channel=DroneSopTargetRecipient.Channels.MAIL,
             user=self.user,
         )
+        stale_sop = _create_drone_sop(
+            line_id="OLD_LINE",
+            target_user_sdwt_prod="OLD_TARGET",
+        )
+        stale_dispatch, _ = DroneSopTargetDispatch.objects.get_or_create(
+            sop=stale_sop,
+            target_code_snapshot="OLD_TARGET",
+            defaults={"target": stale_target},
+        )
+        DroneSopDelivery.objects.get_or_create(
+            sop=stale_sop,
+            dispatch=stale_dispatch,
+            channel=DroneSopDelivery.Channels.MAIL,
+        )
 
         first_result = services.seed_drone_sop_affiliation_notification_defaults(line_id="LSEED")
 
@@ -3546,7 +3560,13 @@ class DroneSopAffiliationNotificationSeedTests(TestCase):
         self.assertEqual(first_result.mappings_deleted, 1)
         self.assertEqual(first_result.channel_configs_deleted, 1)
         self.assertEqual(first_result.recipients_deleted, 1)
+        self.assertEqual(first_result.sop_rows_deleted, 1)
+        self.assertGreaterEqual(first_result.dispatches_deleted, 1)
+        self.assertGreaterEqual(first_result.deliveries_deleted, 1)
         self.assertFalse(DroneSopTarget.objects.filter(target_user_sdwt_prod="OLD_TARGET").exists())
+        self.assertFalse(DroneSOP.objects.filter(target_user_sdwt_prod="OLD_TARGET").exists())
+        self.assertFalse(DroneSopTargetDispatch.objects.filter(target_code_snapshot="OLD_TARGET").exists())
+        self.assertFalse(DroneSopDelivery.objects.exists())
         self.assertTrue(
             DroneSopTargetMapping.objects.filter(
                 sdwt_prod="SEED_A",

@@ -1,7 +1,7 @@
 # =============================================================================
 # 모듈: Drone SOP JSON target 기반 알림 초기 세팅 커맨드
-# 주요 기능: JSON target 목록으로 target/mapping/channel/rule/recipient 초기화 후 재생성
-# 불변 조건: drone_sop와 발송 이력은 삭제하지 않습니다.
+# 주요 기능: JSON target 목록으로 Drone SOP/발송 이력/알림 설정 초기화 후 재생성
+# 불변 조건: 입력 JSON은 department/line/user_sdwt_prod만 요구합니다.
 # =============================================================================
 from __future__ import annotations
 

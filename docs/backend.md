@@ -76,6 +76,7 @@
 | `process_email_outbox` | `api.emails` | `python manage.py process_email_outbox` |
 | `seed_drone_dummy_data` | `api.drone` | `python manage.py seed_drone_dummy_data` |
 | `seed_drone_affiliation_notifications` | `api.drone` | `python manage.py seed_drone_affiliation_notifications` |
+| `seed_drone_targets_from_file` | `api.drone` | `python manage.py seed_drone_targets_from_file --file /app/config/drone_targets.json --dry-run` |
 | `prune_drone_sop` | `api.drone` | `python manage.py prune_drone_sop` |
 | `purge_drone_sop` | `api.drone` | `python manage.py purge_drone_sop --dry-run` |
 

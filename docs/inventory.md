@@ -59,6 +59,7 @@
 | `process_email_outbox` | `apps/api/api/emails/management/commands/process_email_outbox.py` | pending `EmailOutbox`를 RAG insert/delete 호출로 처리 |
 | `seed_drone_dummy_data` | `apps/api/api/drone/management/commands/seed_drone_dummy_data.py` | Drone 개발용 샘플 데이터 생성 |
 | `seed_drone_affiliation_notifications` | `apps/api/api/drone/management/commands/seed_drone_affiliation_notifications.py` | account 소속 기준 Drone SOP 알림 대상/채널/수신자 기본값 생성 |
+| `seed_drone_targets_from_file` | `apps/api/api/drone/management/commands/seed_drone_targets_from_file.py` | JSON 기준 Drone SOP/발송 이력/알림 설정 초기화 후 대상/채널/수신자 생성 |
 | `prune_drone_sop` | `apps/api/api/drone/management/commands/prune_drone_sop.py` | 보관 기간을 초과한 Drone SOP 데이터 정리 |
 | `purge_drone_sop` | `apps/api/api/drone/management/commands/purge_drone_sop.py` | Drone SOP 데이터를 수동 전체 삭제 또는 dry-run 확인 |
 

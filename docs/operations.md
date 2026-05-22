@@ -48,6 +48,7 @@ docker compose -f docker-compose.dev.yml exec -T api python manage.py makemigrat
 | `process_email_outbox` | EmailOutbox RAG 작업 처리 |
 | `seed_drone_dummy_data` | Drone 개발용 샘플 데이터 생성 |
 | `seed_drone_affiliation_notifications` | Account 소속 기준 Drone 알림 target/channel/recipient seed |
+| `seed_drone_targets_from_file` | JSON 기준 Drone SOP/발송 이력/알림 설정 초기화 후 target/channel/recipient seed |
 | `prune_drone_sop` | 보관 기간 초과 Drone SOP 데이터 정리 |
 | `purge_drone_sop` | Drone SOP 데이터 전체 삭제 또는 dry-run 확인 |
 
@@ -58,9 +59,56 @@ docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_dummy
 docker compose -f docker-compose.dev.yml exec -T api python manage.py process_email_outbox
 docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone_dummy_data
 docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone_affiliation_notifications
+docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone_targets_from_file --file /app/config/drone_targets.json --dry-run
 docker compose -f docker-compose.dev.yml exec -T api python manage.py prune_drone_sop
 docker compose -f docker-compose.dev.yml exec -T api python manage.py purge_drone_sop --dry-run
 ```
+
+### Drone JSON target seed
+
+`seed_drone_targets_from_file`은 JSON의 `department`, `line`, `user_sdwt_prod` 목록을 기준으로
+Drone SOP/발송 이력/알림 설정을 초기화한 뒤 다시 생성합니다.
+
+입력 샘플은 `docs/examples/drone_targets.sample.json`에 있습니다.
+
+```json
+{
+  "targets": [
+    {
+      "department": "ENGR",
+      "line": "L1",
+      "user_sdwt_prod": "ETCH_A"
+    }
+  ]
+}
+```
+
+사용 순서:
+
+```bash
+docker compose -f docker-compose.dev.yml exec -T api \
+  python manage.py seed_drone_targets_from_file \
+  --file /app/config/drone_targets.json \
+  --dry-run
+
+docker compose -f docker-compose.dev.yml exec -T api \
+  python manage.py seed_drone_targets_from_file \
+  --file /app/config/drone_targets.json
+```
+
+초기화 범위:
+
+- `drone_sop`
+- `drone_sop_target_dispatch`
+- `drone_sop_delivery`
+- `drone_sop_target`
+- `drone_sop_target_mapping`
+- `drone_sop_target_channel_config`
+- `drone_sop_needtosend_rule`
+- `drone_sop_target_recipient`
+
+JSON 파일은 `api` 컨테이너가 읽을 수 있는 경로에 배치해야 합니다.
+실제 실행 전에는 반드시 `--dry-run` 출력의 삭제/생성 카운트를 확인합니다.
 
 ## 환경 변수 파일
 
