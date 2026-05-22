@@ -1,0 +1,19 @@
+{
+  "targets": [
+    {
+      "department": "ENGR",
+      "line": "L1",
+      "user_sdwt_prod": "ETCH_A"
+    },
+    {
+      "department": "설비",
+      "line": "L1",
+      "user_sdwt_prod": "EQP_A"
+    },
+    {
+      "department": "ENGR",
+      "line": "L2",
+      "user_sdwt_prod": "PHOTO_A"
+    }
+  ]
+}

@@ -10,6 +10,7 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone as dt_timezone
 from io import StringIO
+from tempfile import NamedTemporaryFile
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock, patch
@@ -3515,14 +3516,37 @@ class DroneSopAffiliationNotificationSeedTests(TestCase):
             ]
         )
 
-    def test_seed_creates_affiliation_defaults_without_overwrite(self) -> None:
-        """소속 기반 target/channel/mapping/recipient 누락분만 생성합니다."""
+    def test_seed_resets_affiliation_defaults_before_rebuild(self) -> None:
+        """소속 기반 seed는 기존 알림 설정을 초기화한 뒤 다시 생성합니다."""
+
+        stale_target = _upsert_target(line_id="OLD_LINE", target_user_sdwt_prod="OLD_TARGET")
+        DroneSopTargetMapping.objects.create(
+            sdwt_prod="OLD",
+            user_sdwt_prod="OLD",
+            target=stale_target,
+        )
+        DroneSopTargetChannelConfig.objects.create(
+            target=stale_target,
+            channel=DroneSopTargetChannelConfig.Channels.MAIL,
+            enabled=False,
+            template_key="old-template",
+        )
+        DroneSopTargetRecipient.objects.create(
+            target=stale_target,
+            channel=DroneSopTargetRecipient.Channels.MAIL,
+            user=self.user,
+        )
 
         first_result = services.seed_drone_sop_affiliation_notification_defaults(line_id="LSEED")
 
         target = DroneSopTarget.objects.get(target_user_sdwt_prod="SEED_A")
         self.assertEqual(target.line_id, "LSEED")
         self.assertEqual(first_result.targets_created, 1)
+        self.assertEqual(first_result.targets_deleted, 1)
+        self.assertEqual(first_result.mappings_deleted, 1)
+        self.assertEqual(first_result.channel_configs_deleted, 1)
+        self.assertEqual(first_result.recipients_deleted, 1)
+        self.assertFalse(DroneSopTarget.objects.filter(target_user_sdwt_prod="OLD_TARGET").exists())
         self.assertTrue(
             DroneSopTargetMapping.objects.filter(
                 sdwt_prod="SEED_A",
@@ -3559,11 +3583,12 @@ class DroneSopAffiliationNotificationSeedTests(TestCase):
         )
 
         second_result = services.seed_drone_sop_affiliation_notification_defaults(line_id="LSEED")
-        self.assertEqual(second_result.targets_created, 0)
-        self.assertEqual(second_result.mappings_created, 0)
-        self.assertEqual(second_result.channel_configs_created, 0)
-        self.assertEqual(second_result.needtosend_rules_created, 0)
-        self.assertEqual(second_result.recipients_created, 0)
+        self.assertEqual(second_result.targets_deleted, 1)
+        self.assertEqual(second_result.targets_created, 1)
+        self.assertEqual(second_result.mappings_created, 1)
+        self.assertEqual(second_result.channel_configs_created, 3)
+        self.assertEqual(second_result.needtosend_rules_created, 1)
+        self.assertEqual(second_result.recipients_created, 4)
 
     def test_seed_command_dry_run_rolls_back(self) -> None:
         """dry-run 옵션은 결과 계산 후 DB 변경을 롤백합니다."""
@@ -3576,6 +3601,89 @@ class DroneSopAffiliationNotificationSeedTests(TestCase):
             "--dry-run",
             stdout=output,
         )
+
+        self.assertIn("dry-run:", output.getvalue())
+        self.assertFalse(DroneSopTarget.objects.filter(target_user_sdwt_prod="SEED_A").exists())
+
+    def test_seed_from_rows_uses_department_filter_and_creates_defaults(self) -> None:
+        """JSON형 row는 department/user_sdwt_prod 조합으로 수신인을 자동 생성합니다."""
+
+        account_services.sync_external_affiliations(
+            records=[
+                {
+                    "knox_id": "json-external",
+                    "department": "Dept",
+                    "user_sdwt_prod": "SEED_A",
+                    "source_updated_at": timezone.now(),
+                },
+                {
+                    "knox_id": "other-dept-external",
+                    "department": "OtherDept",
+                    "user_sdwt_prod": "SEED_A",
+                    "source_updated_at": timezone.now(),
+                },
+            ]
+        )
+
+        result = services.seed_drone_sop_notification_defaults_from_rows(
+            rows=[
+                {
+                    "department": "Dept",
+                    "line": "LJSON",
+                    "user_sdwt_prod": "SEED_A",
+                }
+            ]
+        )
+
+        target = DroneSopTarget.objects.get(target_user_sdwt_prod="SEED_A")
+        self.assertEqual(target.line_id, "LJSON")
+        self.assertEqual(result.targets_created, 1)
+        self.assertEqual(result.targets_deleted, 0)
+        self.assertEqual(result.mappings_created, 1)
+        self.assertEqual(result.channel_configs_created, 3)
+        self.assertEqual(result.needtosend_rules_created, 1)
+        self.assertEqual(
+            selectors.list_mail_receiver_emails_for_user_sdwt_prod(
+                line_id="LJSON",
+                user_sdwt_prod="SEED_A",
+            ),
+            ["seed-user@example.com", "json-external@samsung.com"],
+        )
+        self.assertEqual(
+            selectors.list_messenger_receiver_knox_ids_for_user_sdwt_prod(
+                line_id="LJSON",
+                user_sdwt_prod="SEED_A",
+            ),
+            ["seed-user", "json-external"],
+        )
+
+    def test_seed_targets_from_file_command_dry_run_rolls_back(self) -> None:
+        """JSON seed command의 dry-run 옵션은 DB 변경을 롤백합니다."""
+
+        payload = {
+            "targets": [
+                {
+                    "department": "Dept",
+                    "line": "LJSON",
+                    "user_sdwt_prod": "SEED_A",
+                }
+            ]
+        }
+        with NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False) as handle:
+            json.dump(payload, handle)
+            file_path = handle.name
+
+        try:
+            output = StringIO()
+            call_command(
+                "seed_drone_targets_from_file",
+                "--file",
+                file_path,
+                "--dry-run",
+                stdout=output,
+            )
+        finally:
+            os.unlink(file_path)
 
         self.assertIn("dry-run:", output.getvalue())
         self.assertFalse(DroneSopTarget.objects.filter(target_user_sdwt_prod="SEED_A").exists())
