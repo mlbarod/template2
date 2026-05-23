@@ -28,6 +28,14 @@ function formatMappingLineLabel(optionLineId) {
   return optionLineId
 }
 
+function isSystemLineLabel(lineLabel) {
+  return String(lineLabel || "").trim().toLowerCase() === "system"
+}
+
+function formatMappingValueWithLine(lineLabel, value) {
+  return lineLabel && !isSystemLineLabel(lineLabel) ? `${lineLabel} · ${value}` : value
+}
+
 function findLineOption(lineOptions, lineId) {
   const normalizedLineId = String(lineId || "").trim().toLowerCase()
   return (Array.isArray(lineOptions) ? lineOptions : []).find((option) => (
@@ -98,9 +106,7 @@ function MappingAffiliationDropdown({
   const displaySelectedValue = multiSelect && normalizedSelectedValues.length > 1
     ? `${normalizedSelectedValues[0]} 외 ${normalizedSelectedValues.length - 1}개`
     : selectedValue
-  const displayValue = displaySelectedValue
-    ? `${selectedLineLabel ? `${selectedLineLabel} · ` : ""}${displaySelectedValue}`
-    : placeholder
+  const displayValue = displaySelectedValue ? formatMappingValueWithLine(selectedLineLabel, displaySelectedValue) : placeholder
   const activeLineOption = findLineOption(lineOptions, activeLineId)
   const activeValues = Array.isArray(activeLineOption?.values) ? activeLineOption.values : []
   const activeSelectedValues = activeLineId === selectedLineId ? normalizedSelectedValues : []
@@ -416,7 +422,7 @@ function TargetMappingSummary({
           className="h-8 shrink-0"
         >
           <IconPlus className="mr-1 size-3" />
-          {selectedUserSdwtProds.length > 1 ? `${selectedUserSdwtProds.length}개 추가` : "추가"}
+          추가
         </Button>
       </form>
       {!hasOptions ? (
@@ -436,10 +442,8 @@ function TargetMappingSummary({
             const userSdwtProd = mapping.userSdwtProd || "-"
             const sdwtProdLineLabel = getMappingValueLineLabel(mappingValueLineLabels, sdwtProd)
             const userSdwtProdLineLabel = getMappingValueLineLabel(mappingValueLineLabels, userSdwtProd)
-            const sdwtProdLabel = sdwtProdLineLabel ? `${sdwtProdLineLabel} · ${sdwtProd}` : sdwtProd
-            const userSdwtProdLabel = userSdwtProdLineLabel
-              ? `${userSdwtProdLineLabel} · ${userSdwtProd}`
-              : userSdwtProd
+            const sdwtProdLabel = formatMappingValueWithLine(sdwtProdLineLabel, sdwtProd)
+            const userSdwtProdLabel = formatMappingValueWithLine(userSdwtProdLineLabel, userSdwtProd)
             const mappingKey = `${userSdwtProd.trim().toLowerCase()}::${sdwtProd.trim().toLowerCase()}`
             const isDeleting = deletingMappingKey === mappingKey
             const isDeleteDisabled = !canManage || isSaving || isDeleting

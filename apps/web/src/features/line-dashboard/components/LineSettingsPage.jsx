@@ -531,7 +531,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     setTargetFormError(null)
   }, [lineId])
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     if (!lineId || !selectedUserSdwtProd) {
       setMappingUserLineId("")
       setMappingSdwtLineId("")
@@ -816,27 +816,9 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     setMappingFormError(null)
   }, [])
 
-  const resetMappingDraftToCurrentLineDefaults = React.useCallback(() => {
-    const defaultUserOption = mappingUserLineOptions.find((option) => option.lineId === lineId) || mappingUserLineOptions[0]
-    const defaultSdwtOption = mappingSdwtLineOptions.find((option) => option.lineId === lineId) || mappingSdwtLineOptions[0]
-    const defaultUserValue = defaultUserOption?.values?.[0] || ""
-    const defaultSdwtValue = defaultSdwtOption?.values?.[0] || ""
-
-    setMappingUserLineId(defaultUserOption?.lineId || lineId || "")
-    setMappingSdwtLineId(defaultSdwtOption?.lineId || lineId || "")
-    setMappingDraft({
-      userSdwtProd: defaultUserValue,
-      userSdwtProds: defaultUserValue ? [defaultUserValue] : [],
-      sdwtProd: defaultSdwtValue,
-    })
-    didResetMappingDraftRef.current = true
-    setMappingFormError(null)
-  }, [lineId, mappingSdwtLineOptions, mappingUserLineOptions])
-
   const handleSelectNotificationTarget = React.useCallback((value) => {
     setSelectedUserSdwtProd(value)
-    resetMappingDraftToCurrentLineDefaults()
-  }, [resetMappingDraftToCurrentLineDefaults])
+  }, [])
 
   const handleCreateTargetMapping = React.useCallback(async (event) => {
     event.preventDefault()
@@ -1608,7 +1590,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
       selectedUserSdwtProd={selectedUserSdwtProd}
       isLoading={isMyRecipientTargetsLoading}
       error={myRecipientTargetsError}
-      onSelectTarget={setSelectedUserSdwtProd}
+      onSelectTarget={handleSelectNotificationTarget}
     />
   )
 
