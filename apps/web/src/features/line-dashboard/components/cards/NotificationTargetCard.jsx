@@ -172,8 +172,17 @@ function MappingAffiliationDropdown({
                       <button
                         key={`${activeLineId}-${value}`}
                         type="button"
+                        onPointerDown={(event) => {
+                          if (multiSelect) {
+                            event.preventDefault()
+                            event.stopPropagation()
+                          }
+                        }}
                         onClick={(event) => {
                           event.preventDefault()
+                          if (multiSelect) {
+                            event.stopPropagation()
+                          }
                           if (multiSelect) {
                             const nextValues = selectedValueSet.has(valueKey)
                               ? activeSelectedValues.filter((selected) => (

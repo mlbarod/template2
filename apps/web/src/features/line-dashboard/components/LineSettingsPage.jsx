@@ -238,6 +238,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   const recipientContextRef = React.useRef({ lineId, selectedUserSdwtProd })
   const sourceGroupRequestRef = React.useRef({ mail: 0, messenger: 0 })
   const sourceLoadRequestRef = React.useRef({ mail: 0, messenger: 0 })
+  const didResetMappingDraftRef = React.useRef(false)
   recipientContextRef.current = { lineId, selectedUserSdwtProd }
 
   const isRefreshing = isLoading && hasLoadedOnce
@@ -550,6 +551,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
       userSdwtProds: defaultUserValue ? [defaultUserValue] : [],
       sdwtProd: defaultSdwtValue,
     })
+    didResetMappingDraftRef.current = true
     setMappingFormError(null)
   }, [lineId, mappingSdwtLineOptions, mappingUserLineOptions, selectedUserSdwtProd])
 
@@ -576,6 +578,14 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   }, [loadMyRecipientTargets])
 
   React.useEffect(() => {
+    if (didResetMappingDraftRef.current) {
+      didResetMappingDraftRef.current = false
+      setMappingFormError(null)
+      setIsCreatingMapping(false)
+      setDeletingMappingKey("")
+      return
+    }
+
     setMappingDraft((prev) => {
       const previousUserSdwtProds = Array.isArray(prev.userSdwtProds) ? prev.userSdwtProds : []
       const nextUserSdwtProds = previousUserSdwtProds.filter((value) => (
