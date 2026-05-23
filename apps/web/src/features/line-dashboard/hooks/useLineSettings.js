@@ -531,14 +531,10 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
       if (target) {
         setNotificationTargets((prev) => {
           const key = target.targetUserSdwtProd.toLowerCase()
-          return [
-            target,
-            ...prev.filter((item) => item.targetUserSdwtProd.toLowerCase() !== key),
-          ].sort((left, right) => left.targetUserSdwtProd.localeCompare(right.targetUserSdwtProd))
-        })
-        setUserSdwtValues((prev) => {
-          const values = Array.from(new Set([target.targetUserSdwtProd, ...prev]))
-          return values.sort()
+          const currentTargets = Array.isArray(prev) ? prev : []
+          return currentTargets.map((item) => (
+            item.targetUserSdwtProd.toLowerCase() === key ? target : item
+          ))
         })
         setLastUpdatedLabel(nowLabel())
       }
@@ -564,10 +560,10 @@ export function useLineSettings({ lineId, userSdwtProd, loadRecipients = true })
       if (target) {
         setNotificationTargets((prev) => {
           const key = target.targetUserSdwtProd.toLowerCase()
-          return [
-            target,
-            ...prev.filter((item) => item.targetUserSdwtProd.toLowerCase() !== key),
-          ].sort((left, right) => left.targetUserSdwtProd.localeCompare(right.targetUserSdwtProd))
+          const currentTargets = Array.isArray(prev) ? prev : []
+          return currentTargets.map((item) => (
+            item.targetUserSdwtProd.toLowerCase() === key ? target : item
+          ))
         })
         setLastUpdatedLabel(nowLabel())
       }

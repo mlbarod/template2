@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
@@ -47,6 +48,18 @@ function normalizeSelectedValues(values, fallbackValue = "") {
     })
 }
 
+function orderMappingLineOptions(lineOptions, pinSystemLineToTop) {
+  const options = Array.isArray(lineOptions) ? lineOptions : []
+  if (!pinSystemLineToTop) return options
+
+  return [...options].sort((left, right) => {
+    const leftIsSystem = String(left?.lineId || "").trim().toLowerCase() === "system"
+    const rightIsSystem = String(right?.lineId || "").trim().toLowerCase() === "system"
+    if (leftIsSystem === rightIsSystem) return 0
+    return leftIsSystem ? -1 : 1
+  })
+}
+
 function MappingAffiliationDropdown({
   label,
   placeholder,
@@ -56,12 +69,17 @@ function MappingAffiliationDropdown({
   selectedValues = [],
   lineOptions = [],
   multiSelect = false,
+  pinSystemLineToTop = false,
   disabled,
   onSelect,
   onMultiSelect,
 }) {
   const [open, setOpen] = React.useState(false)
   const [activeLineId, setActiveLineId] = React.useState(selectedLineId || currentLineId || "")
+  const visibleLineOptions = React.useMemo(
+    () => orderMappingLineOptions(lineOptions, pinSystemLineToTop),
+    [lineOptions, pinSystemLineToTop],
+  )
 
   React.useEffect(() => {
     if (!open) {
@@ -70,10 +88,10 @@ function MappingAffiliationDropdown({
   }, [currentLineId, open, selectedLineId])
 
   React.useEffect(() => {
-    if (!activeLineId && lineOptions.length > 0) {
-      setActiveLineId(lineOptions[0].lineId)
+    if (!activeLineId && visibleLineOptions.length > 0) {
+      setActiveLineId(visibleLineOptions[0].lineId)
     }
-  }, [activeLineId, lineOptions])
+  }, [activeLineId, visibleLineOptions])
 
   const selectedLineLabel = selectedLineId ? formatMappingLineLabel(selectedLineId) : ""
   const normalizedSelectedValues = normalizeSelectedValues(selectedValues, selectedValue)
@@ -115,8 +133,8 @@ function MappingAffiliationDropdown({
               Line 선택
             </div>
             <div className="flex max-h-52 flex-col gap-1 overflow-y-auto pr-1">
-              {lineOptions.length > 0 ? (
-                lineOptions.map((option) => {
+              {visibleLineOptions.length > 0 ? (
+                visibleLineOptions.map((option) => {
                   const isActive = option.lineId === activeLineId
                   const isSelectedLine = option.lineId === selectedLineId
                   return (
@@ -168,30 +186,34 @@ function MappingAffiliationDropdown({
                     const isSelected = activeLineId === selectedLineId && (
                       multiSelect ? selectedValueSet.has(valueKey) : value === selectedValue
                     )
-                    return (
-                      <button
-                        key={`${activeLineId}-${value}`}
-                        type="button"
-                        onPointerDown={(event) => {
-                          if (multiSelect) {
+                    if (multiSelect) {
+                      return (
+                        <DropdownMenuCheckboxItem
+                          key={`${activeLineId}-${value}`}
+                          checked={isSelected}
+                          onSelect={(event) => {
                             event.preventDefault()
-                            event.stopPropagation()
-                          }
-                        }}
-                        onClick={(event) => {
-                          event.preventDefault()
-                          if (multiSelect) {
-                            event.stopPropagation()
-                          }
-                          if (multiSelect) {
+                          }}
+                          onCheckedChange={() => {
                             const nextValues = selectedValueSet.has(valueKey)
                               ? activeSelectedValues.filter((selected) => (
                                   selected.toLowerCase() !== valueKey
                                 ))
                               : [...activeSelectedValues, value]
                             onMultiSelect?.({ lineId: activeLineId, values: nextValues })
-                            return
-                          }
+                          }}
+                          className="rounded-md py-1 pr-2 text-xs"
+                        >
+                          <span className="truncate">{value}</span>
+                        </DropdownMenuCheckboxItem>
+                      )
+                    }
+                    return (
+                      <button
+                        key={`${activeLineId}-${value}`}
+                        type="button"
+                        onClick={(event) => {
+                          event.preventDefault()
                           onSelect?.({ lineId: activeLineId, value })
                           setOpen(false)
                         }}
@@ -351,6 +373,7 @@ function TargetMappingSummary({
             selectedValues={selectedUserSdwtProds}
             lineOptions={mappingUserLineOptions}
             multiSelect
+            pinSystemLineToTop
             disabled={isControlDisabled || !hasLineOptions}
             onSelect={({ lineId: nextLineId, value }) => {
               onMappingUserLineChange(nextLineId)
