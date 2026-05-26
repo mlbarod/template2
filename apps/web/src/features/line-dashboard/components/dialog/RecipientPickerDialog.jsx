@@ -34,6 +34,7 @@ function SearchSelect({
   searchPlaceholder,
   ariaLabel,
   filterLabel,
+  align = "start",
   onChange,
 }) {
   const [open, setOpen] = useState(false)
@@ -76,7 +77,11 @@ function SearchSelect({
       </button>
 
       {open ? (
-        <div className="bg-popover text-popover-foreground absolute top-10 left-0 z-50 grid w-[360px] max-w-[min(520px,calc(100vw-3rem))] grid-rows-[auto,minmax(0,1fr)] overflow-hidden rounded-md border shadow-md">
+        <div
+          className={`bg-popover text-popover-foreground absolute top-10 z-[70] grid w-[min(360px,calc(100vw-3rem))] max-w-[min(520px,calc(100vw-3rem))] grid-rows-[auto,minmax(0,1fr)] overflow-hidden rounded-md border shadow-md ${
+            align === "end" ? "right-0" : "left-0"
+          }`}
+        >
           <div className="border-b p-2">
             <Input
               value={filter}
@@ -86,7 +91,7 @@ function SearchSelect({
               autoFocus
             />
           </div>
-          <div role="listbox" className="max-h-80 min-h-0 overflow-y-auto p-1">
+          <div role="listbox" className="max-h-80 min-h-0 overflow-x-auto overflow-y-auto p-1">
             {filteredValues.length > 0 ? (
               filteredValues.map((item) => (
                 <button
@@ -95,9 +100,10 @@ function SearchSelect({
                   role="option"
                   aria-selected={item === value}
                   onClick={() => handleSelect(item)}
-                  className="focus:bg-accent focus:text-accent-foreground flex w-full min-w-0 rounded-sm px-2 py-1.5 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+                  className="focus:bg-accent focus:text-accent-foreground flex w-max min-w-full rounded-sm px-2 py-1.5 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+                  title={item}
                 >
-                  <span className="truncate">{item}</span>
+                  <span className="whitespace-nowrap">{item}</span>
                 </button>
               ))
             ) : (
@@ -131,7 +137,7 @@ function RecipientPickerUserList({
   if (isLoading) {
     return (
       <div
-        className={`flex ${RECIPIENT_PICKER_LIST_HEIGHT_CLASS} min-h-0 min-w-0 items-center justify-center rounded-md border px-3 py-8 text-center text-xs text-muted-foreground`}
+        className={`flex ${RECIPIENT_PICKER_LIST_HEIGHT_CLASS} min-h-0 min-w-0 items-start justify-start rounded-md border px-3 py-3 text-left text-xs text-muted-foreground`}
       >
         {loadingText}
       </div>
@@ -141,7 +147,7 @@ function RecipientPickerUserList({
   if (users.length === 0) {
     return (
       <div
-        className={`flex ${RECIPIENT_PICKER_LIST_HEIGHT_CLASS} min-h-0 min-w-0 items-center justify-center rounded-md border px-3 py-8 text-center text-xs text-muted-foreground`}
+        className={`flex ${RECIPIENT_PICKER_LIST_HEIGHT_CLASS} min-h-0 min-w-0 items-start justify-start rounded-md border px-3 py-3 text-left text-xs text-muted-foreground`}
       >
         {emptyText}
       </div>
@@ -150,7 +156,7 @@ function RecipientPickerUserList({
 
   return (
     <div
-      className={`grid ${RECIPIENT_PICKER_LIST_HEIGHT_CLASS} min-h-0 grid-rows-[auto,minmax(0,1fr)] overflow-hidden rounded-md border`}
+      className={`grid ${RECIPIENT_PICKER_LIST_HEIGHT_CLASS} min-h-0 content-start grid-rows-[auto,minmax(0,1fr)] overflow-hidden rounded-md border`}
     >
       <label className="flex h-8 items-center gap-2 border-b px-3 text-xs font-medium">
         <Checkbox
@@ -160,7 +166,7 @@ function RecipientPickerUserList({
         현재 결과 전체 선택
       </label>
       <div className="min-h-0 overflow-y-auto">
-        <div className="flex flex-col">
+        <div className="flex min-h-0 flex-col justify-start">
           {users.map((user) => {
             const recipientKey = getRecipientKey(user)
             if (!recipientKey) return null
@@ -268,7 +274,7 @@ export function RecipientPickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="grid h-[min(85dvh,720px)] w-[min(760px,calc(100%-2rem))] max-w-[min(760px,calc(100%-2rem))] grid-rows-[auto,minmax(0,1fr),auto] overflow-hidden">
+      <DialogContent className="grid h-[min(85dvh,720px)] w-[min(760px,calc(100%-2rem))] max-w-[min(760px,calc(100%-2rem))] grid-rows-[auto,minmax(0,1fr),auto] overflow-visible">
         <DialogHeader>
           <DialogTitle>{config.title} 선택</DialogTitle>
           <DialogDescription>
@@ -276,7 +282,11 @@ export function RecipientPickerDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs value={activeTab} onValueChange={onTabChange} className="h-full min-h-0 overflow-hidden">
+        <Tabs
+          value={activeTab}
+          onValueChange={onTabChange}
+          className="grid h-full min-h-0 grid-rows-[auto,minmax(0,1fr)] gap-2 overflow-visible"
+        >
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="group">소속에서 불러오기</TabsTrigger>
             <TabsTrigger value="search">이름 · KnoxID 검색</TabsTrigger>
@@ -284,7 +294,7 @@ export function RecipientPickerDialog({
 
           <TabsContent
             value="group"
-            className="h-full min-h-0 grid-rows-[auto,minmax(0,1fr)] gap-3 overflow-hidden data-[state=active]:grid data-[state=inactive]:hidden"
+            className="h-full min-h-0 grid-rows-[auto,minmax(0,1fr)] gap-3 overflow-visible data-[state=active]:grid data-[state=inactive]:hidden"
           >
             <div className="grid gap-2">
               <div className="grid grid-cols-2 gap-2">
@@ -311,6 +321,7 @@ export function RecipientPickerDialog({
                   searchPlaceholder="소속 검색"
                   ariaLabel="소속 선택"
                   filterLabel="소속 필터"
+                  align="end"
                   onChange={handleSourceSdwtChange}
                 />
               </div>
@@ -333,7 +344,7 @@ export function RecipientPickerDialog({
 
           <TabsContent
             value="search"
-            className="h-full min-h-0 grid-rows-[auto,minmax(0,1fr)] gap-3 overflow-hidden data-[state=active]:grid data-[state=inactive]:hidden"
+            className="h-full min-h-0 grid-rows-[auto,minmax(0,1fr)] gap-3 overflow-visible data-[state=active]:grid data-[state=inactive]:hidden"
           >
             <form className="grid grid-cols-[minmax(0,1fr)_auto] gap-2" onSubmit={onSearch}>
               <Input

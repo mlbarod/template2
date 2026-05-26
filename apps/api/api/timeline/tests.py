@@ -244,7 +244,7 @@ class TimelineEndpointTests(TestCase):
 
         query, params = fetch_all.call_args.args
         self.assertEqual(logs, [])
-        self.assertEqual(selectors.DEFAULT_LOG_QUERY_DAYS, 90)
+        self.assertEqual(selectors.DEFAULT_LOG_QUERY_DAYS, 60)
         period_date.assert_called_once_with()
         self.assertNotIn("limit %s", query.lower())
         self.assertEqual(params, ["2026-01-01", "EQP-ALPHA"])

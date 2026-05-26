@@ -15,7 +15,7 @@ from django.conf import settings
 from django.db import connections
 
 TIMELINE_DB_ALIAS = "timeline"
-DEFAULT_LOG_QUERY_DAYS = 90
+DEFAULT_LOG_QUERY_DAYS = 60
 MAX_LOG_LIMIT = 5000
 
 Row = Dict[str, object]

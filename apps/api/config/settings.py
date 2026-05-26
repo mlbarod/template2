@@ -199,7 +199,7 @@ DATABASES = {
     },
 }
 
-TIMELINE_QUERY_DAYS = env_int("TIMELINE_QUERY_DAYS", 90) or 90
+TIMELINE_QUERY_DAYS = env_int("TIMELINE_QUERY_DAYS", 60) or 60
 
 # L3 Spider Parquet 데이터 경로.
 # 원격 서버 데이터는 NFS/SMB 등으로 이 경로에 read-only mount해서 사용합니다.

@@ -1,6 +1,6 @@
 import { getBackendBaseUrl } from "@/lib/api";
 
-const DEFAULT_TIMEOUT = 10000;
+const DEFAULT_TIMEOUT = 30000;
 const MAX_RETRIES = 3;
 const TIMELINE_API_PREFIX = "/api/v1/timeline";
 
