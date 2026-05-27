@@ -363,6 +363,76 @@ class DroneSopPop3ParsingTests(TestCase):
             ],
         )
 
+    @override_settings(
+        DRONE_CTTTM_TABLE_NAME="ctttm_table",
+        DRONE_CTTTM_BASE_URL="https://ctttm.example.local/view?mode=detail",
+    )
+    @patch("api.drone.selectors.load_drone_sop_ctttm_latest_workorders_by_eqp_ids")
+    def test_build_drone_sop_row_enriches_ctttm_urls(self, mock_load_workorders: Mock) -> None:
+        """POP3 row 생성 시 CTTTM URL을 함께 계산하는지 확인합니다."""
+
+        mock_load_workorders.return_value = {
+            "EQP1-1": {"eqp_id": "EQP1-1", "workorder_id": "WO-1", "line_id": "L1"},
+            "EQP1-2": {"eqp_id": "EQP1-2", "workorder_id": "WO-2", "line_id": "L1"},
+        }
+        html = """
+        <html><body>
+          <data>
+            <line_id>L1</line_id>
+            <eqp_id>EQP1</eqp_id>
+            <chamber_ids>1,2</chamber_ids>
+            <lot_id>LOT.1</lot_id>
+            <main_step>MS</main_step>
+          </data>
+        </body></html>
+        """
+
+        row = build_drone_sop_row(html=html, early_inform_map={})
+        assert row is not None
+
+        self.assertEqual(
+            row["ctttm_urls"],
+            [
+                {
+                    "eqp_id": "EQP1-1",
+                    "url": "https://ctttm.example.local/view?mode=detail&wono=WO-1&lineId=L1",
+                },
+                {
+                    "eqp_id": "EQP1-2",
+                    "url": "https://ctttm.example.local/view?mode=detail&wono=WO-2&lineId=L1",
+                },
+            ],
+        )
+        mock_load_workorders.assert_called_once_with(
+            eqp_ids=["EQP1-1", "EQP1-2"],
+            ctttm_table="ctttm_table",
+        )
+
+    @override_settings(
+        DRONE_CTTTM_TABLE_NAME="ctttm_table",
+        DRONE_CTTTM_BASE_URL="https://ctttm.example.local/view",
+    )
+    @patch("api.drone.selectors.load_drone_sop_ctttm_latest_workorders_by_eqp_ids")
+    def test_build_drone_sop_row_keeps_row_when_ctttm_lookup_fails(self, mock_load_workorders: Mock) -> None:
+        """CTTTM 조회 실패 시에도 POP3 row 생성은 유지합니다."""
+
+        mock_load_workorders.side_effect = RuntimeError("ctttm unavailable")
+        html = """
+        <data>
+          <line_id>L1</line_id>
+          <eqp_id>EQP1</eqp_id>
+          <chamber_ids>1</chamber_ids>
+          <lot_id>LOT.1</lot_id>
+          <main_step>MS</main_step>
+        </data>
+        """
+
+        row = build_drone_sop_row(html=html, early_inform_map={})
+        assert row is not None
+
+        self.assertEqual(row["eqp_id"], "EQP1")
+        self.assertNotIn("ctttm_urls", row)
+
     def test_build_drone_sop_row_skips_no_data_defect_map_url(self) -> None:
         """DEFECT_MAP_URL이 No data placeholder이면 해당 defect step을 제외합니다."""
 
@@ -826,6 +896,33 @@ class DroneSopUpsertTests(TestCase):
         self.assertEqual(refreshed.metro_current_step, "ST002")
         self.assertEqual(refreshed.defect_url, "https://example.com/new")
         self.assertEqual(refreshed.target_user_sdwt_prod, "old-target")
+
+    def test_upsert_persists_ctttm_urls(self) -> None:
+        """POP3 upsert가 CTTTM URL JSON을 저장하는지 확인합니다."""
+
+        ctttm_urls = [
+            {"eqp_id": "EQP1-1", "url": "https://example.com/ctttm-1"},
+            {"eqp_id": "EQP1-2", "url": "https://example.com/ctttm-2"},
+        ]
+
+        upsert_drone_sop_rows(
+            rows=[
+                {
+                    "line_id": "L1",
+                    "eqp_id": "EQP1",
+                    "chamber_ids": "12",
+                    "lot_id": "LOT.CTTTM",
+                    "main_step": "MS",
+                    "status": "COMPLETE",
+                    "ctttm_urls": ctttm_urls,
+                    "needtosend": 1,
+                    "target_user_sdwt_prod": "TARGET-CTTTM",
+                }
+            ]
+        )
+
+        sop = DroneSOP.objects.get(lot_id="LOT.CTTTM")
+        self.assertEqual(sop.ctttm_urls, ctttm_urls)
 
     def test_upsert_refreshes_updated_at_on_conflict(self) -> None:
         """POP3 upsert 충돌 갱신 시 updated_at도 최신화되는지 확인합니다."""
@@ -6955,7 +7052,7 @@ class DroneSopJiraHtmlDescriptionTests(TestCase):
             "knox_id": "knox",
             "user_sdwt_prod": "prod",
             "comment": "hello",
-            "url": [{"eqp_id": "EQP-1", "url": "https://example.com/ctttm"}],
+            "ctttm_urls": [{"eqp_id": "EQP-1", "url": "https://example.com/ctttm"}],
         }
 
         fields = jira_delivery._build_jira_issue_fields(

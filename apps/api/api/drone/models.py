@@ -80,6 +80,7 @@ class DroneSOP(models.Model):
     user_sdwt_prod = models.CharField(max_length=64, null=True, blank=True)
     target_user_sdwt_prod = models.CharField(max_length=64, null=True, blank=True)
     defect_url = models.TextField(null=True, blank=True)
+    ctttm_urls = models.JSONField(null=True, blank=True)
     instant_inform = models.SmallIntegerField(default=0)
     needtosend = models.SmallIntegerField(default=1)
     custom_end_step = models.CharField(max_length=50, null=True, blank=True)

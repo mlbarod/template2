@@ -46,10 +46,10 @@ def _build_eqp_cb(row: dict[str, Any]) -> str:
 
 
 def _normalize_ctttm_urls(value: Any) -> list[dict[str, str]]:
-    """CTTTM URL 입력을 통일된 리스트 형태로 정규화합니다.
+    """CTTTM URL 배열 입력을 템플릿용 리스트로 정규화합니다.
 
     인자:
-        value: 문자열 또는 dict 리스트 입력.
+        value: dict 리스트 입력.
 
     반환:
         {"url","label"} 형태의 리스트.
@@ -58,17 +58,7 @@ def _normalize_ctttm_urls(value: Any) -> list[dict[str, str]]:
         없음. 순수 정규화입니다.
     """
 
-    # -------------------------------------------------------------------------
-    # 1) 문자열 입력 처리
-    # -------------------------------------------------------------------------
     urls: list[dict[str, str]] = []
-    if isinstance(value, str):
-        if value.strip():
-            urls.append({"url": value.strip(), "label": value.strip()})
-        return urls
-    # -------------------------------------------------------------------------
-    # 2) 리스트 입력 처리
-    # -------------------------------------------------------------------------
     if isinstance(value, list):
         for item in value:
             if not isinstance(item, dict):
@@ -219,7 +209,7 @@ def build_inform_context(row: dict[str, Any]) -> dict[str, Any]:
         "lot_id": lot_id,
         "knoxid": knoxid,
         "user_sdwt_prod": resolved_user_sdwt_prod,
-        "ctttm_urls": _normalize_ctttm_urls(row.get("url")),
+        "ctttm_urls": _normalize_ctttm_urls(row.get("ctttm_urls")),
         "defect_urls": _normalize_defect_urls(
             value=row.get("defect_urls") if "defect_urls" in row else row.get("defect_url"),
             lot_id=lot_id,

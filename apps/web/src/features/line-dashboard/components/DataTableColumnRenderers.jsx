@@ -20,6 +20,7 @@ import {
   normalizeJiraKey,
   normalizeNeedToSend,
   normalizeStatus,
+  parseCtttmUrls,
   parseDefectUrls,
 } from "../utils/dataTableColumnNormalizers"
 import {
@@ -336,7 +337,65 @@ function DefectUrlCell({ value }) {
   return <DefectUrlHoverList links={links} />
 }
 
+function CtttmUrlMenu({ links }) {
+  return (
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 text-primary transition-colors hover:text-primary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          aria-label="Open CTTTM URL list"
+          title="CTTTM URL"
+        >
+          <ExternalLink className="h-4 w-4" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="center" className="z-[70] min-w-40">
+        {links.map((link, index) => (
+          <DropdownMenuItem key={`${link.href}:${index}`} asChild>
+            <a
+              href={link.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex min-w-0 items-center justify-between gap-2"
+              title={link.href}
+            >
+              <span className="min-w-0 truncate">{link.label}</span>
+              <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            </a>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function CtttmUrlCell({ value }) {
+  const links = parseCtttmUrls(value)
+  if (!links.length) return null
+
+  if (links.length === 1) {
+    const [link] = links
+    return (
+      <a
+        href={link.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1 text-primary transition-colors hover:text-primary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        aria-label={`Open CTTTM URL ${link.label} in a new tab`}
+        title={link.href}
+      >
+        <ExternalLink className="h-4 w-4" />
+      </a>
+    )
+  }
+
+  return <CtttmUrlMenu links={links} />
+}
+
 const CellRenderers = {
+  ctttm_urls: ({ value }) => <CtttmUrlCell value={value} />,
+
   defect_url: ({ value }) => <DefectUrlCell value={value} />,
 
   jira_key: ({ value }) => {

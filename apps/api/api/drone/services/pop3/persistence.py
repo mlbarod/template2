@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import timedelta
 from typing import Any, Sequence
@@ -98,6 +99,7 @@ def upsert_drone_sop_rows(*, rows: Sequence[dict[str, Any]]) -> int:
         "target_user_sdwt_prod",
         "comment",
         "defect_url",
+        "ctttm_urls",
         "instant_inform",
         "needtosend",
         "custom_end_step",
@@ -105,7 +107,7 @@ def upsert_drone_sop_rows(*, rows: Sequence[dict[str, Any]]) -> int:
     conflict_cols = ["sop_key"]
     exclude_update_cols = {"needtosend", "comment", "instant_inform", "sop_key"}
 
-    placeholders = ",".join(["%s"] * len(insert_cols))
+    placeholders = ",".join(["%s::jsonb" if col == "ctttm_urls" else "%s" for col in insert_cols])
     quoted_table = f'"{DroneSOP._meta.db_table}"'
     quoted_insert_cols = ", ".join(f'"{col}"' for col in insert_cols)
     conflict_target = ", ".join(f'"{col}"' for col in conflict_cols)
@@ -116,6 +118,9 @@ def upsert_drone_sop_rows(*, rows: Sequence[dict[str, Any]]) -> int:
             continue
         if col == "defect_url":
             update_parts.append(f'"{col}" = EXCLUDED."{col}"')
+            continue
+        if col == "ctttm_urls":
+            update_parts.append(f'"{col}" = COALESCE(EXCLUDED."{col}", {quoted_table}."{col}")')
             continue
         if col == "target_user_sdwt_prod":
             update_parts.append(f'"{col}" = COALESCE({quoted_table}."{col}", EXCLUDED."{col}")')
@@ -164,6 +169,8 @@ def upsert_drone_sop_rows(*, rows: Sequence[dict[str, Any]]) -> int:
             value = row.get(col)
             if value is None and col == "instant_inform":
                 value = 0
+            if value is not None and col == "ctttm_urls":
+                value = json.dumps(value, ensure_ascii=False)
             values.append(value)
         args.append(tuple(values))
     # -------------------------------------------------------------------------

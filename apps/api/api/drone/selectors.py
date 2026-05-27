@@ -75,6 +75,7 @@ _DRONE_SOP_COMMON_CANDIDATE_FIELDS = (
     "target_user_sdwt_prod",
     "comment",
     "defect_url",
+    "ctttm_urls",
     "needtosend",
     "instant_inform",
     "custom_end_step",
@@ -733,6 +734,77 @@ def load_drone_sop_ctttm_workorders_map(
             }
         )
 
+    return mapping
+
+
+def load_drone_sop_ctttm_latest_workorders_by_eqp_ids(
+    *,
+    eqp_ids: Sequence[str],
+    ctttm_table: str,
+) -> dict[str, dict[str, str]]:
+    """CTTTM 테이블에서 eqp_id별 최신 workorder 정보를 조회합니다.
+
+    인자:
+        eqp_ids: CTTTM 조회 대상 eqp_id 목록.
+        ctttm_table: CTTTM 테이블명.
+
+    반환:
+        {eqp_id: {"eqp_id": "...", "workorder_id": "...", "line_id": "..."}} 형태의 dict.
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+
+    오류:
+        테이블명이 허용된 패턴이 아니면 ValueError를 발생시킵니다.
+    """
+
+    if not eqp_ids:
+        return {}
+    if connection.vendor != "postgresql":
+        return {}
+
+    raw_table_name = str(ctttm_table or "").strip()
+    if not raw_table_name:
+        return {}
+    table_name = sanitize_identifier(raw_table_name)
+    if not table_name:
+        raise ValueError("CTTTM table name must match ^[A-Za-z0-9_]+$")
+
+    normalized_eqp_ids = sorted(
+        {
+            str(eqp_id).strip()
+            for eqp_id in eqp_ids
+            if isinstance(eqp_id, str) and str(eqp_id).strip()
+        }
+    )
+    if not normalized_eqp_ids:
+        return {}
+
+    rows = run_query(
+        """
+        SELECT DISTINCT ON (eqp_id)
+            eqp_id,
+            workorder_id,
+            line_id
+        FROM {ctttm_table}
+        WHERE eqp_id = ANY(%s)
+        ORDER BY eqp_id, inprg_date DESC
+        """.format(ctttm_table=table_name),
+        [normalized_eqp_ids],
+    )
+
+    mapping: dict[str, dict[str, str]] = {}
+    for row in rows:
+        eqp_id = str(row.get("eqp_id") or "").strip()
+        workorder_id = str(row.get("workorder_id") or "").strip()
+        line_id = str(row.get("line_id") or "").strip()
+        if not eqp_id or not workorder_id or not line_id:
+            continue
+        mapping[eqp_id] = {
+            "eqp_id": eqp_id,
+            "workorder_id": workorder_id,
+            "line_id": line_id,
+        }
     return mapping
 
 

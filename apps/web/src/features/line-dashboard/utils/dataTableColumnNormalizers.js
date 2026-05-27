@@ -18,6 +18,27 @@ export function splitHttpUrls(raw) {
     .filter(Boolean)
 }
 
+function normalizeCtttmUrlEntry(entry, index) {
+  if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+    const href = toHttpUrl(entry.url)
+    if (!href) return null
+    const label = String(entry.eqp_id || entry.label || index + 1).trim()
+    return { href, label: label || String(index + 1) }
+  }
+
+  return null
+}
+
+export function parseCtttmUrls(raw) {
+  if (raw == null) return []
+
+  if (Array.isArray(raw)) {
+    return raw.map((entry, index) => normalizeCtttmUrlEntry(entry, index)).filter(Boolean)
+  }
+
+  return []
+}
+
 function normalizeDefectUrlEntry(entry, index) {
   if (typeof entry === "object" && !Array.isArray(entry)) {
     const href = toHttpUrl(entry.map_url)

@@ -13,6 +13,8 @@ from typing import Any, Optional, Sequence
 from django.utils import timezone
 
 from ... import selectors
+from ..jira.config import DroneCtttmConfig
+from ..jira.ctttm import enrich_rows_with_ctttm_urls as _enrich_rows_with_ctttm_urls
 from ..shared.notify_resolver import (
     UserSdwtProdMapIndex,
     load_user_sdwt_prod_map_index,
@@ -58,12 +60,15 @@ def build_drone_sop_row(
 ) -> Optional[dict[str, Any]]:
     """메일 HTML에서 Drone SOP row를 생성하는 공개 함수입니다."""
 
-    return _build_drone_sop_row(
+    row = _build_drone_sop_row(
         html=html,
         early_inform_map=early_inform_map,
         user_sdwt_map_index=user_sdwt_map_index,
         needtosend_rule_cache=needtosend_rule_cache,
     )
+    if row is not None:
+        _enrich_rows_with_ctttm_urls(rows=[row], config=DroneCtttmConfig.from_settings())
+    return row
 
 
 def upsert_drone_sop_rows(*, rows: Sequence[dict[str, Any]]) -> int:
@@ -83,12 +88,15 @@ def _parse_drone_sop_row_or_none(
     """HTML 본문을 Drone SOP row로 파싱합니다."""
 
     try:
-        return _build_drone_sop_row(
+        row = _build_drone_sop_row(
             html=html,
             early_inform_map=early_inform_map,
             user_sdwt_map_index=user_sdwt_map_index,
             needtosend_rule_cache=needtosend_rule_cache,
         )
+        if row is not None:
+            _enrich_rows_with_ctttm_urls(rows=[row], config=DroneCtttmConfig.from_settings())
+        return row
     except Exception:
         logger.exception("Failed to parse %s", error_label)
         return None
