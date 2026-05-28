@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Mapping, Sequence
@@ -53,6 +54,7 @@ class TableUpdateResult:
 _ALLOWED_TABLES = {table_schema.DEFAULT_TABLE}
 
 _RECENT_FUTURE_TOLERANCE_MINUTES = 5
+_JSON_ARRAY_RESPONSE_COLUMNS = {"ctttm_urls"}
 
 
 def _raise_if_table_missing(exc: Exception, table_name: str) -> None:
@@ -92,6 +94,43 @@ def _fetch_row(*, sql: str, params: Sequence[Any]) -> dict[str, Any] | None:
 
     rows = _fetch_rows(sql=sql, params=params)
     return rows[0] if rows else None
+
+
+def _normalize_json_array_response_value(value: Any) -> Any:
+    """JSON 배열 응답 컬럼 값을 실제 list 형태로 정규화합니다."""
+
+    if not isinstance(value, str):
+        return value
+
+    raw_value = value.strip()
+    if not raw_value:
+        return value
+
+    try:
+        parsed = json.loads(raw_value)
+    except json.JSONDecodeError:
+        return value
+
+    return parsed if isinstance(parsed, list) else value
+
+
+def _normalize_table_response_rows(*, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """테이블 API 응답 row의 JSON 배열 컬럼 타입을 보정합니다."""
+
+    normalized_rows: list[dict[str, Any]] = []
+    for row in rows:
+        next_row = row
+        for column in _JSON_ARRAY_RESPONSE_COLUMNS:
+            if column not in row:
+                continue
+            normalized_value = _normalize_json_array_response_value(row.get(column))
+            if normalized_value is row.get(column):
+                continue
+            if next_row is row:
+                next_row = dict(row)
+            next_row[column] = normalized_value
+        normalized_rows.append(next_row)
+    return normalized_rows
 
 
 def _fetch_table_record(*, table_name: str, id_column: str, record_id: Any) -> dict[str, Any] | None:
@@ -220,6 +259,7 @@ def get_table_list_payload(*, params: Mapping[str, Any]) -> dict[str, Any]:
         raise
 
     rows = _attach_delivery_rows(rows=rows)
+    rows = _normalize_table_response_rows(rows=rows)
     response_columns = _append_delivery_columns(column_names)
 
     return {

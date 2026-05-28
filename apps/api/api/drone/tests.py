@@ -7721,6 +7721,35 @@ class DroneTablesEndpointTests(TestCase):
         self.assertEqual(payload["table"], "drone_sop")
         self.assertEqual(payload["rowCount"], 1)
 
+    @patch("api.drone.services.table_ops._fetch_rows")
+    @patch("api.drone.services.table_ops.table_schema.resolve_table_schema")
+    def test_tables_list_returns_ctttm_urls_as_array(
+        self,
+        mock_schema: Mock,
+        mock_fetch_rows: Mock,
+    ) -> None:
+        """CTTTM URL JSON 문자열을 응답 배열로 정규화하는지 확인합니다."""
+
+        ctttm_urls = [{"eqp_id": "ABCD-1", "url": "https://ctttm.example.local"}]
+        mock_schema.return_value = SimpleNamespace(
+            name="drone_sop",
+            columns=["id", "created_at", "ctttm_urls"],
+            timestamp_column="created_at",
+        )
+        mock_fetch_rows.return_value = [
+            {
+                "id": 1,
+                "created_at": "2024-01-01 00:00:00",
+                "ctttm_urls": json.dumps(ctttm_urls),
+            }
+        ]
+
+        response = self.client.get(reverse("drone-tables"))
+
+        self.assertEqual(response.status_code, 200)
+        row = response.json()["rows"][0]
+        self.assertEqual(row["ctttm_urls"], ctttm_urls)
+
     def test_tables_list_includes_delivery_rows_metadata(self) -> None:
         """테이블 조회 row에 channel delivery 메타가 포함되는지 확인합니다."""
 

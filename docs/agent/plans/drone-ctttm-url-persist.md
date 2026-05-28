@@ -27,6 +27,7 @@
 - [x] POP3 row 보강 및 upsert 컬럼 추가
 - [x] 알림 컨텍스트가 저장된 CTTTM URL을 우선 사용하도록 변경
 - [x] 프론트 상태 테이블 CTTTM 컬럼 렌더러 추가
+- [x] 상태 테이블 API 응답에서 `ctttm_urls` JSON 문자열을 배열로 정규화
 - [x] 관련 테스트 추가/수정
 
 ## 검증
@@ -44,3 +45,4 @@
 - 2026-05-27: `ctttm_urls` 모델/migration, POP3 보강, status 테이블 렌더러, 테스트를 추가.
 - 2026-05-27: `api.drone` 테스트 254개, UI consistency audit, migration dry-run 검증 통과.
 - 2026-05-27: CTTTM `url` 호환 경로를 제거하고 `ctttm_urls`를 단일 소스로 정리.
+- 2026-05-28: `/line-dashboard/tables` 응답에서 raw cursor의 `ctttm_urls` 문자열 JSON을 배열로 보정.
