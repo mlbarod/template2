@@ -1,11 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import {
-  Activity,
-  AlertTriangle,
   BarChart3,
   ChevronRight,
-  Gauge,
-  Layers3,
 } from "lucide-react"
 import {
   CartesianGrid,
@@ -19,14 +15,13 @@ import {
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
+import { Card, CardContent, CardTitle } from "@/components/ui/card"
+import { ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
 
 import {
   FDC_LINES,
-  getSeverityLabel,
   getTeamsByLine,
   getTrendSteps,
 } from "../utils/fdcTrendMockData"
@@ -42,66 +37,65 @@ function formatTrendType(value) {
   return TREND_TYPE_LABELS[value] ?? value
 }
 
-function SummaryMetric({ icon: Icon, label, value, helper }) {
-  return (
-    <Card className="gap-3 rounded-lg py-4 shadow-none">
-      <CardContent className="flex items-start gap-3 px-4">
-        <span className="rounded-md border bg-background p-2 text-muted-foreground">
-          <Icon className="size-4" aria-hidden="true" />
-        </span>
-        <span className="min-w-0">
-          <span className="block text-xs text-muted-foreground">{label}</span>
-          <span className="mt-1 block text-lg font-semibold tabular-nums">{value}</span>
-          <span className="mt-0.5 block text-xs text-muted-foreground">{helper}</span>
-        </span>
-      </CardContent>
-    </Card>
-  )
-}
-
 function TrendStepButton({ step, selected, onSelect }) {
-  const severityLabel = getSeverityLabel(step.severity)
-
   return (
     <button
       type="button"
       onClick={onSelect}
       className={cn(
-        "grid w-full gap-3 rounded-lg border bg-card p-4 text-left transition hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        selected && "border-primary bg-accent text-accent-foreground",
+        "flex h-7 w-full min-w-0 items-center justify-between gap-3 border-b px-3 text-left text-xs transition last:border-b-0 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+        selected && "bg-accent text-accent-foreground",
       )}
     >
-      <span className="flex min-w-0 items-start justify-between gap-3">
-        <span className="min-w-0">
-          <span className="block truncate text-sm font-semibold">{step.stepName}</span>
-          <span className="mt-1 block text-xs text-muted-foreground">
-            {step.stepCode} · {step.toolGroup}
-          </span>
-        </span>
-        <Badge variant={severityLabel === "High" ? "destructive" : "secondary"}>
-          {severityLabel}
-        </Badge>
+      <span className="min-w-0 flex-1 truncate font-semibold">{step.stepName}</span>
+      <span className="shrink-0 text-muted-foreground">{step.equipmentCount}대</span>
+      <span className="min-w-12 shrink-0 text-right font-semibold tabular-nums">
+        {step.abnormalCount}건수
       </span>
-      <span className="grid grid-cols-3 gap-2 text-xs">
-        <span>
-          <span className="block text-muted-foreground">Score</span>
-          <span className="font-semibold tabular-nums">{step.severity}</span>
-        </span>
-        <span>
-          <span className="block text-muted-foreground">Abnormal</span>
-          <span className="font-semibold tabular-nums">{step.abnormalCount}</span>
-        </span>
-        <span>
-          <span className="block text-muted-foreground">Lots</span>
-          <span className="font-semibold tabular-nums">{step.lotCount}</span>
-        </span>
+      <span className="shrink-0 text-muted-foreground">
+        <ChevronRight className="size-3" aria-hidden="true" />
       </span>
-      <span className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-        <span>{formatTrendType(step.trendType)}</span>
-        <span className="inline-flex items-center gap-1">
-          상세 보기
-          <ChevronRight className="size-3" aria-hidden="true" />
-        </span>
+    </button>
+  )
+}
+
+function EquipmentButton({ equipment, selected, onSelect }) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "flex min-w-0 items-center justify-between gap-3 border-b px-4 py-2 text-left transition last:border-b-0 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+        selected && "bg-accent text-accent-foreground",
+      )}
+    >
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-semibold">{equipment.equipmentName}</span>
+        <span className="mt-1 block text-xs text-muted-foreground">{equipment.sensorCount} sensors</span>
+      </span>
+      <span className="min-w-14 shrink-0 text-right text-sm font-semibold tabular-nums">
+        {equipment.abnormalCount}건수
+      </span>
+    </button>
+  )
+}
+
+function SensorButton({ sensor, selected, onSelect }) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "flex min-w-0 items-center justify-between gap-3 border-b px-4 py-2 text-left transition last:border-b-0 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+        selected && "bg-accent text-accent-foreground",
+      )}
+    >
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-semibold">{sensor.sensorName}</span>
+        <span className="mt-1 block text-xs text-muted-foreground">{formatTrendType(sensor.trendType)}</span>
+      </span>
+      <span className="min-w-14 shrink-0 text-right text-sm font-semibold tabular-nums">
+        {sensor.abnormalCount}건수
       </span>
     </button>
   )
@@ -126,96 +120,125 @@ function ScatterTooltip({ active, payload }) {
   )
 }
 
-function FdcScatterChart({ selectedStep }) {
-  if (!selectedStep) {
+function FdcScatterChart({ selectedStep, sensor, selected }) {
+  if (!selectedStep || !sensor) {
     return (
-      <div className="flex h-full min-h-72 items-center justify-center rounded-lg border bg-card text-sm text-muted-foreground">
-        스텝을 선택하면 scatter chart가 표시됩니다.
+      <div className="flex h-72 items-center justify-center rounded-lg border bg-card text-sm text-muted-foreground">
+        STEP, 설비호기, FDC 센서를 선택하면 scatter chart가 표시됩니다.
       </div>
     )
   }
 
   return (
-    <Card className="grid h-full min-h-0 grid-rows-[auto,1fr] gap-0 overflow-hidden rounded-lg py-0 shadow-none">
-      <CardHeader className="border-b bg-muted/40 px-4 py-3">
-        <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex min-w-0 items-center gap-2">
-              <CardTitle className="truncate text-base">{selectedStep.stepName}</CardTitle>
-              <Badge variant="outline">{selectedStep.toolGroup}</Badge>
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {selectedStep.stepCode} · {formatTrendType(selectedStep.trendType)} · Last {selectedStep.latestAt}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Badge variant="secondary">{selectedStep.points.length} wafers</Badge>
-            <Badge variant={getSeverityLabel(selectedStep.severity) === "High" ? "destructive" : "outline"}>
-              Score {selectedStep.severity}
-            </Badge>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="min-h-0 p-4">
-        <ChartContainer
-          className="h-full min-h-80"
-          config={{
-            value: { label: "FDC Value", color: "var(--chart-1)" },
-            limit: { label: "Limit", color: "var(--destructive)" },
-          }}
-        >
-          <ResponsiveContainer width="100%" height="100%">
-            <ScatterChart margin={{ top: 16, right: 20, bottom: 20, left: 8 }}>
-              <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
-              <XAxis
-                type="category"
-                dataKey="wafer"
-                tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-                tickLine={false}
-                axisLine={{ stroke: "var(--border)" }}
-                interval={2}
-              />
-              <YAxis
-                type="number"
-                dataKey="value"
-                domain={["dataMin - 4", "dataMax + 4"]}
-                tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-                tickLine={false}
-                axisLine={{ stroke: "var(--border)" }}
-                width={44}
-              />
-              <ReferenceLine
-                y={selectedStep.points[0]?.limit}
-                stroke="var(--destructive)"
-                strokeDasharray="4 4"
-                label={{ value: "Limit", fill: "var(--destructive)", fontSize: 11 }}
-              />
-              <ChartTooltip cursor={{ strokeDasharray: "3 3" }} content={<ScatterTooltip />} />
-              <Scatter
-                name="FDC Value"
-                data={selectedStep.points}
-                dataKey="value"
-                fill="var(--chart-1)"
-                shape={(props) => {
-                  const { cx, cy, payload } = props
-                  const abnormal = payload?.status === "abnormal"
-                  return (
-                    <circle
-                      cx={cx}
-                      cy={cy}
-                      r={abnormal ? 5 : 4}
-                      fill={abnormal ? "var(--destructive)" : "var(--chart-1)"}
-                      stroke={abnormal ? "var(--destructive)" : "var(--background)"}
-                      strokeWidth={1.5}
-                    />
-                  )
-                }}
-              />
-            </ScatterChart>
-          </ResponsiveContainer>
-        </ChartContainer>
-      </CardContent>
-    </Card>
+    <div
+      className={cn(
+        "grid h-[320px] min-h-0 grid-rows-[40px_minmax(0,1fr)_44px] gap-0 rounded-lg border bg-card",
+        selected && "border-primary",
+      )}
+    >
+      <div className="min-w-0 border-b bg-muted/60 px-2 py-1">
+        <h3 className="truncate text-xs font-semibold leading-4">{sensor.sensorName}</h3>
+        <p className="truncate text-[11px] leading-4 text-muted-foreground">
+          PPID_CHSTEP: {selectedStep.stepCode}_{selectedStep.stepName}
+        </p>
+      </div>
+      <div className="h-full min-h-0 bg-background p-0">
+        <ResponsiveContainer width="100%" height="100%">
+          <ScatterChart margin={{ top: 8, right: 12, bottom: 12, left: 2 }}>
+            <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
+            <XAxis
+              type="category"
+              dataKey="wafer"
+              tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+              tickLine={false}
+              axisLine={{ stroke: "var(--border)" }}
+              interval={2}
+            />
+            <YAxis
+              type="number"
+              dataKey="value"
+              domain={["dataMin - 4", "dataMax + 4"]}
+              tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+              tickLine={false}
+              axisLine={{ stroke: "var(--border)" }}
+              width={44}
+            />
+            <ReferenceLine
+              y={sensor.points[0]?.limit}
+              stroke="var(--destructive)"
+              strokeDasharray="4 4"
+              label={{ value: "Limit", fill: "var(--destructive)", fontSize: 11 }}
+            />
+            <ChartTooltip cursor={{ strokeDasharray: "3 3" }} content={<ScatterTooltip />} />
+            <Scatter
+              name="FDC Value"
+              data={sensor.points}
+              dataKey="value"
+              fill="var(--chart-1)"
+              shape={(props) => {
+                const { cx, cy, payload } = props
+                const abnormal = payload?.status === "abnormal"
+                return (
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={abnormal ? 5 : 4}
+                    fill={abnormal ? "var(--destructive)" : "var(--chart-1)"}
+                    stroke={abnormal ? "var(--destructive)" : "var(--background)"}
+                    strokeWidth={1.5}
+                  />
+                )
+              }}
+            />
+          </ScatterChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="grid grid-cols-4 gap-1 border-t bg-card p-1.5">
+        <Button type="button" variant="outline" size="sm" className="h-8 min-w-0 px-1 text-xs">
+          동일성차트
+        </Button>
+        <Button type="button" variant="outline" size="sm" className="h-8 min-w-0 px-1 text-xs">
+          변경점 리스트
+        </Button>
+        <Button type="button" variant="outline" size="sm" className="h-8 min-w-0 px-1 text-xs">
+          이력저장
+        </Button>
+        <Button type="button" variant="secondary" size="sm" className="h-8 min-w-0 px-1 text-xs">
+          SKIP
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function FdcScatterGrid({ selectedStep, selectedEquipment, sensors, selectedSensorId }) {
+  if (!selectedStep || !selectedEquipment || !selectedSensorId) {
+    return (
+      <div className="flex h-72 items-center justify-center rounded-lg border bg-card text-sm text-muted-foreground">
+        STEP, 설비호기, FDC 센서를 선택하면 scatter chart가 표시됩니다.
+      </div>
+    )
+  }
+
+  if (!sensors.length) {
+    return (
+      <div className="flex h-72 items-center justify-center rounded-lg border bg-card text-sm text-muted-foreground">
+        선택한 설비호기에 표시할 scatter chart가 없습니다.
+      </div>
+    )
+  }
+
+  return (
+    <div className="grid grid-cols-2 gap-4">
+      {sensors.map((sensor) => (
+        <FdcScatterChart
+          key={sensor.id}
+          selectedStep={selectedStep}
+          sensor={sensor}
+          selected={sensor.id === selectedSensorId}
+        />
+      ))}
+    </div>
   )
 }
 
@@ -228,6 +251,8 @@ export function FdcTrendPage() {
     [selectedLine, selectedTeam],
   )
   const [selectedStepId, setSelectedStepId] = useState("")
+  const [selectedEquipmentId, setSelectedEquipmentId] = useState("")
+  const [selectedSensorId, setSelectedSensorId] = useState("")
 
   useEffect(() => {
     setSelectedTeam(teams[0] ?? "")
@@ -235,17 +260,26 @@ export function FdcTrendPage() {
 
   useEffect(() => {
     setSelectedStepId(trendSteps[0]?.id ?? "")
+    setSelectedEquipmentId("")
+    setSelectedSensorId("")
   }, [trendSteps])
 
   const selectedStep = trendSteps.find((step) => step.id === selectedStepId) ?? trendSteps[0]
-  const highCount = trendSteps.filter((step) => getSeverityLabel(step.severity) === "High").length
-  const abnormalTotal = trendSteps.reduce((sum, step) => sum + step.abnormalCount, 0)
-  const avgScore = trendSteps.length
-    ? Math.round(trendSteps.reduce((sum, step) => sum + step.severity, 0) / trendSteps.length)
-    : 0
+  const selectedEquipment = selectedStep?.equipments?.find((equipment) => equipment.id === selectedEquipmentId) ?? null
+  const selectedSensors = selectedEquipment?.sensors ?? []
+  const selectedSensor = selectedSensors.find((sensor) => sensor.id === selectedSensorId) ?? null
+  const handleSelectStep = (stepId) => {
+    setSelectedStepId(stepId)
+    setSelectedEquipmentId("")
+    setSelectedSensorId("")
+  }
+  const handleSelectEquipment = (equipmentId) => {
+    setSelectedEquipmentId(equipmentId)
+    setSelectedSensorId("")
+  }
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
+    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-y-auto">
       <header className="shrink-0 border-b bg-card px-6 py-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-1">
@@ -285,43 +319,120 @@ export function FdcTrendPage() {
         </Tabs>
       </section>
 
-      <section className="grid shrink-0 grid-cols-4 gap-3 px-6 py-4">
-        <SummaryMetric icon={Layers3} label="Selected line" value={selectedLine} helper={selectedTeam} />
-        <SummaryMetric icon={Activity} label="Trend steps" value={trendSteps.length} helper="스텝 단위 선별" />
-        <SummaryMetric icon={AlertTriangle} label="High severity" value={highCount} helper="즉시 확인 대상" />
-        <SummaryMetric icon={Gauge} label="Avg. score" value={avgScore} helper={`${abnormalTotal} abnormal points`} />
-      </section>
+      <main className="grid min-w-0 gap-4 px-6 pb-6 pt-4">
+        <section className="grid h-[520px] min-w-0 grid-cols-3 gap-4">
+          <Card className="grid min-h-0 grid-rows-[40px_minmax(0,1fr)] gap-0 overflow-hidden rounded-lg py-0 shadow-none">
+            <div className="flex h-10 items-center border-b bg-muted/60 px-2">
+              <div className="flex h-full min-w-0 items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <CardTitle className="truncate text-sm leading-4">STEP 선택</CardTitle>
+                </div>
+                <Badge variant="secondary">{trendSteps.length} steps</Badge>
+              </div>
+            </div>
+            <CardContent className="min-h-0 p-0">
+              {trendSteps.length === 0 ? (
+                <div className="flex h-full min-h-32 items-center justify-center p-6 text-center text-sm text-muted-foreground">
+                  선택한 분임조에 표시할 이상 Trend가 없습니다.
+                </div>
+              ) : (
+                <div className="grid min-h-0 overflow-y-auto">
+                  {trendSteps.map((step) => (
+                    <TrendStepButton
+                      key={step.id}
+                      step={step}
+                      selected={step.id === selectedStep?.id}
+                      onSelect={() => handleSelectStep(step.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-      <main className="grid flex-1 min-h-0 min-w-0 grid-cols-[380px,1fr] gap-4 overflow-hidden px-6 pb-6">
-        <section className="grid min-h-0 min-w-0 grid-rows-[auto,1fr] gap-3">
-          <div className="shrink-0">
-            <h2 className="text-base font-semibold">스텝별 이상 Trend</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              위험도가 높은 순서로 정렬됩니다.
-            </p>
-          </div>
-          <div className="min-h-0 overflow-y-auto pr-1">
-            {trendSteps.length === 0 ? (
-              <div className="flex min-h-52 items-center justify-center rounded-lg border bg-card p-6 text-center text-sm text-muted-foreground">
-                선택한 분임조에 표시할 이상 Trend가 없습니다.
+          <Card className="grid min-h-0 grid-rows-[40px_minmax(0,1fr)] gap-0 overflow-hidden rounded-lg py-0 shadow-none">
+            <div className="flex h-10 items-center border-b bg-muted/60 px-2">
+              <div className="flex h-full min-w-0 items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <CardTitle className="truncate text-sm leading-4">
+                    {selectedStep?.stepName ?? "STEP 미선택"}
+                  </CardTitle>
+                </div>
+                {selectedStep ? (
+                  <Badge variant="secondary">{selectedStep.equipmentCount}대</Badge>
+                ) : null}
               </div>
-            ) : (
-              <div className="grid gap-3">
-                {trendSteps.map((step) => (
-                  <TrendStepButton
-                    key={step.id}
-                    step={step}
-                    selected={step.id === selectedStep?.id}
-                    onSelect={() => setSelectedStepId(step.id)}
-                  />
-                ))}
+            </div>
+            <CardContent className="min-h-0 p-0">
+              {selectedStep?.equipments?.length ? (
+                <div className="grid min-h-0 overflow-y-auto">
+                  {selectedStep.equipments.map((equipment) => (
+                    <EquipmentButton
+                      key={equipment.id}
+                      equipment={equipment}
+                      selected={equipment.id === selectedEquipment?.id}
+                      onSelect={() => handleSelectEquipment(equipment.id)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="flex h-full min-h-32 items-center justify-center p-6 text-center text-sm text-muted-foreground">
+                  선택한 STEP에 표시할 설비호기가 없습니다.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="grid min-h-0 grid-rows-[40px_minmax(0,1fr)] gap-0 overflow-hidden rounded-lg py-0 shadow-none">
+            <div className="flex h-10 items-center border-b bg-muted/60 px-2">
+              <div className="flex h-full min-w-0 items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <CardTitle className="truncate text-sm leading-4">
+                    {selectedEquipment?.equipmentName ?? "설비호기 미선택"}
+                  </CardTitle>
+                </div>
+                {selectedEquipment ? (
+                  <Badge variant="secondary">{selectedEquipment.abnormalCount}건수</Badge>
+                ) : null}
               </div>
-            )}
-          </div>
+            </div>
+            <CardContent className="min-h-0 p-0">
+              {selectedSensors.length ? (
+                <div className="grid min-h-0 overflow-y-auto">
+                  {selectedSensors.map((sensor) => (
+                    <SensorButton
+                      key={sensor.id}
+                      sensor={sensor}
+                      selected={sensor.id === selectedSensor?.id}
+                      onSelect={() => setSelectedSensorId(sensor.id)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="flex h-full min-h-32 items-center justify-center p-6 text-center text-sm text-muted-foreground">
+                  설비호기를 선택하면 FDC 센서가 표시됩니다.
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </section>
 
-        <section className="min-h-0 min-w-0">
-          <FdcScatterChart selectedStep={selectedStep} />
+        <section className="min-w-0">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="truncate text-base font-semibold">Scatter chart</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                FDC 센서 선택 후 선택한 설비호기의 chart를 2열 구조로 drawing합니다.
+              </p>
+            </div>
+            {selectedSensor ? <Badge variant="secondary">{selectedSensors.length} charts</Badge> : null}
+          </div>
+          <FdcScatterGrid
+            selectedStep={selectedStep}
+            selectedEquipment={selectedEquipment}
+            sensors={selectedSensor ? selectedSensors : []}
+            selectedSensorId={selectedSensor?.id}
+          />
         </section>
       </main>
     </div>

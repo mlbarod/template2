@@ -27,12 +27,25 @@ const LINE_TEAMS = Object.freeze({
 })
 
 const STEP_NAMES = [
-  "ETCH-1200 / Pressure Drift",
-  "CVD-3400 / Gas Flow Spike",
-  "PHOTO-510 / Overlay Shift",
-  "CMP-220 / Motor Current",
-  "DIFF-880 / Temp Uniformity",
-  "WET-430 / Chemical Ratio",
+  "1.0 MASK ETCH",
+  "1.1 MAIN ETCH",
+  "1.2 OVER ETCH",
+  "2.0 POLY ETCH",
+  "2.1 CONTACT ETCH",
+  "3.0 OXIDE ETCH",
+  "3.1 CHAMBER CLEAN",
+  "4.0 ASH STRIP",
+]
+
+const SENSOR_NAMES = [
+  "ESC Voltage",
+  "RF Forward Power",
+  "Chamber Pressure",
+  "He Backside Flow",
+  "Gas Flow Ratio",
+  "Bias Voltage",
+  "Endpoint Intensity",
+  "Chuck Temperature",
 ]
 
 const TOOL_GROUPS = ["EQC-01", "EQC-02", "EQC-03", "EQC-04"]
@@ -75,25 +88,83 @@ function buildPoints(seed, severity) {
   })
 }
 
-function buildStepRecord({ lineId, teamId, stepIndex, teamIndex }) {
-  const seed = getLineFactor(lineId) + teamIndex + stepIndex + 1
-  const severity = 58 + ((seed * 13) % 35)
-  const points = buildPoints(seed, severity)
+function buildEquipmentId(seed, equipmentIndex) {
+  const toolNumber = 120 + ((seed * 13 + equipmentIndex * 17) % 760)
+  const chamberNumber = 1 + ((seed + equipmentIndex) % 4)
+
+  return `ELPP${String(toolNumber).padStart(3, "0")}-${chamberNumber}`
+}
+
+function buildSensorRecord({ stepId, equipmentId, stepIndex, equipmentIndex, sensorIndex, seed }) {
+  const sensorSeed = seed + equipmentIndex * 5 + sensorIndex * 3
+  const severity = 56 + ((sensorSeed * 11 + stepIndex * 5) % 38)
+  const points = buildPoints(sensorSeed, severity)
   const abnormalCount = points.filter((point) => point.status === "abnormal").length
 
   return {
-    id: `${lineId}-${teamId}-${stepIndex}`,
+    id: `${stepId}-${equipmentId}-sensor-${sensorIndex}`,
+    sensorName: SENSOR_NAMES[(stepIndex + equipmentIndex + sensorIndex + seed) % SENSOR_NAMES.length],
+    trendType: TREND_TYPES[(sensorSeed + stepIndex) % TREND_TYPES.length],
+    severity,
+    abnormalCount,
+    latestAt: `2026-05-${String(24 + ((sensorSeed + stepIndex) % 5)).padStart(2, "0")} ${String(8 + (sensorSeed % 9)).padStart(2, "0")}:30`,
+    points,
+  }
+}
+
+function buildEquipmentRecord({ stepId, stepIndex, equipmentIndex, seed }) {
+  const equipmentId = buildEquipmentId(seed + stepIndex, equipmentIndex)
+  const sensorCount = 3 + ((seed + stepIndex + equipmentIndex) % 3)
+  const sensors = Array.from({ length: sensorCount }, (_, sensorIndex) =>
+    buildSensorRecord({ stepId, equipmentId, stepIndex, equipmentIndex, sensorIndex, seed }),
+  ).sort((a, b) => b.abnormalCount - a.abnormalCount || b.severity - a.severity)
+  const abnormalCount = sensors.reduce((sum, sensor) => sum + sensor.abnormalCount, 0)
+  const severity = sensors.length
+    ? Math.max(...sensors.map((sensor) => sensor.severity))
+    : 0
+
+  return {
+    id: equipmentId,
+    equipmentId,
+    equipmentName: equipmentId,
+    severity,
+    abnormalCount,
+    sensorCount,
+    latestAt: sensors[0]?.latestAt ?? `2026-05-${String(24 + ((seed + stepIndex) % 5)).padStart(2, "0")} ${String(8 + (seed % 9)).padStart(2, "0")}:30`,
+    sensors,
+  }
+}
+
+function buildStepRecord({ lineId, teamId, stepIndex, teamIndex }) {
+  const seed = getLineFactor(lineId) + teamIndex + stepIndex + 1
+  const stepId = `${lineId}-${teamId}-${stepIndex}`
+  const equipmentCount = 3 + ((seed + stepIndex) % 4)
+  const equipments = Array.from({ length: equipmentCount }, (_, equipmentIndex) =>
+    buildEquipmentRecord({ stepId, stepIndex, equipmentIndex, seed }),
+  ).sort((a, b) => b.abnormalCount - a.abnormalCount || b.severity - a.severity)
+  const sensors = equipments.flatMap((equipment) => equipment.sensors)
+  const abnormalCount = equipments.reduce((sum, equipment) => sum + equipment.abnormalCount, 0)
+  const severity = equipments.length
+    ? Math.max(...equipments.map((equipment) => equipment.severity))
+    : 0
+
+  return {
+    id: stepId,
     lineId,
     teamId,
     stepName: STEP_NAMES[(stepIndex + seed) % STEP_NAMES.length],
     stepCode: `STEP-${String(1200 + seed * 17).padStart(4, "0")}`,
     toolGroup: TOOL_GROUPS[(stepIndex + teamIndex) % TOOL_GROUPS.length],
-    trendType: TREND_TYPES[(seed + stepIndex) % TREND_TYPES.length],
+    trendType: sensors[0]?.trendType ?? TREND_TYPES[(seed + stepIndex) % TREND_TYPES.length],
     severity,
     abnormalCount,
+    equipmentCount,
+    sensorCount: sensors.length,
     lotCount: 18 + ((seed + stepIndex) % 9),
-    latestAt: `2026-05-${String(24 + ((seed + stepIndex) % 5)).padStart(2, "0")} ${String(8 + (seed % 9)).padStart(2, "0")}:30`,
-    points,
+    latestAt: sensors[0]?.latestAt ?? `2026-05-${String(24 + ((seed + stepIndex) % 5)).padStart(2, "0")} ${String(8 + (seed % 9)).padStart(2, "0")}:30`,
+    equipments,
+    sensors,
+    points: sensors[0]?.points ?? [],
   }
 }
 
@@ -104,7 +175,7 @@ export function getTeamsByLine(lineId) {
 export function getTrendSteps({ lineId, teamId }) {
   const teams = getTeamsByLine(lineId)
   const teamIndex = Math.max(0, teams.indexOf(teamId))
-  const stepCount = 4 + ((getLineFactor(lineId) + teamIndex) % 3)
+  const stepCount = 15
 
   return Array.from({ length: stepCount }, (_, stepIndex) =>
     buildStepRecord({ lineId, teamId, stepIndex, teamIndex }),
