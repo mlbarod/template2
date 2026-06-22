@@ -81,12 +81,17 @@ const ONE_HOUR_MS = 60 * 60 * 1000;
 
 export const buildFixedHeightOptions = (range, height, overrides = {}) => {
   const { minHeight, maxHeight, ...rest } = overrides;
+  const rangeDuration = range.max.getTime() - range.min.getTime();
+  const zoomMax = Number.isFinite(rangeDuration)
+    ? Math.max(rangeDuration, ONE_HOUR_MS)
+    : ONE_HOUR_MS;
 
   return {
     stack: false,
     min: range.min,
     max: range.max,
     zoomMin: ONE_HOUR_MS,
+    zoomMax,
     height,
     minHeight: minHeight ?? height,
     maxHeight: maxHeight ?? height,

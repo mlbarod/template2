@@ -11,6 +11,35 @@ import {
   setObserverGroups,
 } from "../utils/visObserverAdapter";
 
+function applyFullRangeFromOptions(
+  observer,
+  nextOptions,
+  currentRangeRef,
+  appliedRangeKeyRef
+) {
+  if (!observer || !nextOptions?.min || !nextOptions?.max) return;
+
+  const start = new Date(nextOptions.min);
+  const end = new Date(nextOptions.max);
+  const startTime = start.getTime();
+  const endTime = end.getTime();
+
+  if (
+    Number.isNaN(startTime) ||
+    Number.isNaN(endTime) ||
+    startTime >= endTime
+  ) {
+    return;
+  }
+
+  const rangeKey = `${startTime}:${endTime}`;
+  if (appliedRangeKeyRef.current === rangeKey) return;
+
+  appliedRangeKeyRef.current = rangeKey;
+  currentRangeRef.current = { start, end };
+  observer.setWindow(start, end, { animation: false });
+}
+
 /**
  * vis-timeline 라이프사이클을 래핑하는 훅.
  * - 한 번 만든 Observer/DataSet 인스턴스를 재사용
@@ -21,6 +50,7 @@ export function useVisObserver({ containerRef, groups, items, options }) {
   const tlRef = useRef(null);
   const currentRangeRef = useRef(null);
   const previousHeightRef = useRef(null); // 이전 높이를 저장
+  const appliedRangeKeyRef = useRef(null);
   const datasetRef = useRef(null); // DataSet 인스턴스 재사용을 위한 ref
   const itemsRef = useRef(items);
   const groupsRef = useRef(groups);
@@ -67,6 +97,13 @@ export function useVisObserver({ containerRef, groups, items, options }) {
           setSelectedRow(null, "observer");
         }
       });
+
+      applyFullRangeFromOptions(
+        tlRef.current,
+        optionsRef.current,
+        currentRangeRef,
+        appliedRangeKeyRef
+      );
     })();
 
     return () => {
@@ -98,6 +135,12 @@ export function useVisObserver({ containerRef, groups, items, options }) {
       const heightChanged = previousHeightRef.current !== options.height;
 
       tlRef.current.setOptions(options);
+      applyFullRangeFromOptions(
+        tlRef.current,
+        options,
+        currentRangeRef,
+        appliedRangeKeyRef
+      );
 
       if (heightChanged) {
         previousHeightRef.current = options.height;
