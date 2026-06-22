@@ -149,6 +149,7 @@ export function useTableQuery({ lineId }) {
         return (
           normalized !== "id" &&
           normalized !== "sop_key" &&
+          normalized !== "eqp_id_lookup" &&
           normalized !== "defect_png_url" &&
           normalized !== "target_user_sdwt_prod" &&
           normalized !== "messenger_reason" &&
