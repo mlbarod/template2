@@ -116,6 +116,15 @@ def _lookup_key(value: str) -> str:
     return value.strip().upper()
 
 
+def _nullable_source_value(value: str) -> str:
+    """원천 CSV의 null 리터럴을 DB NULL로 적재할 빈 문자열로 정규화합니다."""
+
+    normalized = value.strip()
+    if normalized.casefold() == "null":
+        return ""
+    return normalized
+
+
 def _map_event_type(*, tip_type: str, tip_chg_type: str, tip_level: str) -> str:
     """TIP 원천 타입 3종을 timeline event_type으로 매핑합니다."""
 
@@ -219,6 +228,10 @@ def _write_selected_csv(*, source_path: Path, output_dir: Path, cutoff: datetime
                 tip_chg_type=tip_chg_type,
                 tip_level=tip_level,
             )
+            step_seq = _nullable_source_value(row[source_indexes["step_seq"]])
+            process_id = _nullable_source_value(row[source_indexes["process_id"]])
+            ppid = _nullable_source_value(row[source_indexes["ppid"]])
+            tip_comment = _nullable_source_value(row[source_indexes["tip_comment"]])
             eqp_cb = _build_eqp_cb(
                 eqp_id=eqp_id,
                 tip_chamber_id=row[source_indexes["tip_chamber_id"]].strip(),
@@ -227,35 +240,35 @@ def _write_selected_csv(*, source_path: Path, output_dir: Path, cutoff: datetime
                 eqp_cb=eqp_cb,
                 gpm_update_date=gpm_update_date_raw,
                 event_type=event_type,
-                process_id=row[source_indexes["process_id"]].strip(),
-                step_seq=row[source_indexes["step_seq"]].strip(),
-                ppid=row[source_indexes["ppid"]].strip(),
-                tip_comment=row[source_indexes["tip_comment"]].strip(),
+                process_id=process_id,
+                step_seq=step_seq,
+                ppid=ppid,
+                tip_comment=tip_comment,
             )
 
             selected_values = [
                 tip_event_key,
-                row[source_indexes["line_id"]].strip(),
+                _nullable_source_value(row[source_indexes["line_id"]]),
                 eqp_cb,
                 _lookup_key(eqp_cb),
-                row[source_indexes["step_seq"]].strip(),
-                row[source_indexes["process_id"]].strip(),
-                row[source_indexes["ppid"]].strip(),
-                row[source_indexes["reticle_id"]].strip(),
-                row[source_indexes["product_id"]].strip(),
-                row[source_indexes["sum_time"]].strip(),
-                row[source_indexes["rule_pkg_update_date"]].strip(),
+                step_seq,
+                process_id,
+                ppid,
+                _nullable_source_value(row[source_indexes["reticle_id"]]),
+                _nullable_source_value(row[source_indexes["product_id"]]),
+                _nullable_source_value(row[source_indexes["sum_time"]]),
+                _nullable_source_value(row[source_indexes["rule_pkg_update_date"]]),
                 gpm_update_date_raw,
-                row[source_indexes["register_name"]].strip(),
+                _nullable_source_value(row[source_indexes["register_name"]]),
                 event_type,
                 tip_type,
                 tip_chg_type,
                 tip_level,
-                row[source_indexes["tip_comment"]].strip(),
-                row[source_indexes["tkin_restrc_lot_count"]].strip(),
-                row[source_indexes["cur_tkin_lot_count"]].strip(),
-                row[source_indexes["term_intlk_occur_time"]].strip(),
-                row[source_indexes["last_update_date"]].strip(),
+                tip_comment,
+                _nullable_source_value(row[source_indexes["tkin_restrc_lot_count"]]),
+                _nullable_source_value(row[source_indexes["cur_tkin_lot_count"]]),
+                _nullable_source_value(row[source_indexes["term_intlk_occur_time"]]),
+                _nullable_source_value(row[source_indexes["last_update_date"]]),
             ]
             writer.writerow(selected_values)
             row_count += 1

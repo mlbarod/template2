@@ -42,6 +42,7 @@ def _build_tip_row(
     tip_chg_type: str = "TIP_OCCUR",
     tip_level: str = "LEVEL1",
     tip_comment: str = "TIP comment",
+    rule_pkg_update_date: str = "2026-06-20 09:00:00",
     last_update_date: str = "2026-06-20 10:05:00",
 ) -> list[str]:
     """spec 컬럼 순서에 맞춘 테스트용 TIP row를 생성합니다."""
@@ -56,7 +57,7 @@ def _build_tip_row(
         "RETICLE",
         "PRODUCT",
         "10",
-        "2026-06-20 09:00:00",
+        rule_pkg_update_date,
         gpm_update_date,
         register_name,
         tip_type,
@@ -193,6 +194,36 @@ class MiTipUpdateHistLifecycleTests(TestCase):
         self.assertTrue(MiTipUpdateHist.objects.filter(eqp_cb="EUNK301-A", event_type="unknown").exists())
         self.assertFalse(hasattr(MiTipUpdateHist.objects.first(), "eqp_id"))
         self.assertFalse(hasattr(MiTipUpdateHist.objects.first(), "tip_chamber_id"))
+
+    @patch.object(
+        loader_module.timezone,
+        "now",
+        return_value=datetime(2026, 6, 20, 0, 0, tzinfo=datetime_timezone.utc),
+    )
+    def test_loader_treats_source_null_literal_as_database_null(self, _now) -> None:
+        """원천 CSV의 null 리터럴을 nullable 컬럼의 DB NULL로 적재합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            incoming = root / "incoming"
+            incoming.mkdir()
+            source = incoming / "MI_TIP_UPDATE_HIST_20260620.csv.deflate"
+            _write_deflate_csv(
+                source,
+                [
+                    _build_tip_row(
+                        rule_pkg_update_date="null",
+                        last_update_date="null",
+                    ),
+                ],
+            )
+
+            summary = loader_module.load_mi_tip_update_hist_files(data_dir=root)
+
+        self.assertEqual(summary.success_count, 1, summary.outcomes)
+        loaded_row = MiTipUpdateHist.objects.get()
+        self.assertIsNone(loaded_row.rule_pkg_update_date)
+        self.assertIsNone(loaded_row.last_update_date)
 
     @patch.object(
         loader_module.timezone,
