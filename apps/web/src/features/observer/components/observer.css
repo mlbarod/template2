@@ -52,6 +52,19 @@
   --observer-ctttm-cbm: var(--observer-palette-info);
   --observer-ctttm-nsp: var(--observer-palette-violet);
   --observer-esop: var(--observer-palette-teal);
+  --observer-esop-foup-split-step: var(--observer-palette-teal);
+  --observer-esop-production: var(--observer-palette-info);
+  --observer-esop-foup-split: var(--observer-palette-violet);
+  --observer-esop-production-any: var(--observer-palette-success);
+  --observer-esop-logical-split: var(--observer-palette-active);
+  --observer-esop-foup-split-step-skew: var(--observer-palette-caution);
+  --observer-esop-foup-split-step-any: var(--observer-palette-accent);
+  --observer-esop-foup-split-skew: var(--observer-palette-highlight);
+  --observer-esop-foup-split-step-risk: var(--observer-palette-critical);
+  --observer-esop-batch-skew: var(--observer-palette-maintenance);
+  --observer-esop-foup-split-any: color-mix(in hsl, var(--observer-palette-neutral) 70%, var(--observer-surface) 30%);
+  --observer-esop-logical-split-skew: color-mix(in hsl, var(--observer-palette-active) 65%, var(--observer-palette-violet) 35%);
+  --observer-esop-foup-split-step-skew-any: color-mix(in hsl, var(--observer-palette-caution) 60%, var(--observer-palette-critical) 40%);
   --observer-foreground-strong: var(--primary-foreground);
 }
 
@@ -247,6 +260,97 @@ html.dark {
   background-color: var(--observer-esop) !important;
   border-color: var(--observer-esop) !important;
   color: var(--observer-text);
+}
+
+.observer .vis-item.observer-color-esop-foup-split-step,
+.observer-legend-dot.observer-color-esop-foup-split-step {
+  background-color: var(--observer-esop-foup-split-step) !important;
+  border-color: var(--observer-esop-foup-split-step) !important;
+  color: var(--observer-foreground-strong);
+}
+
+.observer .vis-item.observer-color-esop-production,
+.observer-legend-dot.observer-color-esop-production {
+  background-color: var(--observer-esop-production) !important;
+  border-color: var(--observer-esop-production) !important;
+  color: var(--observer-foreground-strong);
+}
+
+.observer .vis-item.observer-color-esop-foup-split,
+.observer-legend-dot.observer-color-esop-foup-split {
+  background-color: var(--observer-esop-foup-split) !important;
+  border-color: var(--observer-esop-foup-split) !important;
+  color: var(--observer-foreground-strong);
+}
+
+.observer .vis-item.observer-color-esop-production-any,
+.observer-legend-dot.observer-color-esop-production-any {
+  background-color: var(--observer-esop-production-any) !important;
+  border-color: var(--observer-esop-production-any) !important;
+  color: var(--observer-foreground-strong);
+}
+
+.observer .vis-item.observer-color-esop-logical-split,
+.observer-legend-dot.observer-color-esop-logical-split {
+  background-color: var(--observer-esop-logical-split) !important;
+  border-color: var(--observer-esop-logical-split) !important;
+  color: var(--observer-foreground-strong);
+}
+
+.observer .vis-item.observer-color-esop-foup-split-step-skew,
+.observer-legend-dot.observer-color-esop-foup-split-step-skew {
+  background-color: var(--observer-esop-foup-split-step-skew) !important;
+  border-color: var(--observer-esop-foup-split-step-skew) !important;
+  color: var(--observer-foreground-strong);
+}
+
+.observer .vis-item.observer-color-esop-foup-split-step-any,
+.observer-legend-dot.observer-color-esop-foup-split-step-any {
+  background-color: var(--observer-esop-foup-split-step-any) !important;
+  border-color: var(--observer-esop-foup-split-step-any) !important;
+  color: var(--observer-foreground-strong);
+}
+
+.observer .vis-item.observer-color-esop-foup-split-skew,
+.observer-legend-dot.observer-color-esop-foup-split-skew {
+  background-color: var(--observer-esop-foup-split-skew) !important;
+  border-color: var(--observer-esop-foup-split-skew) !important;
+  color: var(--observer-foreground-strong);
+}
+
+.observer .vis-item.observer-color-esop-foup-split-step-risk,
+.observer-legend-dot.observer-color-esop-foup-split-step-risk {
+  background-color: var(--observer-esop-foup-split-step-risk) !important;
+  border-color: var(--observer-esop-foup-split-step-risk) !important;
+  color: var(--observer-foreground-strong);
+}
+
+.observer .vis-item.observer-color-esop-batch-skew,
+.observer-legend-dot.observer-color-esop-batch-skew {
+  background-color: var(--observer-esop-batch-skew) !important;
+  border-color: var(--observer-esop-batch-skew) !important;
+  color: var(--observer-foreground-strong);
+}
+
+.observer .vis-item.observer-color-esop-foup-split-any,
+.observer-legend-dot.observer-color-esop-foup-split-any {
+  background-color: var(--observer-esop-foup-split-any) !important;
+  border-color: var(--observer-esop-foup-split-any) !important;
+  color: var(--observer-text);
+}
+
+.observer .vis-item.observer-color-esop-logical-split-skew,
+.observer-legend-dot.observer-color-esop-logical-split-skew {
+  background-color: var(--observer-esop-logical-split-skew) !important;
+  border-color: var(--observer-esop-logical-split-skew) !important;
+  color: var(--observer-foreground-strong);
+}
+
+.observer .vis-item.observer-color-esop-foup-split-step-skew-any,
+.observer-legend-dot.observer-color-esop-foup-split-step-skew-any {
+  background-color: var(--observer-esop-foup-split-step-skew-any) !important;
+  border-color: var(--observer-esop-foup-split-step-skew-any) !important;
+  color: var(--observer-foreground-strong);
 }
 
 .observer .vis-item.observer-color-fallback,

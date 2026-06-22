@@ -33,7 +33,6 @@ export default function TipObserver({
     return (
       <ObserverEmptyState
         title="🔧 TIP 로그"
-        headerNote={!hasAnyTipLogs ? "로그 없음" : "선택된 그룹 없음"}
         message={!hasAnyTipLogs ? "TIP 로그가 없습니다" : "표시할 TIP 그룹을 선택하세요"}
       />
     );

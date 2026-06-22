@@ -1,3 +1,5 @@
+import { ESOP_CHANGE_TYPE_CLASS_MAP } from "./esopChangeTypes";
+
 /**
  * 각 로그 타입(logType)별 컬러 매핑.
  * 클래스 이름은 observer.css에서 디자인 토큰 기반 색상으로 연결됩니다.
@@ -36,6 +38,6 @@ export const groupConfig = {
   },
   ESOP: {
     defaultClass: "observer-color-esop",
-    stateClasses: {},
+    stateClasses: ESOP_CHANGE_TYPE_CLASS_MAP,
   },
 };

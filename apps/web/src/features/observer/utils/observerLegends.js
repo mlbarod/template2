@@ -1,3 +1,5 @@
+import { ESOP_CHANGE_TYPE_LEGENDS } from "./esopChangeTypes";
+
 export const observerLegends = {
   EQP: [
     { key: "RUN", className: "observer-color-eqp-run", label: "RUN" },
@@ -18,9 +20,7 @@ export const observerLegends = {
     { key: "ALARM", className: "observer-color-racb-alarm", label: "ALARM" },
     { key: "WARN", className: "observer-color-racb-warn", label: "WARN" },
   ],
-  ESOP: [
-    { key: "ESOP", className: "observer-color-esop", label: "ESOP" },
-  ],
+  ESOP: ESOP_CHANGE_TYPE_LEGENDS,
 };
 
 export const getObserverLegend = (logType) => observerLegends[logType] || [];
