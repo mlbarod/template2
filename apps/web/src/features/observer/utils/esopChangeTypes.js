@@ -76,3 +76,35 @@ export const ESOP_CHANGE_TYPE_CLASS_MAP = ESOP_CHANGE_TYPE_LEGENDS.reduce(
       "observer-color-esop-foup-split-step-skew-any",
   }
 );
+
+const ESOP_CHANGE_TYPE_DISPLAY_KEY_MAP = {
+  ENGR_FOUP_SPLIT_STEP_SKEw_ANY: "ENGR_FOUP_SPLIT_STEP_SKEW_ANY",
+};
+
+export function getEsopChangeTypeLegendsForLogs(logs = []) {
+  const presentEventTypes = new Set(
+    logs
+      .map((log) => log?.eventType)
+      .filter(Boolean)
+  );
+  const presentLegendKeys = new Set(
+    Array.from(presentEventTypes, (eventType) =>
+      ESOP_CHANGE_TYPE_DISPLAY_KEY_MAP[eventType] ?? eventType
+    )
+  );
+  const knownLegendKeys = new Set(ESOP_CHANGE_TYPE_LEGENDS.map((item) => item.key));
+
+  return [
+    ...ESOP_CHANGE_TYPE_LEGENDS.filter((item) => presentLegendKeys.has(item.key)),
+    ...Array.from(presentEventTypes)
+      .filter((eventType) => {
+        const legendKey = ESOP_CHANGE_TYPE_DISPLAY_KEY_MAP[eventType] ?? eventType;
+        return !knownLegendKeys.has(legendKey);
+      })
+      .map((eventType) => ({
+        key: eventType,
+        className: "observer-color-esop",
+        label: eventType,
+      })),
+  ];
+}
