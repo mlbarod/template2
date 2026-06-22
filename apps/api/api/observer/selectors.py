@@ -295,7 +295,7 @@ def list_equipments(
     sdwt_key = filters["sdwt_id"]
     prc_key = filters["prc_group"]
     sql = """
-        select distinct
+        select distinct on (station.station)
             station.station as id,
             mapping.gpm_line_name as line_id,
             station.sdwt_prod as sdwt_prod,
@@ -315,23 +315,32 @@ def list_equipments(
         sql += " and station.sdwt_prod_lookup = %s"
         params.append(sdwt_key)
 
-    sql += " order by station.station"
+    sql += " order by station.station, mapping.gpm_line_name"
     rows = _fetch_all(sql, params)
 
-    return [
-        _build_text_record(
-            row,
-            (
-                ("id", "id"),
-                ("lineId", "line_id"),
-                ("sdwtId", "sdwt_prod"),
-                ("prcGroup", "prc_group"),
-                ("name", "id"),
-            ),
+    equipments: List[Dict[str, str]] = []
+    seen_ids: set[str] = set()
+    for row in rows:
+        eqp_id = row.get("id")
+        if eqp_id is None:
+            continue
+        normalized_eqp_id = str(eqp_id)
+        if normalized_eqp_id in seen_ids:
+            continue
+        seen_ids.add(normalized_eqp_id)
+        equipments.append(
+            _build_text_record(
+                row,
+                (
+                    ("id", "id"),
+                    ("lineId", "line_id"),
+                    ("sdwtId", "sdwt_prod"),
+                    ("prcGroup", "prc_group"),
+                    ("name", "id"),
+                ),
+            )
         )
-        for row in rows
-        if row.get("id") is not None
-    ]
+    return equipments
 
 
 def get_equipment_info(*, eqp_id: str) -> Dict[str, str] | None:

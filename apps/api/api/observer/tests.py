@@ -162,7 +162,13 @@ class ObserverEndpointTests(TestCase):
                     "line_id": "GPM-LINE-A",
                     "sdwt_prod": "SD-10",
                     "prc_group": "ETCH",
-                }
+                },
+                {
+                    "id": "EQP-ALPHA",
+                    "line_id": "GPM-LINE-B",
+                    "sdwt_prod": "SD-10",
+                    "prc_group": "ETCH",
+                },
             ],
         ) as fetch_all:
             equipments = selectors.list_equipments(
@@ -174,6 +180,8 @@ class ObserverEndpointTests(TestCase):
         query, params = fetch_all.call_args.args
         self.assertEqual(equipments[0]["id"], "EQP-ALPHA")
         self.assertEqual(equipments[0]["lineId"], "GPM-LINE-A")
+        self.assertEqual(len(equipments), 1)
+        self.assertIn("select distinct on (station.station)", query)
         self.assertIn("from station_master station", query)
         self.assertIn("left join mes_line_mapping_info mapping", query)
         self.assertIn("station.prc_group_lookup = %s", query)
