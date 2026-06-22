@@ -10,10 +10,10 @@ import {
   Users,
 } from "lucide-react"
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
   Legend,
-  Line,
-  LineChart,
   ResponsiveContainer,
   XAxis,
   YAxis,
@@ -214,7 +214,11 @@ function ChartPanel({ apps, chartRows, isLoading, error }) {
         ) : (
           <ChartContainer config={chartConfig} className="h-full min-h-72">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartRows} margin={{ top: 16, right: 16, left: 0, bottom: 8 }}>
+              <BarChart
+                data={chartRows}
+                margin={{ top: 16, right: 16, left: 0, bottom: 8 }}
+                barCategoryGap="24%"
+              >
                 <CartesianGrid stroke="var(--border)" strokeDasharray="4 4" vertical={false} />
                 <XAxis
                   dataKey="date"
@@ -234,18 +238,16 @@ function ChartPanel({ apps, chartRows, isLoading, error }) {
                 <ChartTooltip content={<ChartTooltipContent />} />
                 <Legend verticalAlign="top" height={28} iconType="circle" />
                 {chartApps.map((app, index) => (
-                  <Line
+                  <Bar
                     key={app.appId}
-                    type="monotone"
                     dataKey={app.appId}
                     name={app.appName}
-                    stroke={CHART_COLORS[index % CHART_COLORS.length]}
-                    strokeWidth={2}
-                    dot={chartRows.length <= 7 ? { r: 3 } : false}
-                    activeDot={{ r: 5 }}
+                    stackId="access"
+                    fill={CHART_COLORS[index % CHART_COLORS.length]}
+                    maxBarSize={44}
                   />
                 ))}
-              </LineChart>
+              </BarChart>
             </ResponsiveContainer>
           </ChartContainer>
         )}
