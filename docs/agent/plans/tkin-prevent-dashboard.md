@@ -19,7 +19,8 @@
   - `GET /api/v1/observer/tkin-prevent/processes?prcGroup=...`
   - `GET /api/v1/observer/tkin-prevent/step-seqs?prcGroup=...&processId=...`
   - `GET /api/v1/observer/tkin-prevent/matrix?prcGroup=...&processId=...&stepSeq=...`
-- PRC group은 `station_master.prc_group_lookup`으로 필터링하고, 해당 row들의 `ch_main`을 `m_tkin_prevent.eqp_id`와 매칭한다.
+- Line은 SDWT 선택까지만 사용하고, 이후 조회는 `station_master.sdwt_prod_lookup`과 `station_master.prc_group_lookup`으로 필터링한다.
+- 필터링된 `station_master.ch_main`을 `m_tkin_prevent.eqp_id`와 매칭한다.
 - cell 값은 `DOING`이면 `DOING`, `PREVENT`이면 `registration_level(tkin_restrc_lot_count/tkin_lot_count)`, `LEVEL2/LEVEL3`이면 `registration_level(level2_restrc_lot_count/tkin_restrc_lot_count/tkin_lot_count)`로 변환한다.
 - Migration/env/auth 변경은 없다.
 
@@ -44,3 +45,4 @@
 - 2026-06-23: observer 기준정보 API 재사용과 `m_tkin_prevent` matrix 신규 endpoint 추가 방향으로 계획을 작성했다.
 - 2026-06-23: observer API에 `tkin-prevent` process/step/matrix endpoint를 추가하고 React dashboard route를 연결했다.
 - 2026-06-23: `api` 컨테이너와 test DB의 `pg_trgm` extension을 보정한 뒤 observer 테스트, web build, agent audit을 통과했다.
+- 2026-06-23: 사용자 확인에 따라 Line은 SDWT 선택까지만 사용하고 T/K-IN Prevent process/step/matrix 조회 scope에서 제거했다.

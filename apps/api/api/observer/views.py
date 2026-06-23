@@ -273,14 +273,13 @@ def _required_tkin_scope(
 ) -> tuple[dict[str, str], JsonResponse | None]:
     """m_tkin_prevent scope query 값을 검증합니다."""
 
-    line_id = _query_id(request, "lineId")
     sdwt_id = _query_id(request, "sdwtId")
     prc_group = _query_id(request, "prcGroup")
 
-    if not line_id or not sdwt_id or not prc_group:
-        return {}, _missing_query_response("lineId, sdwtId and prcGroup are required")
+    if not sdwt_id or not prc_group:
+        return {}, _missing_query_response("sdwtId and prcGroup are required")
 
-    return {"line_id": line_id, "sdwt_id": sdwt_id, "prc_group": prc_group}, None
+    return {"sdwt_id": sdwt_id, "prc_group": prc_group}, None
 
 
 class ObserverTkinPreventProcessesView(APIView):
@@ -300,13 +299,13 @@ class ObserverTkinPreventProcessesView(APIView):
         - 없음
 
         오류:
-        - 400: lineId, sdwtId, prcGroup 누락
+        - 400: sdwtId, prcGroup 누락
 
         예시 요청:
-        - 예시 요청: GET /api/v1/observer/tkin-prevent/processes?lineId=L1&sdwtId=S1&prcGroup=P1
+        - 예시 요청: GET /api/v1/observer/tkin-prevent/processes?sdwtId=S1&prcGroup=P1
 
         snake/camel 호환:
-        - lineId/sdwtId/prcGroup만 지원(snake_case 미지원)
+        - sdwtId/prcGroup만 지원(snake_case 미지원)
         """
         scope, error_response = _required_tkin_scope(request)
         if error_response:
@@ -335,13 +334,13 @@ class ObserverTkinPreventStepSeqsView(APIView):
         - 없음
 
         오류:
-        - 400: lineId, sdwtId, prcGroup, processId 누락
+        - 400: sdwtId, prcGroup, processId 누락
 
         예시 요청:
-        - 예시 요청: GET /api/v1/observer/tkin-prevent/step-seqs?lineId=L1&sdwtId=S1&prcGroup=P1&processId=P100
+        - 예시 요청: GET /api/v1/observer/tkin-prevent/step-seqs?sdwtId=S1&prcGroup=P1&processId=P100
 
         snake/camel 호환:
-        - lineId/sdwtId/prcGroup/processId만 지원(snake_case 미지원)
+        - sdwtId/prcGroup/processId만 지원(snake_case 미지원)
         """
         scope, error_response = _required_tkin_scope(request)
         if error_response:
@@ -377,13 +376,13 @@ class ObserverTkinPreventMatrixView(APIView):
         - 없음
 
         오류:
-        - 400: lineId, sdwtId, prcGroup, processId, stepSeq 누락
+        - 400: sdwtId, prcGroup, processId, stepSeq 누락
 
         예시 요청:
-        - 예시 요청: GET /api/v1/observer/tkin-prevent/matrix?lineId=L1&sdwtId=S1&prcGroup=P1&processId=P100&stepSeq=10
+        - 예시 요청: GET /api/v1/observer/tkin-prevent/matrix?sdwtId=S1&prcGroup=P1&processId=P100&stepSeq=10
 
         snake/camel 호환:
-        - lineId/sdwtId/prcGroup/processId/stepSeq만 지원(snake_case 미지원)
+        - sdwtId/prcGroup/processId/stepSeq만 지원(snake_case 미지원)
         """
         scope, error_response = _required_tkin_scope(request)
         if error_response:

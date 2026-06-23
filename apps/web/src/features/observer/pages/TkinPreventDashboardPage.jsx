@@ -172,15 +172,13 @@ export default function TkinPreventDashboardPage() {
   const linesQuery = useLines();
   const sdwtQuery = useSDWT(lineId);
   const prcGroupsQuery = usePrcGroups(lineId, sdwtId);
-  const processesQuery = useTkinPreventProcesses(lineId, sdwtId, prcGroup);
+  const processesQuery = useTkinPreventProcesses(sdwtId, prcGroup);
   const stepSeqsQuery = useTkinPreventStepSeqs(
-    lineId,
     sdwtId,
     prcGroup,
     processId
   );
   const matrixQuery = useTkinPreventMatrix(
-    lineId,
     sdwtId,
     prcGroup,
     processId,

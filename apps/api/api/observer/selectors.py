@@ -357,13 +357,7 @@ def _target_tkin_eqp_cte() -> str:
             select distinct
                 station.ch_main as eqp_id
             from station_master station
-            join mes_line_mapping_info mapping
-              on mapping.msg_line_id = station.floor_line_id
-            where mapping.gpm_line_name_lookup = %s
-              and mapping.gbm_name = 'MEMORY'
-              and mapping.use_yn = 'Y'
-              and mapping.del_yn = 'N'
-              and station.sdwt_prod_lookup = %s
+            where station.sdwt_prod_lookup = %s
               and station.prc_group_lookup = %s
               and station.ch_main is not null
               and trim(station.ch_main) <> ''
@@ -373,18 +367,16 @@ def _target_tkin_eqp_cte() -> str:
 
 def _tkin_scope_params(
     *,
-    line_id: str,
     sdwt_id: str,
     prc_group: str,
 ) -> List[object]:
     """m_tkin_prevent scope 필터 파라미터를 정규화합니다."""
 
     filters = _normalize_filters(
-        line_id=line_id,
         sdwt_id=sdwt_id,
         prc_group=prc_group,
     )
-    return [filters["line_id"], filters["sdwt_id"], filters["prc_group"]]
+    return [filters["sdwt_id"], filters["prc_group"]]
 
 
 def _build_tkin_option(row: Row, field_name: str) -> Dict[str, str]:
@@ -395,14 +387,12 @@ def _build_tkin_option(row: Row, field_name: str) -> Dict[str, str]:
 
 def list_tkin_prevent_processes(
     *,
-    line_id: str,
     sdwt_id: str,
     prc_group: str,
 ) -> List[Dict[str, str]]:
     """m_tkin_prevent process_id 목록을 반환합니다.
 
     입력:
-    - line_id: 라인 ID
     - sdwt_id: SDWT ID
     - prc_group: PRC 그룹
 
@@ -428,7 +418,7 @@ def list_tkin_prevent_processes(
           and trim(prevent.process_id) <> ''
         order by prevent.process_id
         """,
-        _tkin_scope_params(line_id=line_id, sdwt_id=sdwt_id, prc_group=prc_group),
+        _tkin_scope_params(sdwt_id=sdwt_id, prc_group=prc_group),
     )
     return [
         _build_tkin_option(row, "process_id")
@@ -439,7 +429,6 @@ def list_tkin_prevent_processes(
 
 def list_tkin_prevent_step_seqs(
     *,
-    line_id: str,
     sdwt_id: str,
     prc_group: str,
     process_id: str,
@@ -447,7 +436,6 @@ def list_tkin_prevent_step_seqs(
     """m_tkin_prevent step_seq 목록을 반환합니다.
 
     입력:
-    - line_id: 라인 ID
     - sdwt_id: SDWT ID
     - prc_group: PRC 그룹
     - process_id: process_id
@@ -477,7 +465,7 @@ def list_tkin_prevent_step_seqs(
         order by prevent.step_seq
         """,
         [
-            *_tkin_scope_params(line_id=line_id, sdwt_id=sdwt_id, prc_group=prc_group),
+            *_tkin_scope_params(sdwt_id=sdwt_id, prc_group=prc_group),
             process_key,
         ],
     )
@@ -522,7 +510,6 @@ def _format_tkin_status(row: Row) -> str:
 
 def get_tkin_prevent_matrix(
     *,
-    line_id: str,
     sdwt_id: str,
     prc_group: str,
     process_id: str,
@@ -531,7 +518,6 @@ def get_tkin_prevent_matrix(
     """m_tkin_prevent matrix 데이터를 반환합니다.
 
     입력:
-    - line_id: 라인 ID
     - sdwt_id: SDWT ID
     - prc_group: PRC 그룹
     - process_id: process_id
@@ -570,7 +556,7 @@ def get_tkin_prevent_matrix(
         order by prevent.ppid, prevent.eqp_id, prevent.tkin_prevent_chamber_id
         """,
         [
-            *_tkin_scope_params(line_id=line_id, sdwt_id=sdwt_id, prc_group=prc_group),
+            *_tkin_scope_params(sdwt_id=sdwt_id, prc_group=prc_group),
             filters["process_id"],
             filters["step_seq"],
         ],

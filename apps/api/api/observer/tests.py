@@ -217,13 +217,12 @@ class ObserverEndpointTests(TestCase):
         ) as selector:
             response = self.client.get(
                 reverse("observer-tkin-prevent-processes"),
-                {"lineId": "line-a", "sdwtId": "sd-10", "prcGroup": "etch"},
+                {"sdwtId": "sd-10", "prcGroup": "etch"},
             )
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(isinstance(response.json(), list))
         selector.assert_called_once_with(
-            line_id="LINE-A",
             sdwt_id="SD-10",
             prc_group="ETCH",
         )
@@ -235,7 +234,7 @@ class ObserverEndpointTests(TestCase):
         ) as selector:
             response = self.client.get(
                 reverse("observer-tkin-prevent-step-seqs"),
-                {"lineId": "LINE-A", "sdwtId": "SD-10", "prcGroup": "ETCH"},
+                {"sdwtId": "SD-10", "prcGroup": "ETCH"},
             )
 
         self.assertEqual(response.status_code, 400)
@@ -249,7 +248,6 @@ class ObserverEndpointTests(TestCase):
             response = self.client.get(
                 reverse("observer-tkin-prevent-step-seqs"),
                 {
-                    "lineId": "line-a",
                     "sdwtId": "sd-10",
                     "prcGroup": "etch",
                     "processId": "proc-1",
@@ -259,7 +257,6 @@ class ObserverEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(isinstance(response.json(), list))
         selector.assert_called_once_with(
-            line_id="LINE-A",
             sdwt_id="SD-10",
             prc_group="ETCH",
             process_id="PROC-1",
@@ -273,7 +270,6 @@ class ObserverEndpointTests(TestCase):
             response = self.client.get(
                 reverse("observer-tkin-prevent-matrix"),
                 {
-                    "lineId": "LINE-A",
                     "sdwtId": "SD-10",
                     "prcGroup": "ETCH",
                     "processId": "PROC-1",
@@ -292,7 +288,6 @@ class ObserverEndpointTests(TestCase):
             response = self.client.get(
                 reverse("observer-tkin-prevent-matrix"),
                 {
-                    "lineId": "line-a",
                     "sdwtId": "sd-10",
                     "prcGroup": "etch",
                     "processId": "proc-1",
@@ -303,7 +298,6 @@ class ObserverEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), payload)
         selector.assert_called_once_with(
-            line_id="LINE-A",
             sdwt_id="SD-10",
             prc_group="ETCH",
             process_id="PROC-1",
@@ -316,7 +310,6 @@ class ObserverEndpointTests(TestCase):
             return_value=[{"process_id": "PROC-1"}],
         ) as fetch_all:
             processes = selectors.list_tkin_prevent_processes(
-                line_id="line-a",
                 sdwt_id="sd-10",
                 prc_group="etch",
             )
@@ -324,15 +317,15 @@ class ObserverEndpointTests(TestCase):
         query, params = fetch_all.call_args.args
         self.assertEqual(processes[0]["id"], "PROC-1")
         self.assertIn("from station_master station", query)
-        self.assertIn("join mes_line_mapping_info mapping", query)
         self.assertIn("station.ch_main as eqp_id", query)
         self.assertIn("from m_tkin_prevent prevent", query)
         self.assertIn("upper(trim(prevent.eqp_id))", query)
         self.assertIn("upper(trim(target_eqp.eqp_id))", query)
-        self.assertIn("mapping.gpm_line_name_lookup = %s", query)
+        self.assertNotIn("mes_line_mapping_info", query)
+        self.assertNotIn("gpm_line_name_lookup", query)
         self.assertIn("station.sdwt_prod_lookup = %s", query)
         self.assertIn("station.prc_group_lookup = %s", query)
-        self.assertEqual(params, ["LINE-A", "SD-10", "ETCH"])
+        self.assertEqual(params, ["SD-10", "ETCH"])
 
     def test_tkin_prevent_step_selector_filters_process(self) -> None:
         with patch(
@@ -340,7 +333,6 @@ class ObserverEndpointTests(TestCase):
             return_value=[{"step_seq": "10"}],
         ) as fetch_all:
             steps = selectors.list_tkin_prevent_step_seqs(
-                line_id="LINE-A",
                 sdwt_id="SD-10",
                 prc_group="ETCH",
                 process_id="proc-1",
@@ -349,7 +341,7 @@ class ObserverEndpointTests(TestCase):
         query, params = fetch_all.call_args.args
         self.assertEqual(steps[0]["id"], "10")
         self.assertIn("upper(trim(prevent.process_id)) = %s", query)
-        self.assertEqual(params, ["LINE-A", "SD-10", "ETCH", "PROC-1"])
+        self.assertEqual(params, ["SD-10", "ETCH", "PROC-1"])
 
     def test_tkin_prevent_matrix_formats_cells(self) -> None:
         with patch(
@@ -378,7 +370,6 @@ class ObserverEndpointTests(TestCase):
             ],
         ) as fetch_all:
             matrix = selectors.get_tkin_prevent_matrix(
-                line_id="LINE-A",
                 sdwt_id="SD-10",
                 prc_group="ETCH",
                 process_id="proc-1",
@@ -396,7 +387,7 @@ class ObserverEndpointTests(TestCase):
         )
         self.assertIn("upper(trim(prevent.process_id)) = %s", query)
         self.assertIn("upper(trim(prevent.step_seq)) = %s", query)
-        self.assertEqual(params, ["LINE-A", "SD-10", "ETCH", "PROC-1", "10"])
+        self.assertEqual(params, ["SD-10", "ETCH", "PROC-1", "10"])
 
     def test_observer_equipment_info_returns_result(self) -> None:
         payload = {

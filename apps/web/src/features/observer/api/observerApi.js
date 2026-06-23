@@ -33,26 +33,25 @@ export const observerApi = {
     observerApiClient(`/equipment-info/${eqpId}`),
 
   // T/K-IN Prevent process 목록
-  fetchTkinPreventProcesses: ({ lineId, sdwtId, prcGroup }) =>
+  fetchTkinPreventProcesses: ({ sdwtId, prcGroup }) =>
     observerApiClient("/tkin-prevent/processes", {
-      params: { lineId, sdwtId, prcGroup },
+      params: { sdwtId, prcGroup },
     }),
 
   // T/K-IN Prevent step_seq 목록
-  fetchTkinPreventStepSeqs: ({ lineId, sdwtId, prcGroup, processId }) =>
+  fetchTkinPreventStepSeqs: ({ sdwtId, prcGroup, processId }) =>
     observerApiClient("/tkin-prevent/step-seqs", {
-      params: { lineId, sdwtId, prcGroup, processId },
+      params: { sdwtId, prcGroup, processId },
     }),
 
   // T/K-IN Prevent matrix 데이터
   fetchTkinPreventMatrix: ({
-    lineId,
     sdwtId,
     prcGroup,
     processId,
     stepSeq,
   }) =>
     observerApiClient("/tkin-prevent/matrix", {
-      params: { lineId, sdwtId, prcGroup, processId, stepSeq },
+      params: { sdwtId, prcGroup, processId, stepSeq },
     }),
 };
