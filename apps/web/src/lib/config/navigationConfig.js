@@ -28,6 +28,11 @@ const LINE_DASHBOARD_GROUP = Object.freeze({
       scope: "line",
     },
     {
+      title: "TIP현황",
+      url: "/ESOP_Dashboard/tip-status",
+      scope: "line",
+    },
+    {
       title: "History",
       url: "/ESOP_Dashboard/history",
       scope: "line",

@@ -32,26 +32,32 @@ export const observerApi = {
   fetchEquipmentInfoByEqpId: (eqpId) =>
     observerApiClient(`/equipment-info/${eqpId}`),
 
+  // T/K-IN Prevent PRC Group 목록
+  fetchTkinPreventPrcGroups: ({ userSdwtProd }) =>
+    observerApiClient("/tkin-prevent/prc-groups", {
+      params: { userSdwtProd },
+    }),
+
   // T/K-IN Prevent process 목록
-  fetchTkinPreventProcesses: ({ sdwtId, prcGroup }) =>
+  fetchTkinPreventProcesses: ({ userSdwtProd, prcGroup }) =>
     observerApiClient("/tkin-prevent/processes", {
-      params: { sdwtId, prcGroup },
+      params: { userSdwtProd, prcGroup },
     }),
 
   // T/K-IN Prevent step_seq 목록
-  fetchTkinPreventStepSeqs: ({ sdwtId, prcGroup, processId }) =>
+  fetchTkinPreventStepSeqs: ({ userSdwtProd, prcGroup, processId }) =>
     observerApiClient("/tkin-prevent/step-seqs", {
-      params: { sdwtId, prcGroup, processId },
+      params: { userSdwtProd, prcGroup, processId },
     }),
 
   // T/K-IN Prevent matrix 데이터
   fetchTkinPreventMatrix: ({
-    sdwtId,
+    userSdwtProd,
     prcGroup,
     processId,
     stepSeq,
   }) =>
     observerApiClient("/tkin-prevent/matrix", {
-      params: { sdwtId, prcGroup, processId, stepSeq },
+      params: { userSdwtProd, prcGroup, processId, stepSeq },
     }),
 };

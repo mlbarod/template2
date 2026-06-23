@@ -273,13 +273,59 @@ def _required_tkin_scope(
 ) -> tuple[dict[str, str], JsonResponse | None]:
     """m_tkin_prevent scope query 값을 검증합니다."""
 
-    sdwt_id = _query_id(request, "sdwtId")
+    user_sdwt_prod = _query_id(request, "userSdwtProd")
     prc_group = _query_id(request, "prcGroup")
 
-    if not sdwt_id or not prc_group:
-        return {}, _missing_query_response("sdwtId and prcGroup are required")
+    if not user_sdwt_prod or not prc_group:
+        return {}, _missing_query_response("userSdwtProd and prcGroup are required")
 
-    return {"sdwt_id": sdwt_id, "prc_group": prc_group}, None
+    return {"user_sdwt_prod": user_sdwt_prod, "prc_group": prc_group}, None
+
+
+def _required_tkin_user_sdwt_prod(
+    request: HttpRequest,
+) -> tuple[str, JsonResponse | None]:
+    """m_tkin_prevent user_sdwt_prod query 값을 검증합니다."""
+
+    user_sdwt_prod = _query_id(request, "userSdwtProd")
+    if not user_sdwt_prod:
+        return "", _missing_query_response("userSdwtProd is required")
+    return user_sdwt_prod, None
+
+
+class ObserverTkinPreventPrcGroupsView(APIView):
+    """m_tkin_prevent 조회에 사용할 PRC 그룹 목록을 반환합니다."""
+
+    def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """m_tkin_prevent PRC 그룹 목록을 반환합니다.
+
+        입력:
+        - 요청: Django HttpRequest
+        - args/kwargs: URL 라우팅 인자
+
+        반환:
+        - JsonResponse: PRC 그룹 option 목록
+
+        부작용:
+        - 없음
+
+        오류:
+        - 400: userSdwtProd 누락
+
+        예시 요청:
+        - 예시 요청: GET /api/v1/observer/tkin-prevent/prc-groups?userSdwtProd=S1
+
+        snake/camel 호환:
+        - userSdwtProd만 지원(snake_case 미지원)
+        """
+        user_sdwt_prod, error_response = _required_tkin_user_sdwt_prod(request)
+        if error_response:
+            return error_response
+
+        return JsonResponse(
+            selectors.list_tkin_prevent_prc_groups(user_sdwt_prod=user_sdwt_prod),
+            safe=False,
+        )
 
 
 class ObserverTkinPreventProcessesView(APIView):
@@ -299,13 +345,13 @@ class ObserverTkinPreventProcessesView(APIView):
         - 없음
 
         오류:
-        - 400: sdwtId, prcGroup 누락
+        - 400: userSdwtProd, prcGroup 누락
 
         예시 요청:
-        - 예시 요청: GET /api/v1/observer/tkin-prevent/processes?sdwtId=S1&prcGroup=P1
+        - 예시 요청: GET /api/v1/observer/tkin-prevent/processes?userSdwtProd=S1&prcGroup=P1
 
         snake/camel 호환:
-        - sdwtId/prcGroup만 지원(snake_case 미지원)
+        - userSdwtProd/prcGroup만 지원(snake_case 미지원)
         """
         scope, error_response = _required_tkin_scope(request)
         if error_response:
@@ -334,13 +380,13 @@ class ObserverTkinPreventStepSeqsView(APIView):
         - 없음
 
         오류:
-        - 400: sdwtId, prcGroup, processId 누락
+        - 400: userSdwtProd, prcGroup, processId 누락
 
         예시 요청:
-        - 예시 요청: GET /api/v1/observer/tkin-prevent/step-seqs?sdwtId=S1&prcGroup=P1&processId=P100
+        - 예시 요청: GET /api/v1/observer/tkin-prevent/step-seqs?userSdwtProd=S1&prcGroup=P1&processId=P100
 
         snake/camel 호환:
-        - sdwtId/prcGroup/processId만 지원(snake_case 미지원)
+        - userSdwtProd/prcGroup/processId만 지원(snake_case 미지원)
         """
         scope, error_response = _required_tkin_scope(request)
         if error_response:
@@ -376,13 +422,13 @@ class ObserverTkinPreventMatrixView(APIView):
         - 없음
 
         오류:
-        - 400: sdwtId, prcGroup, processId, stepSeq 누락
+        - 400: userSdwtProd, prcGroup, processId, stepSeq 누락
 
         예시 요청:
-        - 예시 요청: GET /api/v1/observer/tkin-prevent/matrix?sdwtId=S1&prcGroup=P1&processId=P100&stepSeq=10
+        - 예시 요청: GET /api/v1/observer/tkin-prevent/matrix?userSdwtProd=S1&prcGroup=P1&processId=P100&stepSeq=10
 
         snake/camel 호환:
-        - sdwtId/prcGroup/processId/stepSeq만 지원(snake_case 미지원)
+        - userSdwtProd/prcGroup/processId/stepSeq만 지원(snake_case 미지원)
         """
         scope, error_response = _required_tkin_scope(request)
         if error_response:

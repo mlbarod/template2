@@ -18,7 +18,7 @@ Observer는 설비 Observer 화면에 필요한 기준 정보와 로그를 조�
 | Route | 설명 |
 | --- | --- |
 | `/observer` | 라인/SDWT/공정/설비를 선택해 observer 조회 |
-| `/observer/tkin-prevent` | m_tkin_prevent 예방 상태 matrix 조회 |
+| `/ESOP_Dashboard/tip-status/:lineId` | m_tkin_prevent 예방 상태 matrix 조회 |
 | `/observer/:eqpId` | 특정 설비를 URL에서 바로 선택 |
 
 프론트 feature는 `apps/web/src/features/observer`이며, 외부 공개는 `apps/web/src/features/observer/index.js`의 `observerRoutes`입니다.
@@ -79,7 +79,8 @@ Observer 기준정보와 로그는 기본 DB의 data movement/업무 테이블�
 - 화면이 느리면 로그 API의 `from`, `to`, `limit` 조합과 응답 건수를 먼저 확인합니다.
 - ESOP 로그가 누락되면 `api.drone` 데이터와 observer 로그 결합 지점을 함께 확인합니다.
 - T/K-IN Prevent matrix가 비어 있으면 `station_master.ch_main`과 `m_tkin_prevent.eqp_id` 매핑부터 확인합니다.
-- T/K-IN Prevent에서 Line은 SDWT 후보 조회까지만 사용하며, process/step/matrix 조회는 선택된 SDWT와 PRC Group 기준입니다.
+- T/K-IN Prevent에서 Line은 ESOP Dashboard 선택값을 사용하며, user_sdwt_prod 후보는 `account_affiliation.line/user_sdwt_prod` 기준입니다.
+- T/K-IN Prevent의 PRC/process/step/matrix 조회는 선택된 user_sdwt_prod와 PRC Group 기준입니다.
 
 ## 관련 API
 

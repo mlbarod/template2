@@ -265,6 +265,43 @@ def list_prc_groups(*, line_id: str, sdwt_id: str) -> List[Dict[str, str]]:
     ]
 
 
+def list_tkin_prevent_prc_groups(*, user_sdwt_prod: str) -> List[Dict[str, str]]:
+    """m_tkin_prevent 조회에 사용할 PRC 그룹 목록을 반환합니다.
+
+    입력:
+    - user_sdwt_prod: account_affiliation.user_sdwt_prod에서 선택한 값
+
+    반환:
+    - List[Dict[str, str]]: PRC 그룹 option 목록
+
+    부작용:
+    - 없음(DB 조회)
+
+    오류:
+    - DB 연결 실패 시 예외
+    """
+
+    filters = _normalize_filters(user_sdwt_prod=user_sdwt_prod)
+    rows = _fetch_all(
+        """
+        select distinct
+            prc_group_lookup as id
+        from station_master
+        where sdwt_prod_lookup = %s
+          and prc_group_lookup is not null
+          and trim(prc_group_lookup) <> ''
+        order by prc_group_lookup
+        """,
+        [filters["user_sdwt_prod"]],
+    )
+
+    return [
+        _build_text_record(row, (("id", "id"), ("name", "id")))
+        for row in rows
+        if row.get("id") is not None
+    ]
+
+
 def list_equipments(
     *,
     line_id: str,
@@ -367,16 +404,16 @@ def _target_tkin_eqp_cte() -> str:
 
 def _tkin_scope_params(
     *,
-    sdwt_id: str,
+    user_sdwt_prod: str,
     prc_group: str,
 ) -> List[object]:
     """m_tkin_prevent scope 필터 파라미터를 정규화합니다."""
 
     filters = _normalize_filters(
-        sdwt_id=sdwt_id,
+        user_sdwt_prod=user_sdwt_prod,
         prc_group=prc_group,
     )
-    return [filters["sdwt_id"], filters["prc_group"]]
+    return [filters["user_sdwt_prod"], filters["prc_group"]]
 
 
 def _build_tkin_option(row: Row, field_name: str) -> Dict[str, str]:
@@ -387,13 +424,13 @@ def _build_tkin_option(row: Row, field_name: str) -> Dict[str, str]:
 
 def list_tkin_prevent_processes(
     *,
-    sdwt_id: str,
+    user_sdwt_prod: str,
     prc_group: str,
 ) -> List[Dict[str, str]]:
     """m_tkin_prevent process_id 목록을 반환합니다.
 
     입력:
-    - sdwt_id: SDWT ID
+    - user_sdwt_prod: account_affiliation.user_sdwt_prod에서 선택한 값
     - prc_group: PRC 그룹
 
     반환:
@@ -418,7 +455,7 @@ def list_tkin_prevent_processes(
           and trim(prevent.process_id) <> ''
         order by prevent.process_id
         """,
-        _tkin_scope_params(sdwt_id=sdwt_id, prc_group=prc_group),
+        _tkin_scope_params(user_sdwt_prod=user_sdwt_prod, prc_group=prc_group),
     )
     return [
         _build_tkin_option(row, "process_id")
@@ -429,14 +466,14 @@ def list_tkin_prevent_processes(
 
 def list_tkin_prevent_step_seqs(
     *,
-    sdwt_id: str,
+    user_sdwt_prod: str,
     prc_group: str,
     process_id: str,
 ) -> List[Dict[str, str]]:
     """m_tkin_prevent step_seq 목록을 반환합니다.
 
     입력:
-    - sdwt_id: SDWT ID
+    - user_sdwt_prod: account_affiliation.user_sdwt_prod에서 선택한 값
     - prc_group: PRC 그룹
     - process_id: process_id
 
@@ -465,7 +502,7 @@ def list_tkin_prevent_step_seqs(
         order by prevent.step_seq
         """,
         [
-            *_tkin_scope_params(sdwt_id=sdwt_id, prc_group=prc_group),
+            *_tkin_scope_params(user_sdwt_prod=user_sdwt_prod, prc_group=prc_group),
             process_key,
         ],
     )
@@ -510,7 +547,7 @@ def _format_tkin_status(row: Row) -> str:
 
 def get_tkin_prevent_matrix(
     *,
-    sdwt_id: str,
+    user_sdwt_prod: str,
     prc_group: str,
     process_id: str,
     step_seq: str,
@@ -518,7 +555,7 @@ def get_tkin_prevent_matrix(
     """m_tkin_prevent matrix 데이터를 반환합니다.
 
     입력:
-    - sdwt_id: SDWT ID
+    - user_sdwt_prod: account_affiliation.user_sdwt_prod에서 선택한 값
     - prc_group: PRC 그룹
     - process_id: process_id
     - step_seq: step_seq
@@ -556,7 +593,7 @@ def get_tkin_prevent_matrix(
         order by prevent.ppid, prevent.eqp_id, prevent.tkin_prevent_chamber_id
         """,
         [
-            *_tkin_scope_params(sdwt_id=sdwt_id, prc_group=prc_group),
+            *_tkin_scope_params(user_sdwt_prod=user_sdwt_prod, prc_group=prc_group),
             filters["process_id"],
             filters["step_seq"],
         ],
@@ -1157,6 +1194,7 @@ __all__ = [
     "list_lines",
     "list_prc_groups",
     "list_sdwt_for_line",
+    "list_tkin_prevent_prc_groups",
     "DEFAULT_LOG_QUERY_DAYS",
     "MAX_LOG_LIMIT",
     "normalize_id",

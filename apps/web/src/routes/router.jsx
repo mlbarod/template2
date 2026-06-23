@@ -14,15 +14,36 @@ import { lineDashboardRoutes } from "@/features/line-dashboard"
 import { l3SpiderRoutes } from "@/features/l3-spider"
 import { pmComparisonRoutes } from "@/features/pm-comparison"
 import { teamstaffRoutes } from "@/features/teamstaff"
-import { observerRoutes } from "@/features/observer"
+import { TkinPreventDashboardRoute, observerRoutes } from "@/features/observer"
 import { vocRoutes } from "@/features/voc"
 import { ChatWidget, assistantRoutes } from "@/features/assistant"
 import { emailsRoutes, useEmailMailboxes } from "@/features/emails"
 import { accountRoutes } from "@/features/account"
 
+const esopDashboardRoutes = lineDashboardRoutes.map((route) => {
+  if (route?.path !== "ESOP_Dashboard") return route
+
+  return {
+    ...route,
+    children: [
+      ...(Array.isArray(route.children) ? route.children : []),
+      {
+        path: "tip-status",
+        caseSensitive: false,
+        element: <TkinPreventDashboardRoute />,
+      },
+      {
+        path: "tip-status/:lineId",
+        caseSensitive: false,
+        element: <TkinPreventDashboardRoute />,
+      },
+    ],
+  }
+})
+
 const protectedFeatureRoutes = [
   ...teamstaffRoutes,
-  ...lineDashboardRoutes,
+  ...esopDashboardRoutes,
   ...fdcTrendRoutes,
   ...l3SpiderRoutes,
   ...pmComparisonRoutes,

@@ -1,17 +1,14 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { RefreshCw, RotateCcw, TableProperties } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useActiveLine, useLineSdwtOptionsQuery } from "@/lib/affiliation";
 
 import { LoadingSpinner } from "../components/Loaders";
 import {
-  useLines,
-  usePrcGroups,
-  useSDWT,
-} from "../hooks/useLineQueries";
-import {
   useTkinPreventMatrix,
+  useTkinPreventPrcGroups,
   useTkinPreventProcesses,
   useTkinPreventStepSeqs,
 } from "../hooks/useTkinPreventQueries";
@@ -77,7 +74,7 @@ function EmptyPanel({ ready }) {
         <p className="text-sm leading-6 text-muted-foreground">
           {ready
             ? "선택한 process_id와 step_seq에 해당하는 m_tkin_prevent row가 없습니다."
-            : "라인, SDWT, PRC Group, process_id, step_seq를 선택하면 matrix가 표시됩니다."}
+            : "Line, user_sdwt_prod, PRC Group, process_id, step_seq를 선택하면 matrix가 표시됩니다."}
         </p>
       </div>
     </div>
@@ -105,11 +102,30 @@ function MatrixCell({ values }) {
   );
 }
 
-function TkinPreventMatrixTable({ matrix }) {
-  const columns = matrix?.columns || [];
-  const rows = matrix?.rows || [];
+function normalizeOptionValue(value) {
+  if (value === null || value === undefined) return "";
+  return typeof value === "string" ? value.trim() : String(value).trim();
+}
 
-  if (!columns.length || !rows.length) {
+function getUserSdwtOptionsForLine(payload, lineId) {
+  const normalizedLineId = normalizeOptionValue(lineId).toLowerCase();
+  const lines = Array.isArray(payload?.lines) ? payload.lines : [];
+  const line = lines.find(
+    (item) => normalizeOptionValue(item?.lineId).toLowerCase() === normalizedLineId
+  );
+  const values = Array.isArray(line?.userSdwtProds) ? line.userSdwtProds : [];
+
+  return values
+    .map((value) => normalizeOptionValue(value))
+    .filter(Boolean)
+    .map((value) => ({ id: value, name: value }));
+}
+
+function TkinPreventMatrixTable({ matrix }) {
+  const equipmentRows = matrix?.columns || [];
+  const ppidColumns = matrix?.rows || [];
+
+  if (!equipmentRows.length || !ppidColumns.length) {
     return <EmptyPanel ready={true} />;
   }
 
@@ -118,40 +134,37 @@ function TkinPreventMatrixTable({ matrix }) {
       <table className="min-w-full border-separate border-spacing-0 text-sm">
         <thead>
           <tr>
-            <th className="sticky left-0 top-0 z-20 min-w-48 border-b border-r bg-card px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
-              ppid
+            <th className="sticky left-0 top-0 z-20 min-w-48 border-b border-r bg-card px-2 py-1 text-left text-xs font-semibold leading-tight text-muted-foreground">
+              EQP-CH
             </th>
-            {columns.map((column) => (
+            {ppidColumns.map((ppidColumn) => (
               <th
-                key={column.id}
-                className="sticky top-0 z-10 min-w-44 border-b border-r bg-card px-3 py-2 text-left text-xs font-semibold text-muted-foreground"
+                key={ppidColumn.ppid}
+                className="sticky top-0 z-10 min-w-44 border-b border-r bg-card px-2 py-1 text-left text-xs font-semibold leading-tight text-foreground"
+                title={ppidColumn.ppid}
               >
-                <div className="grid gap-0.5">
-                  <span className="truncate text-foreground" title={column.label}>
-                    {column.label}
-                  </span>
-                  <span className="truncate font-normal">
-                    {column.eqpId} / {column.chamberId}
-                  </span>
-                </div>
+                <span className="block truncate">{ppidColumn.ppid}</span>
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={row.ppid} className="hover:bg-muted/40">
+          {equipmentRows.map((equipmentRow) => (
+            <tr key={equipmentRow.id} className="hover:bg-muted/40">
               <th className="sticky left-0 z-10 min-w-48 border-b border-r bg-card px-3 py-2 text-left align-top text-xs font-semibold text-foreground">
-                <span className="block max-w-48 truncate" title={row.ppid}>
-                  {row.ppid}
+                <span
+                  className="block max-w-48 truncate"
+                  title={`${equipmentRow.eqpId} / ${equipmentRow.chamberId}`}
+                >
+                  {equipmentRow.label}
                 </span>
               </th>
-              {columns.map((column) => (
+              {ppidColumns.map((ppidColumn) => (
                 <td
-                  key={`${row.ppid}-${column.id}`}
+                  key={`${equipmentRow.id}-${ppidColumn.ppid}`}
                   className="min-w-44 border-b border-r px-3 py-2 align-top"
                 >
-                  <MatrixCell values={row.cells?.[column.id]} />
+                  <MatrixCell values={ppidColumn.cells?.[equipmentRow.id]} />
                 </td>
               ))}
             </tr>
@@ -163,49 +176,61 @@ function TkinPreventMatrixTable({ matrix }) {
 }
 
 export default function TkinPreventDashboardPage() {
-  const [lineId, setLineId] = useState("");
-  const [sdwtId, setSdwtId] = useState("");
+  const { lineId } = useActiveLine();
+  const [userSdwtProd, setUserSdwtProd] = useState("");
   const [prcGroup, setPrcGroup] = useState("");
   const [processId, setProcessId] = useState("");
   const [stepSeq, setStepSeq] = useState("");
 
-  const linesQuery = useLines();
-  const sdwtQuery = useSDWT(lineId);
-  const prcGroupsQuery = usePrcGroups(lineId, sdwtId);
-  const processesQuery = useTkinPreventProcesses(sdwtId, prcGroup);
+  const lineSdwtOptionsQuery = useLineSdwtOptionsQuery();
+  const userSdwtOptions = useMemo(
+    () => getUserSdwtOptionsForLine(lineSdwtOptionsQuery.data, lineId),
+    [lineSdwtOptionsQuery.data, lineId]
+  );
+  const prcGroupsQuery = useTkinPreventPrcGroups(userSdwtProd);
+  const processesQuery = useTkinPreventProcesses(userSdwtProd, prcGroup);
   const stepSeqsQuery = useTkinPreventStepSeqs(
-    sdwtId,
+    userSdwtProd,
     prcGroup,
     processId
   );
   const matrixQuery = useTkinPreventMatrix(
-    sdwtId,
+    userSdwtProd,
     prcGroup,
     processId,
     stepSeq
   );
 
-  const matrixReady = !!lineId && !!sdwtId && !!prcGroup && !!processId && !!stepSeq;
+  const matrixReady = !!lineId && !!userSdwtProd && !!prcGroup && !!processId && !!stepSeq;
   const matrix = matrixQuery.data || { columns: [], rows: [] };
 
   const resetFilters = () => {
-    setLineId("");
-    setSdwtId("");
+    setUserSdwtProd("");
     setPrcGroup("");
     setProcessId("");
     setStepSeq("");
   };
 
-  const handleLineChange = (value) => {
-    setLineId(value);
-    setSdwtId("");
+  useEffect(() => {
+    setUserSdwtProd("");
     setPrcGroup("");
     setProcessId("");
     setStepSeq("");
-  };
+  }, [lineId]);
 
-  const handleSdwtChange = (value) => {
-    setSdwtId(value);
+  useEffect(() => {
+    if (!userSdwtProd) return;
+    const hasSelectedOption = userSdwtOptions.some((option) => option.id === userSdwtProd);
+    if (hasSelectedOption) return;
+
+    setUserSdwtProd("");
+    setPrcGroup("");
+    setProcessId("");
+    setStepSeq("");
+  }, [userSdwtOptions, userSdwtProd]);
+
+  const handleUserSdwtProdChange = (value) => {
+    setUserSdwtProd(value);
     setPrcGroup("");
     setProcessId("");
     setStepSeq("");
@@ -223,8 +248,7 @@ export default function TkinPreventDashboardPage() {
   };
 
   const filterError =
-    linesQuery.error ||
-    sdwtQuery.error ||
+    lineSdwtOptionsQuery.error ||
     prcGroupsQuery.error ||
     processesQuery.error ||
     stepSeqsQuery.error;
@@ -238,7 +262,7 @@ export default function TkinPreventDashboardPage() {
               T/K-IN Prevent Dashboard
             </h1>
             <p className="text-sm text-muted-foreground">
-              m_tkin_prevent 기준 예방 상태 matrix
+              {lineId ? `${lineId} Line m_tkin_prevent 기준 예방 상태 matrix` : "Line을 선택하세요"}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -262,25 +286,16 @@ export default function TkinPreventDashboardPage() {
 
       <section className="shrink-0 rounded-xl border bg-card">
         <div className="grid gap-4 p-4">
-          <div className="grid grid-cols-5 gap-3">
+          <div className="grid grid-cols-4 gap-3">
             <SelectField
-              id="tkin-prevent-line"
-              label="Line"
-              value={lineId}
-              options={linesQuery.data || []}
-              placeholder="Line 선택"
-              loading={linesQuery.isLoading}
-              onChange={handleLineChange}
-            />
-            <SelectField
-              id="tkin-prevent-sdwt"
-              label="SDWT"
-              value={sdwtId}
-              options={sdwtQuery.data || []}
-              placeholder="SDWT 선택"
+              id="tkin-prevent-user-sdwt-prod"
+              label="user_sdwt_prod"
+              value={userSdwtProd}
+              options={userSdwtOptions}
+              placeholder={lineId ? "user_sdwt_prod 선택" : "Line 선택 필요"}
               disabled={!lineId}
-              loading={sdwtQuery.isLoading}
-              onChange={handleSdwtChange}
+              loading={lineSdwtOptionsQuery.isLoading}
+              onChange={handleUserSdwtProdChange}
             />
             <SelectField
               id="tkin-prevent-prc-group"
@@ -288,7 +303,7 @@ export default function TkinPreventDashboardPage() {
               value={prcGroup}
               options={prcGroupsQuery.data || []}
               placeholder="PRC Group 선택"
-              disabled={!lineId || !sdwtId}
+              disabled={!lineId || !userSdwtProd}
               loading={prcGroupsQuery.isLoading}
               onChange={handlePrcGroupChange}
             />
@@ -298,7 +313,7 @@ export default function TkinPreventDashboardPage() {
               value={processId}
               options={processesQuery.data || []}
               placeholder="process_id 선택"
-              disabled={!lineId || !sdwtId || !prcGroup}
+              disabled={!lineId || !userSdwtProd || !prcGroup}
               loading={processesQuery.isLoading}
               onChange={handleProcessChange}
             />
@@ -308,15 +323,15 @@ export default function TkinPreventDashboardPage() {
               value={stepSeq}
               options={stepSeqsQuery.data || []}
               placeholder="step_seq 선택"
-              disabled={!lineId || !sdwtId || !prcGroup || !processId}
+              disabled={!lineId || !userSdwtProd || !prcGroup || !processId}
               loading={stepSeqsQuery.isLoading}
               onChange={setStepSeq}
             />
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <Badge variant="outline">Rows {matrix.totalRows ?? 0}</Badge>
-            <Badge variant="outline">Columns {matrix.totalColumns ?? 0}</Badge>
+            <Badge variant="outline">PPID {matrix.totalRows ?? 0}</Badge>
+            <Badge variant="outline">EQP-CH {matrix.totalColumns ?? 0}</Badge>
             {filterError ? (
               <span className="text-destructive">필터 데이터를 불러오지 못했습니다.</span>
             ) : null}

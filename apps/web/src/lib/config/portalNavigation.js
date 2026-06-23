@@ -33,7 +33,7 @@ export const portalNavigationItems = [
       { title: "Appstore", href: "/appstore" },
       { title: "ESOP Dashboard", href: "/esop_dashboard" },
       { title: "Observer", href: "/observer" },
-      { title: "T/K-IN Prevent", href: "/observer/tkin-prevent" },
+      { title: "TIP현황", href: "/ESOP_Dashboard/tip-status" },
       { title: "메일함", href: "/emails/inbox" },
       { title: "L0 Spider(개발중)", href: "/fdc_trend" },
       { title: "L3 Spider(개발중)", href: "/l3_spider" },

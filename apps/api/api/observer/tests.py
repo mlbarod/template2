@@ -206,6 +206,24 @@ class ObserverEndpointTests(TestCase):
             prc_group="ETCH",
         )
 
+    def test_tkin_prevent_prc_groups_requires_user_sdwt_prod(self) -> None:
+        response = self.client.get(reverse("observer-tkin-prevent-prc-groups"))
+        self.assertEqual(response.status_code, 400)
+
+    def test_tkin_prevent_prc_groups_returns_results(self) -> None:
+        with patch(
+            f"{OBSERVER_VIEW_SELECTORS}.list_tkin_prevent_prc_groups",
+            return_value=[],
+        ) as selector:
+            response = self.client.get(
+                reverse("observer-tkin-prevent-prc-groups"),
+                {"userSdwtProd": "sd-10"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(isinstance(response.json(), list))
+        selector.assert_called_once_with(user_sdwt_prod="SD-10")
+
     def test_tkin_prevent_processes_requires_scope(self) -> None:
         response = self.client.get(reverse("observer-tkin-prevent-processes"))
         self.assertEqual(response.status_code, 400)
@@ -217,13 +235,13 @@ class ObserverEndpointTests(TestCase):
         ) as selector:
             response = self.client.get(
                 reverse("observer-tkin-prevent-processes"),
-                {"sdwtId": "sd-10", "prcGroup": "etch"},
+                {"userSdwtProd": "sd-10", "prcGroup": "etch"},
             )
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(isinstance(response.json(), list))
         selector.assert_called_once_with(
-            sdwt_id="SD-10",
+            user_sdwt_prod="SD-10",
             prc_group="ETCH",
         )
 
@@ -234,7 +252,7 @@ class ObserverEndpointTests(TestCase):
         ) as selector:
             response = self.client.get(
                 reverse("observer-tkin-prevent-step-seqs"),
-                {"sdwtId": "SD-10", "prcGroup": "ETCH"},
+                {"userSdwtProd": "SD-10", "prcGroup": "ETCH"},
             )
 
         self.assertEqual(response.status_code, 400)
@@ -248,7 +266,7 @@ class ObserverEndpointTests(TestCase):
             response = self.client.get(
                 reverse("observer-tkin-prevent-step-seqs"),
                 {
-                    "sdwtId": "sd-10",
+                    "userSdwtProd": "sd-10",
                     "prcGroup": "etch",
                     "processId": "proc-1",
                 },
@@ -257,7 +275,7 @@ class ObserverEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(isinstance(response.json(), list))
         selector.assert_called_once_with(
-            sdwt_id="SD-10",
+            user_sdwt_prod="SD-10",
             prc_group="ETCH",
             process_id="PROC-1",
         )
@@ -270,7 +288,7 @@ class ObserverEndpointTests(TestCase):
             response = self.client.get(
                 reverse("observer-tkin-prevent-matrix"),
                 {
-                    "sdwtId": "SD-10",
+                    "userSdwtProd": "SD-10",
                     "prcGroup": "ETCH",
                     "processId": "PROC-1",
                 },
@@ -288,7 +306,7 @@ class ObserverEndpointTests(TestCase):
             response = self.client.get(
                 reverse("observer-tkin-prevent-matrix"),
                 {
-                    "sdwtId": "sd-10",
+                    "userSdwtProd": "sd-10",
                     "prcGroup": "etch",
                     "processId": "proc-1",
                     "stepSeq": "10",
@@ -298,7 +316,7 @@ class ObserverEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), payload)
         selector.assert_called_once_with(
-            sdwt_id="SD-10",
+            user_sdwt_prod="SD-10",
             prc_group="ETCH",
             process_id="PROC-1",
             step_seq="10",
@@ -310,7 +328,7 @@ class ObserverEndpointTests(TestCase):
             return_value=[{"process_id": "PROC-1"}],
         ) as fetch_all:
             processes = selectors.list_tkin_prevent_processes(
-                sdwt_id="sd-10",
+                user_sdwt_prod="sd-10",
                 prc_group="etch",
             )
 
@@ -327,13 +345,28 @@ class ObserverEndpointTests(TestCase):
         self.assertIn("station.prc_group_lookup = %s", query)
         self.assertEqual(params, ["SD-10", "ETCH"])
 
+    def test_tkin_prevent_prc_groups_selector_uses_station_master(self) -> None:
+        with patch(
+            f"{OBSERVER_SELECTORS}._fetch_all",
+            return_value=[{"id": "ETCH"}],
+        ) as fetch_all:
+            groups = selectors.list_tkin_prevent_prc_groups(user_sdwt_prod="sd-10")
+
+        query, params = fetch_all.call_args.args
+        self.assertEqual(groups[0]["id"], "ETCH")
+        self.assertIn("from station_master", query)
+        self.assertIn("sdwt_prod_lookup = %s", query)
+        self.assertIn("prc_group_lookup as id", query)
+        self.assertNotIn("mes_line_mapping_info", query)
+        self.assertEqual(params, ["SD-10"])
+
     def test_tkin_prevent_step_selector_filters_process(self) -> None:
         with patch(
             f"{OBSERVER_SELECTORS}._fetch_all",
             return_value=[{"step_seq": "10"}],
         ) as fetch_all:
             steps = selectors.list_tkin_prevent_step_seqs(
-                sdwt_id="SD-10",
+                user_sdwt_prod="SD-10",
                 prc_group="ETCH",
                 process_id="proc-1",
             )
@@ -370,7 +403,7 @@ class ObserverEndpointTests(TestCase):
             ],
         ) as fetch_all:
             matrix = selectors.get_tkin_prevent_matrix(
-                sdwt_id="SD-10",
+                user_sdwt_prod="SD-10",
                 prc_group="ETCH",
                 process_id="proc-1",
                 step_seq="10",

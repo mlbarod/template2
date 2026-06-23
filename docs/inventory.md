@@ -17,7 +17,7 @@
 | L3 Spider | `/api/v1/l3_spider/` | `apps/api/api/l3_spider/urls.py` | `meta`, `summary`, `data`, `filter-candidates` |
 | FDC Trend | `/api/v1/fdc-trend/` | `apps/api/api/fdc_trend/urls.py` | `hard-spec/meta`, `hard-spec/recommendations` |
 | PM SPIDER | `/api/v1/pm-comparison/` | `apps/api/api/pm_comparison/urls.py` | `meta`, `compare` |
-| Observer | `/api/v1/observer/` | `apps/api/api/observer/urls.py` | `lines`, `sdwts`, `prc-groups`, `equipments`, `equipment-info/<line_id>/<eqp_id>`, `equipment-info/<eqp_id>`, `logs`, `logs/eqp`, `logs/tip`, `logs/ctttm`, `logs/racb`, `logs/esop`, `tkin-prevent/processes`, `tkin-prevent/step-seqs`, `tkin-prevent/matrix` |
+| Observer | `/api/v1/observer/` | `apps/api/api/observer/urls.py` | `lines`, `sdwts`, `prc-groups`, `equipments`, `equipment-info/<line_id>/<eqp_id>`, `equipment-info/<eqp_id>`, `logs`, `logs/eqp`, `logs/tip`, `logs/ctttm`, `logs/racb`, `logs/esop`, `tkin-prevent/prc-groups`, `tkin-prevent/processes`, `tkin-prevent/step-seqs`, `tkin-prevent/matrix` |
 | AppStore | `/api/v1/appstore/` | `apps/api/api/appstore/urls.py` | `apps`, `apps/<app_id>`, `apps/<app_id>/cover`, `apps/<app_id>/like`, `apps/<app_id>/view`, `apps/<app_id>/comments`, `apps/<app_id>/comments/<comment_id>`, `apps/<app_id>/comments/<comment_id>/like` |
 | VOC | `/api/v1/voc/` | `apps/api/api/voc/urls.py` | `posts`, `posts/<post_id>`, `posts/<post_id>/replies` |
 | Activity | `/api/v1/activity/` | `apps/api/api/activity/urls.py` | `logs`, `app-access`, `app-access-stats` |
@@ -34,10 +34,10 @@
 | Account | `/settings`, `/settings/account`, `/settings/members` | `apps/web/src/features/account/routes.jsx` | `apps/web/src/features/account/index.js` |
 | Emails | `/emails/inbox`, `/emails/sent`, `/emails/members` | `apps/web/src/features/emails/routes.jsx` | `apps/web/src/features/emails/index.js` |
 | Assistant | `/assistant` | `apps/web/src/features/assistant/routes.jsx` | `apps/web/src/features/assistant/index.js` |
-| Line Dashboard | `/ESOP_Dashboard`, `/ESOP_Dashboard/status/:lineId`, `/ESOP_Dashboard/history/:lineId`, `/ESOP_Dashboard/settings/:lineId`, `/ESOP_Dashboard/settings/notification/:lineId`, `/ESOP_Dashboard/settings/recipients/:lineId`, `/ESOP_Dashboard/overview` | `apps/web/src/features/line-dashboard/routes.jsx` | `apps/web/src/features/line-dashboard/index.js` |
+| Line Dashboard | `/ESOP_Dashboard`, `/ESOP_Dashboard/status/:lineId`, `/ESOP_Dashboard/tip-status`, `/ESOP_Dashboard/tip-status/:lineId`, `/ESOP_Dashboard/history/:lineId`, `/ESOP_Dashboard/settings/:lineId`, `/ESOP_Dashboard/settings/notification/:lineId`, `/ESOP_Dashboard/settings/recipients/:lineId`, `/ESOP_Dashboard/overview` | `apps/web/src/features/line-dashboard/routes.jsx` | `apps/web/src/features/line-dashboard/index.js` |
 | L3 Spider | `/l3_spider` | `apps/web/src/features/l3-spider/routes.jsx` | `apps/web/src/features/l3-spider/index.js` |
 | PM SPIDER | `/pm-comparison` | `apps/web/src/features/pm-comparison/routes.jsx` | `apps/web/src/features/pm-comparison/index.js` |
-| Observer | `/observer`, `/observer/tkin-prevent`, `/observer/:eqpId` | `apps/web/src/features/observer/routes.jsx` | `apps/web/src/features/observer/index.js` |
+| Observer | `/observer`, `/observer/:eqpId` | `apps/web/src/features/observer/routes.jsx` | `apps/web/src/features/observer/index.js` |
 | AppStore | `/appstore` | `apps/web/src/features/appstore/routes.jsx` | `apps/web/src/features/appstore/index.js` |
 | VOC | `/voc` | `apps/web/src/features/voc/routes.jsx` | `apps/web/src/features/voc/index.js` |
 | Teamstaff | `/teamstaff` | `apps/web/src/features/teamstaff/routes.jsx` | `apps/web/src/features/teamstaff/index.js` |

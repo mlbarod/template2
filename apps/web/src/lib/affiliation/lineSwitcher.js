@@ -28,6 +28,10 @@ function buildLinePath({ pathname, nextLineId, currentLineId }) {
     return `/${next.join("/")}`
   }
 
+  if (segments[esopIndex + 1] === "tip-status") {
+    return `/ESOP_Dashboard/tip-status/${nextLineId}`
+  }
+
   return `/ESOP_Dashboard/status/${nextLineId}`
 }
 

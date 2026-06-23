@@ -3,17 +3,25 @@ import { observerApi } from "../api/observerApi";
 
 const TKIN_PREVENT_KEY = ["observer", "tkinPrevent"];
 
-export const useTkinPreventProcesses = (sdwtId, prcGroup) =>
+export const useTkinPreventPrcGroups = (userSdwtProd) =>
   useQuery({
-    queryKey: [...TKIN_PREVENT_KEY, "processes", sdwtId, prcGroup],
+    queryKey: [...TKIN_PREVENT_KEY, "prcGroups", userSdwtProd],
+    queryFn: () => observerApi.fetchTkinPreventPrcGroups({ userSdwtProd }),
+    enabled: !!userSdwtProd,
+    staleTime: 1000 * 60 * 10,
+  });
+
+export const useTkinPreventProcesses = (userSdwtProd, prcGroup) =>
+  useQuery({
+    queryKey: [...TKIN_PREVENT_KEY, "processes", userSdwtProd, prcGroup],
     queryFn: () =>
-      observerApi.fetchTkinPreventProcesses({ sdwtId, prcGroup }),
-    enabled: !!sdwtId && !!prcGroup,
+      observerApi.fetchTkinPreventProcesses({ userSdwtProd, prcGroup }),
+    enabled: !!userSdwtProd && !!prcGroup,
     staleTime: 1000 * 60 * 10,
   });
 
 export const useTkinPreventStepSeqs = (
-  sdwtId,
+  userSdwtProd,
   prcGroup,
   processId
 ) =>
@@ -21,22 +29,22 @@ export const useTkinPreventStepSeqs = (
     queryKey: [
       ...TKIN_PREVENT_KEY,
       "stepSeqs",
-      sdwtId,
+      userSdwtProd,
       prcGroup,
       processId,
     ],
     queryFn: () =>
       observerApi.fetchTkinPreventStepSeqs({
-        sdwtId,
+        userSdwtProd,
         prcGroup,
         processId,
       }),
-    enabled: !!sdwtId && !!prcGroup && !!processId,
+    enabled: !!userSdwtProd && !!prcGroup && !!processId,
     staleTime: 1000 * 60 * 10,
   });
 
 export const useTkinPreventMatrix = (
-  sdwtId,
+  userSdwtProd,
   prcGroup,
   processId,
   stepSeq
@@ -45,18 +53,18 @@ export const useTkinPreventMatrix = (
     queryKey: [
       ...TKIN_PREVENT_KEY,
       "matrix",
-      sdwtId,
+      userSdwtProd,
       prcGroup,
       processId,
       stepSeq,
     ],
     queryFn: () =>
       observerApi.fetchTkinPreventMatrix({
-        sdwtId,
+        userSdwtProd,
         prcGroup,
         processId,
         stepSeq,
       }),
-    enabled: !!sdwtId && !!prcGroup && !!processId && !!stepSeq,
+    enabled: !!userSdwtProd && !!prcGroup && !!processId && !!stepSeq,
     staleTime: 1000 * 60 * 5,
   });
