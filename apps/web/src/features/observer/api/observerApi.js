@@ -1,7 +1,7 @@
 import { observerApiClient } from "./client";
 
 export const observerApi = {
-  // "라인 목록" 엔드포인트
+  // 라인 목록 엔드포인트
   fetchLines: () => observerApiClient("/lines"),
 
   // SDWT 목록
@@ -31,4 +31,28 @@ export const observerApi = {
 
   fetchEquipmentInfoByEqpId: (eqpId) =>
     observerApiClient(`/equipment-info/${eqpId}`),
+
+  // T/K-IN Prevent process 목록
+  fetchTkinPreventProcesses: ({ lineId, sdwtId, prcGroup }) =>
+    observerApiClient("/tkin-prevent/processes", {
+      params: { lineId, sdwtId, prcGroup },
+    }),
+
+  // T/K-IN Prevent step_seq 목록
+  fetchTkinPreventStepSeqs: ({ lineId, sdwtId, prcGroup, processId }) =>
+    observerApiClient("/tkin-prevent/step-seqs", {
+      params: { lineId, sdwtId, prcGroup, processId },
+    }),
+
+  // T/K-IN Prevent matrix 데이터
+  fetchTkinPreventMatrix: ({
+    lineId,
+    sdwtId,
+    prcGroup,
+    processId,
+    stepSeq,
+  }) =>
+    observerApiClient("/tkin-prevent/matrix", {
+      params: { lineId, sdwtId, prcGroup, processId, stepSeq },
+    }),
 };

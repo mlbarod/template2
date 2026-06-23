@@ -22,6 +22,7 @@ from api.data_movement.racb_list import selectors as racb_list_selectors
 
 DEFAULT_LOG_QUERY_DAYS = 60
 MAX_LOG_LIMIT = 5000
+TKIN_PREVENT_LEVEL2_NAMES = {"LEVEL2", "LEVEL3"}
 
 Row = Dict[str, object]
 LogRows = List[Dict[str, object]]
@@ -341,6 +342,286 @@ def list_equipments(
             )
         )
     return equipments
+
+
+# =============================================================================
+# m_tkin_prevent 대시보드 조회
+# =============================================================================
+
+
+def _target_tkin_eqp_cte() -> str:
+    """m_tkin_prevent 조회 대상 eqp 목록 CTE를 반환합니다."""
+
+    return """
+        with target_eqp as (
+            select distinct
+                station.ch_main as eqp_id
+            from station_master station
+            join mes_line_mapping_info mapping
+              on mapping.msg_line_id = station.floor_line_id
+            where mapping.gpm_line_name_lookup = %s
+              and mapping.gbm_name = 'MEMORY'
+              and mapping.use_yn = 'Y'
+              and mapping.del_yn = 'N'
+              and station.sdwt_prod_lookup = %s
+              and station.prc_group_lookup = %s
+              and station.ch_main is not null
+              and trim(station.ch_main) <> ''
+        )
+    """
+
+
+def _tkin_scope_params(
+    *,
+    line_id: str,
+    sdwt_id: str,
+    prc_group: str,
+) -> List[object]:
+    """m_tkin_prevent scope 필터 파라미터를 정규화합니다."""
+
+    filters = _normalize_filters(
+        line_id=line_id,
+        sdwt_id=sdwt_id,
+        prc_group=prc_group,
+    )
+    return [filters["line_id"], filters["sdwt_id"], filters["prc_group"]]
+
+
+def _build_tkin_option(row: Row, field_name: str) -> Dict[str, str]:
+    """dropdown option 응답을 생성합니다."""
+
+    return _build_text_record(row, (("id", field_name), ("name", field_name)))
+
+
+def list_tkin_prevent_processes(
+    *,
+    line_id: str,
+    sdwt_id: str,
+    prc_group: str,
+) -> List[Dict[str, str]]:
+    """m_tkin_prevent process_id 목록을 반환합니다.
+
+    입력:
+    - line_id: 라인 ID
+    - sdwt_id: SDWT ID
+    - prc_group: PRC 그룹
+
+    반환:
+    - List[Dict[str, str]]: process_id option 목록
+
+    부작용:
+    - 없음(DB 조회)
+
+    오류:
+    - DB 연결 실패 시 예외
+    """
+
+    rows = _fetch_all(
+        f"""
+        {_target_tkin_eqp_cte()}
+        select distinct
+            prevent.process_id as process_id
+        from m_tkin_prevent prevent
+        join target_eqp
+          on upper(trim(prevent.eqp_id)) = upper(trim(target_eqp.eqp_id))
+        where prevent.process_id is not null
+          and trim(prevent.process_id) <> ''
+        order by prevent.process_id
+        """,
+        _tkin_scope_params(line_id=line_id, sdwt_id=sdwt_id, prc_group=prc_group),
+    )
+    return [
+        _build_tkin_option(row, "process_id")
+        for row in rows
+        if row.get("process_id") is not None
+    ]
+
+
+def list_tkin_prevent_step_seqs(
+    *,
+    line_id: str,
+    sdwt_id: str,
+    prc_group: str,
+    process_id: str,
+) -> List[Dict[str, str]]:
+    """m_tkin_prevent step_seq 목록을 반환합니다.
+
+    입력:
+    - line_id: 라인 ID
+    - sdwt_id: SDWT ID
+    - prc_group: PRC 그룹
+    - process_id: process_id
+
+    반환:
+    - List[Dict[str, str]]: step_seq option 목록
+
+    부작용:
+    - 없음(DB 조회)
+
+    오류:
+    - DB 연결 실패 시 예외
+    """
+
+    process_key = normalize_id(process_id)
+    rows = _fetch_all(
+        f"""
+        {_target_tkin_eqp_cte()}
+        select distinct
+            prevent.step_seq as step_seq
+        from m_tkin_prevent prevent
+        join target_eqp
+          on upper(trim(prevent.eqp_id)) = upper(trim(target_eqp.eqp_id))
+        where upper(trim(prevent.process_id)) = %s
+          and prevent.step_seq is not null
+          and trim(prevent.step_seq) <> ''
+        order by prevent.step_seq
+        """,
+        [
+            *_tkin_scope_params(line_id=line_id, sdwt_id=sdwt_id, prc_group=prc_group),
+            process_key,
+        ],
+    )
+    return [
+        _build_tkin_option(row, "step_seq")
+        for row in rows
+        if row.get("step_seq") is not None
+    ]
+
+
+def _format_tkin_count(value: object) -> str:
+    """float count 값을 화면 표시용 문자열로 변환합니다."""
+
+    if value is None:
+        return "-"
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def _format_tkin_status(row: Row) -> str:
+    """m_tkin_prevent row를 matrix cell 표시값으로 변환합니다."""
+
+    prevent_type = normalize_id(_safe_text(row.get("tkin_prevent_type")))
+    registration_level = _safe_text(row.get("registration_level")).strip()
+    registration_level_key = normalize_id(registration_level)
+    restrc_lot_count = _format_tkin_count(row.get("tkin_restrc_lot_count"))
+    lot_count = _format_tkin_count(row.get("tkin_lot_count"))
+
+    if prevent_type == "DOING":
+        return "DOING"
+
+    if prevent_type == "PREVENT":
+        level_label = registration_level or "PREVENT"
+        if registration_level_key in TKIN_PREVENT_LEVEL2_NAMES:
+            level2_count = _format_tkin_count(row.get("level2_restrc_lot_count"))
+            return f"{level_label}({level2_count}/{restrc_lot_count}/{lot_count})"
+        return f"{level_label}({restrc_lot_count}/{lot_count})"
+
+    return prevent_type or "-"
+
+
+def get_tkin_prevent_matrix(
+    *,
+    line_id: str,
+    sdwt_id: str,
+    prc_group: str,
+    process_id: str,
+    step_seq: str,
+) -> Dict[str, object]:
+    """m_tkin_prevent matrix 데이터를 반환합니다.
+
+    입력:
+    - line_id: 라인 ID
+    - sdwt_id: SDWT ID
+    - prc_group: PRC 그룹
+    - process_id: process_id
+    - step_seq: step_seq
+
+    반환:
+    - Dict[str, object]: columns/rows/cell payload
+
+    부작용:
+    - 없음(DB 조회)
+
+    오류:
+    - DB 연결 실패 시 예외
+    """
+
+    filters = _normalize_filters(process_id=process_id, step_seq=step_seq)
+    rows = _fetch_all(
+        f"""
+        {_target_tkin_eqp_cte()}
+        select
+            prevent.ppid,
+            prevent.eqp_id,
+            prevent.tkin_prevent_chamber_id,
+            prevent.tkin_prevent_type,
+            prevent.registration_level,
+            prevent.tkin_restrc_lot_count,
+            prevent.tkin_lot_count,
+            prevent.level2_restrc_lot_count
+        from m_tkin_prevent prevent
+        join target_eqp
+          on upper(trim(prevent.eqp_id)) = upper(trim(target_eqp.eqp_id))
+        where upper(trim(prevent.process_id)) = %s
+          and upper(trim(prevent.step_seq)) = %s
+          and prevent.ppid is not null
+          and trim(prevent.ppid) <> ''
+        order by prevent.ppid, prevent.eqp_id, prevent.tkin_prevent_chamber_id
+        """,
+        [
+            *_tkin_scope_params(line_id=line_id, sdwt_id=sdwt_id, prc_group=prc_group),
+            filters["process_id"],
+            filters["step_seq"],
+        ],
+    )
+
+    columns_by_id: Dict[str, Dict[str, str]] = {}
+    rows_by_ppid: Dict[str, Dict[str, object]] = {}
+    seen_values: Dict[tuple[str, str], set[str]] = {}
+
+    for row in rows:
+        ppid = _safe_text(row.get("ppid")).strip()
+        eqp_id = _safe_text(row.get("eqp_id")).strip()
+        chamber_id = _safe_text(row.get("tkin_prevent_chamber_id")).strip() or "-"
+        if not ppid or not eqp_id:
+            continue
+
+        column_id = f"{eqp_id}-{chamber_id}"
+        columns_by_id.setdefault(
+            column_id,
+            {
+                "id": column_id,
+                "eqpId": eqp_id,
+                "chamberId": chamber_id,
+                "label": column_id,
+            },
+        )
+        matrix_row = rows_by_ppid.setdefault(ppid, {"ppid": ppid, "cells": {}})
+        cells = matrix_row["cells"]
+        if not isinstance(cells, dict):
+            continue
+
+        cell_key = (ppid, column_id)
+        seen_values.setdefault(cell_key, set())
+        status = _format_tkin_status(row)
+        if status in seen_values[cell_key]:
+            continue
+        seen_values[cell_key].add(status)
+        cells.setdefault(column_id, []).append(
+            {
+                "status": status,
+                "type": _safe_text(row.get("tkin_prevent_type")),
+                "registrationLevel": _safe_text(row.get("registration_level")),
+            }
+        )
+
+    return {
+        "columns": list(columns_by_id.values()),
+        "rows": list(rows_by_ppid.values()),
+        "totalRows": len(rows_by_ppid),
+        "totalColumns": len(columns_by_id),
+    }
 
 
 def get_equipment_info(*, eqp_id: str) -> Dict[str, str] | None:

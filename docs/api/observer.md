@@ -27,6 +27,9 @@ Observer API는 설비 Observer 화면에 필요한 라인, SDWT, 공정, 설비
 | GET | `/api/v1/observer/logs/ctttm?eqpId=...` | CTTTM 로그 |
 | GET | `/api/v1/observer/logs/racb?eqpId=...` | RACB 로그 |
 | GET | `/api/v1/observer/logs/esop?eqpId=...` | ESOP 로그 |
+| GET | `/api/v1/observer/tkin-prevent/processes?lineId=...&sdwtId=...&prcGroup=...` | T/K-IN Prevent process_id 목록 |
+| GET | `/api/v1/observer/tkin-prevent/step-seqs?lineId=...&sdwtId=...&prcGroup=...&processId=...` | T/K-IN Prevent step_seq 목록 |
+| GET | `/api/v1/observer/tkin-prevent/matrix?lineId=...&sdwtId=...&prcGroup=...&processId=...&stepSeq=...` | T/K-IN Prevent matrix |
 
 ## Query 규칙
 
@@ -38,6 +41,7 @@ Observer API는 설비 Observer 화면에 필요한 라인, SDWT, 공정, 설비
 - `from`을 생략하면 backend 기본 조회 기간인 최근 60일을 사용합니다.
 - `limit`은 양의 정수만 허용하며 최대 5000건으로 제한됩니다.
 - frontend 기본 로그 조회는 `limit`을 명시하지 않고 backend 기본 기간 정책을 따릅니다.
+- T/K-IN Prevent 조회는 `station_master.ch_main`과 `m_tkin_prevent.eqp_id`를 정규화 비교해 대상 설비를 제한합니다.
 
 ## 예시
 
@@ -51,6 +55,10 @@ GET /api/v1/observer/logs?eqpId=EQP-001
 
 ```http
 GET /api/v1/observer/logs/eqp?eqpId=EQP-001&from=2026-01-01&to=2026-01-31&limit=1000
+```
+
+```http
+GET /api/v1/observer/tkin-prevent/matrix?lineId=L1&sdwtId=S1&prcGroup=P1&processId=PROC1&stepSeq=10
 ```
 
 ## 오류

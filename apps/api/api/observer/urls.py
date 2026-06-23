@@ -20,6 +20,9 @@ from .views import (
     ObserverRacbLogsView,
     ObserverSdwtView,
     ObserverTipLogsView,
+    ObserverTkinPreventMatrixView,
+    ObserverTkinPreventProcessesView,
+    ObserverTkinPreventStepSeqsView,
 )
 
 urlpatterns = [
@@ -43,4 +46,19 @@ urlpatterns = [
     path("logs/ctttm", ObserverCtttmLogsView.as_view(), name="observer-logs-ctttm"),
     path("logs/racb", ObserverRacbLogsView.as_view(), name="observer-logs-racb"),
     path("logs/esop", ObserverEsopLogsView.as_view(), name="observer-logs-esop"),
+    path(
+        "tkin-prevent/processes",
+        ObserverTkinPreventProcessesView.as_view(),
+        name="observer-tkin-prevent-processes",
+    ),
+    path(
+        "tkin-prevent/step-seqs",
+        ObserverTkinPreventStepSeqsView.as_view(),
+        name="observer-tkin-prevent-step-seqs",
+    ),
+    path(
+        "tkin-prevent/matrix",
+        ObserverTkinPreventMatrixView.as_view(),
+        name="observer-tkin-prevent-matrix",
+    ),
 ]
