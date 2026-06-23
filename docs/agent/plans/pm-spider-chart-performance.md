@@ -7,7 +7,7 @@
 
 ## 현재 상태
 - Backend: `apps/api/api/pm_comparison/services/__init__.py`가 raw parquet를 row object list로 변환해 `trendRows`, `trajectoryRows`를 반환한다.
-- Frontend: `apps/web/src/features/pm-comparison/components/PmSpiderCategoryDashboard.jsx`가 Recharts line chart와 React DOM heatmap grid를 사용한다.
+- Frontend: `apps/web/src/features/pm-spider/components/PmSpiderCategoryDashboard.jsx`가 Recharts line chart와 React DOM heatmap grid를 사용한다.
 - 최악 케이스는 TRACE `50 x 1800`, OES heatmap `1200 x 100`, OES wavelength detail `50 x 18000`이다.
 
 ## 범위
@@ -15,8 +15,8 @@
   - `apps/api/api/pm_comparison/serializers.py`
   - `apps/api/api/pm_comparison/services/__init__.py`
   - `apps/api/api/pm_comparison/tests.py`
-  - `apps/web/src/features/pm-comparison/components/*`
-  - `apps/web/src/features/pm-comparison/hooks/usePmComparisonQueries.js`
+  - `apps/web/src/features/pm-spider/components/*`
+  - `apps/web/src/features/pm-spider/hooks/usePmSpiderQueries.js`
 - 수정하지 않는 영역:
   - raw/score parquet 파일 schema
   - mount/env/auth contract

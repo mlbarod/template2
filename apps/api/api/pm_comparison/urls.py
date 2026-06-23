@@ -10,6 +10,6 @@ from django.urls import path
 from .views import PmComparisonCompareView, PmComparisonMetaView
 
 urlpatterns = [
-    path("meta", PmComparisonMetaView.as_view(), name="pm-comparison-meta"),
-    path("compare", PmComparisonCompareView.as_view(), name="pm-comparison-compare"),
+    path("meta", PmComparisonMetaView.as_view(), name="pm-spider-meta"),
+    path("compare", PmComparisonCompareView.as_view(), name="pm-spider-compare"),
 ]

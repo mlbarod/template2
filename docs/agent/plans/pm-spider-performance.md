@@ -2,7 +2,7 @@
 
 ## 목표
 - PM SPIDER 드롭다운과 조회가 선택한 PM 날짜 기준으로 파일 탐색 범위를 좁히도록 수정한다.
-- 기존 `/api/v1/pm-comparison/meta`, `/api/v1/pm-comparison/compare` 계약을 깨지 않고 조회 지연 원인을 줄인다.
+- 기존 `/api/v1/pm_spider/meta`, `/api/v1/pm_spider/compare` 계약을 깨지 않고 조회 지연 원인을 줄인다.
 
 ## 현재 상태
 - 프론트는 `form` 전체를 `/meta` query key로 사용해 선택 변경마다 metadata를 다시 요청한다.
@@ -11,7 +11,7 @@
 - score/raw/OES parquet는 파일 시스템 glob과 pandas read 기반으로 처리된다.
 
 ## 범위
-- 수정: `apps/web/src/features/pm-comparison/**`, `apps/api/api/pm_comparison/**`
+- 수정: `apps/web/src/features/pm-spider/**`, `apps/api/api/pm_comparison/**`
 - 수정: PM SPIDER 회귀 테스트
 - 제외: DB migration, auth/permission, 신규 데이터 적재 파이프라인
 

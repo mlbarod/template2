@@ -9,15 +9,31 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from django.test import SimpleTestCase, override_settings
+from django.urls import Resolver404, resolve, reverse
 
 import pandas as pd
 
 from . import selectors, services
 from .serializers import PmComparisonRequestSerializer
+from .views import PmComparisonCompareView, PmComparisonMetaView
 
 
 class PmComparisonServiceTests(SimpleTestCase):
     """PM SPIDER 파일 기반 서비스 동작을 검증합니다."""
+
+    def test_pm_spider_api_contract_urls_resolve(self) -> None:
+        """PM SPIDER 공개 API prefix와 URL name 계약을 검증합니다."""
+
+        self.assertEqual(reverse("pm-spider-meta"), "/api/v1/pm_spider/meta")
+        self.assertEqual(reverse("pm-spider-compare"), "/api/v1/pm_spider/compare")
+        self.assertIs(resolve("/api/v1/pm_spider/meta").func.view_class, PmComparisonMetaView)
+        self.assertIs(resolve("/api/v1/pm_spider/compare").func.view_class, PmComparisonCompareView)
+
+    def test_legacy_pm_comparison_api_prefix_is_not_registered(self) -> None:
+        """이전 PM comparison API prefix가 남아 있지 않은지 검증합니다."""
+
+        with self.assertRaises(Resolver404):
+            resolve("/api/v1/pm-comparison/meta")
 
     def _raw_base(
         self,

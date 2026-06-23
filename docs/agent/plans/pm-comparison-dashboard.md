@@ -18,16 +18,16 @@
 
 ## 범위
 - 추가: `apps/api/api/pm_comparison`
-- 추가: `apps/web/src/features/pm-comparison`
+- 추가: `apps/web/src/features/pm-spider`
 - 수정: backend settings/url registry, frontend route registry/navigation
 - 수정: PM SPIDER 프론트 대시보드 레이아웃, React Query category 조회 훅, 표시 유틸
 - 제외: DB schema/migration, OES 분석 알고리즘 고도화, 데이터 적재/백필, auth 정책 변경
-- 수정: `/api/v1/pm-comparison/compare` 요청/응답에 선택 ref PM cycle 정보를 추가
+- 수정: `/api/v1/pm_spider/compare` 요청/응답에 선택 ref PM cycle 정보를 추가
 
 ## 설계
 - 데이터 루트는 `PM_COMPARISON_DATA_ROOT` 설정으로 읽고 기본값은 `/data`로 둔다.
 - raw 원본은 `${PM_COMPARISON_DATA_ROOT}/data`, score 결과는 `${PM_COMPARISON_DATA_ROOT}/result`에서 읽는다.
-- API prefix는 `/api/v1/pm-comparison/`를 사용한다.
+- API prefix는 `/api/v1/pm_spider/`를 사용한다.
 - 요청은 line/eqp/fdc bin/pattern/ppid/recipe/PM timestamp/window를 받는다.
 - selector는 Hive-style partition 경로를 안전하게 스캔하고 partition 값을 파일 컬럼에 보강한다.
 - service는 trace/OES Parquet을 읽어 전/후 window로 나누고 델타 KPI를 계산한다.
@@ -86,7 +86,7 @@
 
 ## 진행 기록
 - 2026-06-01: 사용자 답변 기준으로 실제 API 연동 신규 feature 구현 방향을 확정했다.
-- 2026-06-01: `api.pm_comparison`과 `pm-comparison` React feature를 추가하고 테스트/audit/build 검증을 완료했다.
+- 2026-06-01: `api.pm_comparison`과 현재 `pm-spider` React feature의 초기 구현을 추가하고 테스트/audit/build 검증을 완료했다.
 - 2026-06-02: 표시명을 `PM SPIDER`로 바꾸고, NPW/PW pattern 기반 네 개 카테고리 카드 대시보드 요구사항을 반영하기로 했다.
 - 2026-06-02: 프론트에서 `NPW`/`PW` compare API를 병렬 조회하고, `NPW TRACE`, `NPW OES`, `SP TRACE`, `SP OES` 카드와 선택 상세 영역으로 재구성했다.
 - 2026-06-02: score 낮음 우선 rank 정렬과 trace rank 항목 선택 plot 요구사항을 추가 반영한다.

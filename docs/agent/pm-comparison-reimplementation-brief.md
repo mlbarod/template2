@@ -3,7 +3,7 @@
 ## 목적
 
 이 문서는 PM comparison 페이지를 다른 채팅방이나 새 작업 세션에서 다시 구현할 때 넘겨줄 수 있는 구현 브리프입니다.
-현재 제품 내 표시명은 `PM SPIDER`이며, route는 `/pm-comparison`, API prefix는 `/api/v1/pm-comparison/`입니다.
+현재 제품 내 표시명은 `PM SPIDER`이며, 사용자-facing route는 `/pm_spider`, API prefix는 `/api/v1/pm_spider/`입니다.
 
 핵심 목표는 설비 PM 기준일을 중심으로 `NPW TRACE`, `NPW OES`, `PW TRACE`, `PW OES` 네 가지 카테고리의 score rank와 raw detail plot을 한 화면에서 비교하는 것입니다. 화면에서는 score가 낮을수록 나쁜 항목으로 간주하고, 가장 낮은 score를 rank 1로 표시합니다.
 
@@ -61,7 +61,7 @@ result/
 
 ## API 계약
 
-### GET `/api/v1/pm-comparison/meta`
+### GET `/api/v1/pm_spider/meta`
 
 선택 가능한 partition 값을 반환합니다.
 
@@ -83,7 +83,7 @@ result/
 }
 ```
 
-### POST `/api/v1/pm-comparison/compare`
+### POST `/api/v1/pm_spider/compare`
 
 요청 payload는 camelCase입니다.
 
@@ -224,23 +224,27 @@ wide schema는 wavelength로 해석 가능한 numeric column을 `wavelength/valu
 기존 프로젝트 규칙상 feature 외부에서는 facade만 import합니다.
 
 ```text
-apps/web/src/features/pm-comparison/
+apps/web/src/features/pm-spider/
   index.js
   routes.jsx
   api/
     index.js
-    pmComparisonApi.js
+    pmSpiderApi.js
     queryKeys.js
   hooks/
-    usePmComparisonQueries.js
+    usePmSpiderQueries.js
   pages/
-    PmComparisonPage.jsx
+    PmSpiderPage.jsx
   components/
-    PmComparisonFilterBar.jsx
+    PmSpiderFilterBar.jsx
     PmSpiderCategoryDashboard.jsx
     PmScoreScatterChart.jsx
+    TraceSignalPanel.jsx
+    CanvasHeatmap.jsx
+    CanvasLineChart.jsx
     TraceTrendChart.jsx
     OesSpectrumChart.jsx
+    OesHeatmap.jsx
     TraceDeltaTable.jsx
     OesDeltaTable.jsx
     PmKpiCards.jsx
@@ -250,9 +254,9 @@ apps/web/src/features/pm-comparison/
 
 라우팅:
 
-- `routes.jsx`는 `path: "pm-comparison"` route를 export합니다.
-- `index.js`는 `pmComparisonRoutes`만 명시 export합니다.
-- 전역 router는 `@/features/pm-comparison` facade만 import합니다.
+- `routes.jsx`는 `path: "pm_spider"` route를 export합니다.
+- `index.js`는 `pmSpiderRoutes`만 명시 export합니다.
+- 전역 router는 `@/features/pm-spider` facade만 import합니다.
 
 ## Page Layout
 
@@ -329,7 +333,7 @@ rank row key:
 
 React Query:
 
-- `usePmComparisonMeta`: meta GET
+- `usePmSpiderMeta`: meta GET
 - `usePmSpiderCategoryResults`: `NPW`, `PW` compare POST 병렬 호출
 - `usePmSpiderDetailResult`: 선택 rank 항목 기준 detail 재조회
 
@@ -420,7 +424,7 @@ scripts/agent/check_ui_consistency.sh
 ## 새 채팅방에 붙여넣을 요약 프롬프트
 
 ```text
-PM comparison 페이지를 새로 구현해줘. 제품 내 표시명은 PM SPIDER이고 route는 /pm-comparison이야.
+PM comparison 페이지를 새로 구현해줘. 제품 내 표시명은 PM SPIDER이고 사용자-facing route는 /pm_spider이야.
 
 목표:
 - PM 기준일 기준으로 NPW TRACE, NPW OES, PW TRACE, PW OES 네 카테고리의 score rank와 raw detail chart를 보여준다.
@@ -431,8 +435,8 @@ PM comparison 페이지를 새로 구현해줘. 제품 내 표시명은 PM SPIDE
 - trace detail은 선택 sensor의 step_time overlay line chart, OES detail은 선택 step/wavelength의 ref/comp spectrum chart다.
 
 API:
-- GET /api/v1/pm-comparison/meta
-- POST /api/v1/pm-comparison/compare
+- GET /api/v1/pm_spider/meta
+- POST /api/v1/pm_spider/compare
 - compare 요청은 camelCase이며 lineId, eqpId, pmTimestamp가 필수다.
 - compare 응답은 filters, window, trace, oes, warnings를 반환한다.
 - trace/oes에는 summaryRows, scoreTrendRows, refCycles, detail/trend rows가 있다.
@@ -444,7 +448,7 @@ API:
 - data는 Hive-style partition이며 trace는 trace_param_name/value/time/step_time, OES는 long 또는 wide wavelength schema를 처리한다.
 
 구현 규칙:
-- frontend는 apps/web/src/features/pm-comparison 내부 feature로 만들고 외부 import는 facade만 사용한다.
+- frontend는 apps/web/src/features/pm-spider 내부 feature로 만들고 외부 import는 facade만 사용한다.
 - JSX 파일은 .jsx, non-JSX는 .js를 사용한다.
 - route 내부 h-screen 금지, h-full/min-h-0 기반 dashboard layout을 사용한다.
 - shadcn/Radix와 Tailwind semantic token을 우선 사용한다.

@@ -2,7 +2,7 @@
 // PM SPIDER 백엔드 API 요청 유틸입니다.
 import { buildBackendUrl, safeParseJson } from "@/lib/api"
 
-const BASE_PATH = "/api/v1/pm-comparison"
+const BASE_PATH = "/api/v1/pm_spider"
 
 async function request(path, options = {}) {
   const response = await fetch(buildBackendUrl(`${BASE_PATH}${path}`), {
