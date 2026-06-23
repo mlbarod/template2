@@ -36,7 +36,7 @@
 | Assistant | `/assistant` | `apps/web/src/features/assistant/routes.jsx` | `apps/web/src/features/assistant/index.js` |
 | Line Dashboard | `/ESOP_Dashboard`, `/ESOP_Dashboard/status/:lineId`, `/ESOP_Dashboard/tip-status`, `/ESOP_Dashboard/tip-status/:lineId`, `/ESOP_Dashboard/history/:lineId`, `/ESOP_Dashboard/settings/:lineId`, `/ESOP_Dashboard/settings/notification/:lineId`, `/ESOP_Dashboard/settings/recipients/:lineId`, `/ESOP_Dashboard/overview` | `apps/web/src/features/line-dashboard/routes.jsx` | `apps/web/src/features/line-dashboard/index.js` |
 | L3 Spider | `/l3_spider` | `apps/web/src/features/l3-spider/routes.jsx` | `apps/web/src/features/l3-spider/index.js` |
-| PM SPIDER | `/pm-comparison` | `apps/web/src/features/pm-comparison/routes.jsx` | `apps/web/src/features/pm-comparison/index.js` |
+| PM SPIDER | `/pm_spider` | `apps/web/src/features/pm-spider/routes.jsx` | `apps/web/src/features/pm-spider/index.js` |
 | Observer | `/observer`, `/observer/:eqpId` | `apps/web/src/features/observer/routes.jsx` | `apps/web/src/features/observer/index.js` |
 | AppStore | `/appstore` | `apps/web/src/features/appstore/routes.jsx` | `apps/web/src/features/appstore/index.js` |
 | VOC | `/voc` | `apps/web/src/features/voc/routes.jsx` | `apps/web/src/features/voc/index.js` |

@@ -12,7 +12,7 @@ import { fdcTrendRoutes } from "@/features/fdc-trend"
 import { homeRoutes } from "@/features/home"
 import { lineDashboardRoutes } from "@/features/line-dashboard"
 import { l3SpiderRoutes } from "@/features/l3-spider"
-import { pmComparisonRoutes } from "@/features/pm-comparison"
+import { pmSpiderRoutes } from "@/features/pm-spider"
 import { teamstaffRoutes } from "@/features/teamstaff"
 import { TkinPreventDashboardRoute, observerRoutes } from "@/features/observer"
 import { vocRoutes } from "@/features/voc"
@@ -46,7 +46,7 @@ const protectedFeatureRoutes = [
   ...esopDashboardRoutes,
   ...fdcTrendRoutes,
   ...l3SpiderRoutes,
-  ...pmComparisonRoutes,
+  ...pmSpiderRoutes,
   ...appstoreRoutes,
   ...accessStatsRoutes,
   ...emailsRoutes,

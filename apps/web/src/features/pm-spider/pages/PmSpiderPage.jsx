@@ -1,10 +1,10 @@
 import { useState } from "react"
 import { AlertTriangle, Database } from "lucide-react"
 
-import { PmComparisonFilterBar } from "../components/PmComparisonFilterBar"
+import { PmSpiderFilterBar } from "../components/PmSpiderFilterBar"
 import { PmSpiderCategoryDashboard } from "../components/PmSpiderCategoryDashboard"
-import { usePmComparisonMeta, usePmSpiderCategoryResults } from "../hooks/usePmComparisonQueries"
-import { DEFAULT_PM_FORM, buildPmComparisonPayload } from "../utils/format"
+import { usePmSpiderMeta, usePmSpiderCategoryResults } from "../hooks/usePmSpiderQueries"
+import { DEFAULT_PM_FORM, buildPmSpiderPayload } from "../utils/format"
 
 function ErrorBanner({ error }) {
   if (!error) return null
@@ -49,15 +49,15 @@ function buildFilterOptionsMeta({
   }
 }
 
-export function PmComparisonPage() {
+export function PmSpiderPage() {
   const [form, setForm] = useState(DEFAULT_PM_FORM)
   const [payload, setPayload] = useState(null)
   const [selectedCategoryId, setSelectedCategoryId] = useState("ag")
-  const metaQuery = usePmComparisonMeta(form)
-  const lineOptionsQuery = usePmComparisonMeta({})
-  const eqpOptionsQuery = usePmComparisonMeta({ lineId: form.lineId })
-  const fdcOptionsQuery = usePmComparisonMeta({ lineId: form.lineId, eqpId: form.eqpId })
-  const pmDateOptionsQuery = usePmComparisonMeta({
+  const metaQuery = usePmSpiderMeta(form)
+  const lineOptionsQuery = usePmSpiderMeta({})
+  const eqpOptionsQuery = usePmSpiderMeta({ lineId: form.lineId })
+  const fdcOptionsQuery = usePmSpiderMeta({ lineId: form.lineId, eqpId: form.eqpId })
+  const pmDateOptionsQuery = usePmSpiderMeta({
     lineId: form.lineId,
     eqpId: form.eqpId,
     fdcBin: form.fdcBin,
@@ -84,12 +84,12 @@ export function PmComparisonPage() {
   }
 
   const submit = () => {
-    setPayload(buildPmComparisonPayload(form))
+    setPayload(buildPmSpiderPayload(form))
   }
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-muted/30">
-      <PmComparisonFilterBar
+      <PmSpiderFilterBar
         form={form}
         meta={filterOptionsMeta}
         isMetaLoading={isFilterMetaFetching}

@@ -19,7 +19,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 
-import { usePmComparisonMeta, usePmSpiderDetailResult } from "../hooks/usePmComparisonQueries"
+import { usePmSpiderMeta, usePmSpiderDetailResult } from "../hooks/usePmSpiderQueries"
 import { formatNumber } from "../utils/format"
 import { CanvasHeatmap } from "./CanvasHeatmap"
 import { CanvasLineChart } from "./CanvasLineChart"
@@ -1267,7 +1267,7 @@ export function PmSpiderCategoryDashboard({
   const rankMetaSelection = activeRankCategory?.payload
     ? { ...activeRankCategory.payload, traceDataSource: rankKind === "oes" ? "oes" : "trace" }
     : {}
-  const rankMetaQuery = usePmComparisonMeta(rankMetaSelection)
+  const rankMetaQuery = usePmSpiderMeta(rankMetaSelection)
   const activeRankMeta = rankMetaQuery.data || meta
   const activeRecipeMeta = buildRecipeMeta(activeRankMeta)
   const activeRankMetaSummary = buildRecipeMetaSummary(activeRecipeMeta)

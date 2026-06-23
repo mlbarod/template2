@@ -16,10 +16,10 @@
 ^apps/web/src/features/line-dashboard/components/DataTableColumnRenderers\.jsx:.*style=.*width
 ^apps/web/src/features/line-dashboard/components/chart/LineHistoryLegend\.jsx:.*backgroundColor
 ^apps/web/src/features/line-dashboard/pages/LineDashboardOverviewPage\.jsx:.*(bg|text)-slate-
-^apps/web/src/features/pm-comparison/components/TraceSignalPanel\.jsx:.*#
-^apps/web/src/features/pm-comparison/components/TraceSignalPanel\.jsx:.*style=
-^apps/web/src/features/pm-comparison/components/OesHeatmap\.jsx:.*style=
-^apps/web/src/features/pm-comparison/components/PmSpiderCategoryDashboard\.jsx:.*style=
+^apps/web/src/features/pm-spider/components/TraceSignalPanel\.jsx:.*#
+^apps/web/src/features/pm-spider/components/TraceSignalPanel\.jsx:.*style=
+^apps/web/src/features/pm-spider/components/OesHeatmap\.jsx:.*style=
+^apps/web/src/features/pm-spider/components/PmSpiderCategoryDashboard\.jsx:.*style=
 ^apps/web/src/features/l3-spider/utils/chartStatus\.js:.*#
 ^apps/web/src/features/l3-spider/components/TrellisChart\.jsx:.*#
 ^apps/web/src/features/l3-spider/components/TrellisChart\.css:.*#

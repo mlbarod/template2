@@ -47,7 +47,7 @@ const RESET_FIELDS_BY_KEY = {
   fdcBin: ["pmTimestamp"],
 }
 
-export function PmComparisonFilterBar({
+export function PmSpiderFilterBar({
   form,
   meta,
   isMetaLoading,

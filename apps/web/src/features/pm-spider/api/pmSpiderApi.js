@@ -1,4 +1,4 @@
-// 파일 경로: src/features/pm-comparison/api/pmComparisonApi.js
+// 파일 경로: src/features/pm-spider/api/pmSpiderApi.js
 // PM SPIDER 백엔드 API 요청 유틸입니다.
 import { buildBackendUrl, safeParseJson } from "@/lib/api"
 
@@ -33,7 +33,7 @@ function postJson(path, body) {
   })
 }
 
-export function fetchPmComparisonMeta(selection = {}) {
+export function fetchPmSpiderMeta(selection = {}) {
   const params = new URLSearchParams()
   for (const key of ["lineId", "eqpId", "fdcBin", "pmTimestamp", "type", "traceDataSource"]) {
     const value = selection[key]
@@ -43,6 +43,6 @@ export function fetchPmComparisonMeta(selection = {}) {
   return request(query ? `/meta?${query}` : "/meta")
 }
 
-export function fetchPmComparisonResult(payload) {
+export function fetchPmSpiderResult(payload) {
   return postJson("/compare", payload)
 }

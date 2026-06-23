@@ -1,11 +1,11 @@
-// 파일 경로: src/features/pm-comparison/hooks/usePmComparisonQueries.js
+// 파일 경로: src/features/pm-spider/hooks/usePmSpiderQueries.js
 // PM SPIDER 서버 데이터 조회 훅입니다.
 import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query"
 
 import {
-  fetchPmComparisonMeta,
-  fetchPmComparisonResult,
-  pmComparisonQueryKeys,
+  fetchPmSpiderMeta,
+  fetchPmSpiderResult,
+  pmSpiderQueryKeys,
 } from "../api"
 import {
   PM_SPIDER_CATEGORIES,
@@ -25,11 +25,11 @@ function withRefPmDates(payload, refPmDates) {
   }
 }
 
-export function usePmComparisonMeta(selection = {}) {
+export function usePmSpiderMeta(selection = {}) {
   const selectionKey = buildPayloadKey(selection)
   return useQuery({
-    queryKey: pmComparisonQueryKeys.meta(selectionKey),
-    queryFn: () => fetchPmComparisonMeta(selection),
+    queryKey: pmSpiderQueryKeys.meta(selectionKey),
+    queryFn: () => fetchPmSpiderMeta(selection),
     placeholderData: keepPreviousData,
     staleTime: 60_000,
     refetchOnWindowFocus: false,
@@ -37,11 +37,11 @@ export function usePmComparisonMeta(selection = {}) {
   })
 }
 
-export function usePmComparisonResult(payload) {
+export function usePmSpiderResult(payload) {
   const payloadKey = buildPayloadKey(payload)
   return useQuery({
-    queryKey: pmComparisonQueryKeys.result(payloadKey),
-    queryFn: () => fetchPmComparisonResult(payload),
+    queryKey: pmSpiderQueryKeys.result(payloadKey),
+    queryFn: () => fetchPmSpiderResult(payload),
     enabled: Boolean(payload),
     retry: false,
   })
@@ -51,8 +51,8 @@ export function usePmSpiderCategoryResults(payload, refPmDates = null) {
   const typePayloads = buildPmSpiderTypePayloads(withRefPmDates(payload, refPmDates))
   const queries = useQueries({
     queries: typePayloads.map(({ type, payload: categoryPayload }) => ({
-      queryKey: pmComparisonQueryKeys.category(type, buildPayloadKey(categoryPayload)),
-      queryFn: () => fetchPmComparisonResult(categoryPayload),
+      queryKey: pmSpiderQueryKeys.category(type, buildPayloadKey(categoryPayload)),
+      queryFn: () => fetchPmSpiderResult(categoryPayload),
       enabled: Boolean(payload),
       retry: false,
     })),
@@ -133,8 +133,8 @@ export function usePmSpiderDetailResult(category, row, refPmDates = null, oesCel
   const payloadKey = buildPayloadKey(payload)
 
   return useQuery({
-    queryKey: pmComparisonQueryKeys.detail(category?.id || "empty", itemKey || cellKey || "empty", payloadKey),
-    queryFn: () => fetchPmComparisonResult(payload),
+    queryKey: pmSpiderQueryKeys.detail(category?.id || "empty", itemKey || cellKey || "empty", payloadKey),
+    queryFn: () => fetchPmSpiderResult(payload),
     enabled: Boolean(payload),
     retry: false,
   })

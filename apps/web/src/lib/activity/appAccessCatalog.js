@@ -25,9 +25,9 @@ const APP_ACCESS_RULES = [
     prefixes: ["/fdc_trend"],
   },
   {
-    appId: "pm-comparison",
+    appId: "pm-spider",
     appName: "PM SPIDER",
-    prefixes: ["/pm-comparison"],
+    prefixes: ["/pm_spider"],
   },
   {
     appId: "teamstaff",
