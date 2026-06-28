@@ -77,30 +77,9 @@ function EmptyPanel({ ready }) {
         <p className="text-sm leading-6 text-muted-foreground">
           {ready
             ? "선택한 process_id와 step_seq에 해당하는 m_tkin_prevent row가 없습니다."
-            : "Line, user_sdwt_prod, PRC Group, process_id, step_seq를 선택하면 matrix가 표시됩니다."}
+            : "Line, user_sdwt_prod, PRC Group, process_id, step_seq를 선택하면 예방 상태 표가 표시됩니다."}
         </p>
       </div>
-    </div>
-  );
-}
-
-function MatrixCell({ values }) {
-  if (!values?.length) {
-    return <span className="text-muted-foreground">-</span>;
-  }
-
-  return (
-    <div className="grid gap-1">
-      {values.map((value) => (
-        <Badge
-          key={`${value.status}-${value.type}-${value.registrationLevel}`}
-          variant={value.status === "DOING" ? "default" : "secondary"}
-          className="max-w-full justify-start truncate rounded-md"
-          title={value.status}
-        >
-          {value.status}
-        </Badge>
-      ))}
     </div>
   );
 }
@@ -124,11 +103,34 @@ function getUserSdwtOptionsForLine(payload, lineId) {
     .map((value) => ({ id: value, name: value }));
 }
 
-function TkinPreventMatrixTable({ matrix }) {
-  const equipmentRows = matrix?.columns || [];
-  const ppidColumns = matrix?.rows || [];
+function buildTkinPreventTableRows(matrix) {
+  const equipmentById = new Map(
+    (matrix?.columns || []).map((equipment) => [equipment.id, equipment])
+  );
 
-  if (!equipmentRows.length || !ppidColumns.length) {
+  return (matrix?.rows || []).flatMap((ppidRow) => {
+    const cells = ppidRow?.cells || {};
+    return Object.entries(cells).flatMap(([equipmentId, values]) => {
+      const equipment = equipmentById.get(equipmentId) || {};
+      const safeValues = Array.isArray(values) ? values : [];
+
+      return safeValues.map((value, index) => ({
+        id: `${ppidRow.ppid}-${equipmentId}-${value.status}-${index}`,
+        ppid: ppidRow.ppid,
+        eqpId: equipment.eqpId || equipmentId,
+        chamberId: equipment.chamberId || "-",
+        type: value.type || "-",
+        registrationLevel: value.registrationLevel || "-",
+        status: value.status || "-",
+      }));
+    });
+  });
+}
+
+function TkinPreventRowsTable({ matrix }) {
+  const tableRows = useMemo(() => buildTkinPreventTableRows(matrix), [matrix]);
+
+  if (!tableRows.length) {
     return <EmptyPanel ready={true} />;
   }
 
@@ -137,39 +139,55 @@ function TkinPreventMatrixTable({ matrix }) {
       <table className="min-w-full border-separate border-spacing-0 text-sm">
         <thead>
           <tr>
-            <th className="sticky left-0 top-0 z-20 min-w-48 border-b border-r bg-card px-2 py-1 text-left text-xs font-semibold leading-tight text-muted-foreground">
-              EQP-CH
+            <th className="sticky top-0 z-10 min-w-56 border-b border-r bg-card px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
+              PPID
             </th>
-            {ppidColumns.map((ppidColumn) => (
-              <th
-                key={ppidColumn.ppid}
-                className="sticky top-0 z-10 min-w-44 border-b border-r bg-card px-2 py-1 text-left text-xs font-semibold leading-tight text-foreground"
-                title={ppidColumn.ppid}
-              >
-                <span className="block truncate">{ppidColumn.ppid}</span>
-              </th>
-            ))}
+            <th className="sticky top-0 z-10 min-w-40 border-b border-r bg-card px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
+              EQP ID
+            </th>
+            <th className="sticky top-0 z-10 min-w-32 border-b border-r bg-card px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
+              Chamber
+            </th>
+            <th className="sticky top-0 z-10 min-w-32 border-b border-r bg-card px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
+              Type
+            </th>
+            <th className="sticky top-0 z-10 min-w-40 border-b border-r bg-card px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
+              Registration Level
+            </th>
+            <th className="sticky top-0 z-10 min-w-52 border-b bg-card px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
+              Status
+            </th>
           </tr>
         </thead>
         <tbody>
-          {equipmentRows.map((equipmentRow) => (
-            <tr key={equipmentRow.id} className="hover:bg-muted/40">
-              <th className="sticky left-0 z-10 min-w-48 border-b border-r bg-card px-3 py-2 text-left align-top text-xs font-semibold text-foreground">
-                <span
-                  className="block max-w-48 truncate"
-                  title={`${equipmentRow.eqpId} / ${equipmentRow.chamberId}`}
-                >
-                  {equipmentRow.label}
+          {tableRows.map((row) => (
+            <tr key={row.id} className="hover:bg-muted/40">
+              <td className="border-b border-r px-3 py-2 align-top font-medium text-foreground">
+                <span className="block max-w-72 truncate" title={row.ppid}>
+                  {row.ppid}
                 </span>
-              </th>
-              {ppidColumns.map((ppidColumn) => (
-                <td
-                  key={`${equipmentRow.id}-${ppidColumn.ppid}`}
-                  className="min-w-44 border-b border-r px-3 py-2 align-top"
+              </td>
+              <td className="border-b border-r px-3 py-2 align-top text-foreground">
+                {row.eqpId}
+              </td>
+              <td className="border-b border-r px-3 py-2 align-top text-foreground">
+                {row.chamberId}
+              </td>
+              <td className="border-b border-r px-3 py-2 align-top text-muted-foreground">
+                {row.type}
+              </td>
+              <td className="border-b border-r px-3 py-2 align-top text-muted-foreground">
+                {row.registrationLevel}
+              </td>
+              <td className="border-b px-3 py-2 align-top">
+                <Badge
+                  variant={row.status === "DOING" ? "default" : "secondary"}
+                  className="max-w-full justify-start truncate rounded-md"
+                  title={row.status}
                 >
-                  <MatrixCell values={ppidColumn.cells?.[equipmentRow.id]} />
-                </td>
-              ))}
+                  {row.status}
+                </Badge>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -265,7 +283,7 @@ export default function TkinPreventDashboardPage() {
               T/K-IN Prevent Dashboard
             </h1>
             <p className="text-sm text-muted-foreground">
-              {lineId ? `${lineId} Line m_tkin_prevent 기준 예방 상태 matrix` : "Line을 선택하세요"}
+              {lineId ? `${lineId} Line m_tkin_prevent 기준 예방 상태 표` : "Line을 선택하세요"}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -345,21 +363,21 @@ export default function TkinPreventDashboardPage() {
       <section className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border bg-card">
         <div className="grid h-full min-h-0 grid-rows-[auto,1fr]">
           <div className="shrink-0 border-b px-4 py-3">
-            <h2 className="text-base font-semibold">Prevent Matrix</h2>
+            <h2 className="text-base font-semibold">Prevent Table</h2>
           </div>
           <div className="min-h-0 min-w-0">
             {matrixQuery.isFetching ? (
               <div className="flex h-full items-center justify-center">
-                <LoadingSpinner label="matrix를 불러오는 중입니다" />
+                <LoadingSpinner label="예방 상태 표를 불러오는 중입니다" />
               </div>
             ) : matrixQuery.error ? (
               <ErrorPanel
-                title="matrix 조회 실패"
+                title="예방 상태 표 조회 실패"
                 message={matrixQuery.error.message}
                 onRetry={() => matrixQuery.refetch()}
               />
             ) : matrixReady ? (
-              <TkinPreventMatrixTable matrix={matrix} />
+              <TkinPreventRowsTable matrix={matrix} />
             ) : (
               <EmptyPanel ready={false} />
             )}
