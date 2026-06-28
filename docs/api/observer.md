@@ -36,6 +36,8 @@ Observer API는 설비 Observer 화면에 필요한 라인, SDWT, 공정, 설비
 
 - `lineId`, `sdwtId`, `prcGroup`는 대문자로 정규화됩니다.
 - 필수 query가 없으면 400을 반환합니다.
+- Observer drill-down의 `lineId`는 `drone_target.line_id`, `sdwtId`는 `drone_target.target_user_sdwt_prod` 기준입니다.
+- PRC/설비 조회는 `drone_target.target_user_sdwt_prod = station_master.sdwt_prod_lookup` 매칭으로 station 데이터를 제한합니다.
 - 기준정보와 로그는 기본 DB의 data movement/업무 테이블을 조회합니다.
 - 로그 조회 API는 공통으로 `from`, `to`, `limit` query를 지원합니다.
 - `from`, `to`는 `YYYY-MM-DD` 또는 datetime 문자열을 받습니다.

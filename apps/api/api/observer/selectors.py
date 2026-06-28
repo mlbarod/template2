@@ -92,6 +92,59 @@ def _build_text_record(row: Row, field_map: Sequence[tuple[str, str]]) -> Dict[s
     }
 
 
+def _find_drone_target_for_sdwt(
+    *,
+    sdwt_id: str,
+    preferred_line_id: str = "",
+) -> Dict[str, str] | None:
+    """Drone target 옵션에서 SDWT를 소유한 line/target 조합을 찾습니다."""
+
+    sdwt_key = normalize_id(sdwt_id)
+    preferred_line_key = normalize_id(preferred_line_id)
+    if not sdwt_key:
+        return None
+
+    payload = drone_selectors.get_tip_status_line_sdwt_options_payload()
+    rows = payload.get("lines") if isinstance(payload, dict) else []
+    matches: list[Dict[str, str]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+
+        line_id = _safe_text(row.get("lineId")).strip()
+        values = row.get("userSdwtProds")
+        if not line_id or not isinstance(values, list):
+            continue
+
+        for raw_value in values:
+            target_value = _safe_text(raw_value).strip()
+            if target_value and normalize_id(target_value) == sdwt_key:
+                matches.append({"lineId": line_id, "sdwtId": target_value})
+
+    if preferred_line_key:
+        return next(
+            (
+                match
+                for match in matches
+                if normalize_id(match["lineId"]) == preferred_line_key
+            ),
+            None,
+        )
+
+    return next(
+        iter(
+            sorted(
+                matches,
+                key=lambda match: (
+                    normalize_id(match["lineId"]),
+                    normalize_id(match["sdwtId"]),
+                ),
+            )
+        ),
+        None,
+    )
+
+
 def _build_time_clause(
     field_name: str,
     *,
@@ -233,6 +286,12 @@ def list_prc_groups(*, line_id: str, sdwt_id: str) -> List[Dict[str, str]]:
 
     filters = _normalize_filters(line_id=line_id, sdwt_id=sdwt_id)
     sdwt_key = filters["sdwt_id"]
+    if not _find_drone_target_for_sdwt(
+        sdwt_id=sdwt_key,
+        preferred_line_id=filters["line_id"],
+    ):
+        return []
+
     rows = _fetch_all(
         """
         select distinct
@@ -317,30 +376,32 @@ def list_equipments(
         sdwt_id=sdwt_id,
         prc_group=prc_group,
     )
+    target = _find_drone_target_for_sdwt(
+        sdwt_id=filters["sdwt_id"],
+        preferred_line_id=filters["line_id"],
+    )
+    if not target:
+        return []
+
     sdwt_key = filters["sdwt_id"]
     prc_key = filters["prc_group"]
     sql = """
         select distinct on (station.station)
             station.station as id,
-            mapping.gpm_line_name as line_id,
+            %s as line_id,
             station.sdwt_prod as sdwt_prod,
             station.prc_group as prc_group
         from station_master station
-        left join mes_line_mapping_info mapping
-          on mapping.msg_line_id = station.floor_line_id
-         and mapping.gbm_name = 'MEMORY'
-         and mapping.use_yn = 'Y'
-         and mapping.del_yn = 'N'
         where station.prc_group_lookup = %s
           and station.station is not null
     """
-    params: List[object] = [prc_key]
+    params: List[object] = [target["lineId"], prc_key]
 
     if sdwt_key:
         sql += " and station.sdwt_prod_lookup = %s"
         params.append(sdwt_key)
 
-    sql += " order by station.station, mapping.gpm_line_name"
+    sql += " order by station.station"
     rows = _fetch_all(sql, params)
 
     equipments: List[Dict[str, str]] = []
@@ -655,11 +716,12 @@ def get_tkin_prevent_matrix(
     }
 
 
-def get_equipment_info(*, eqp_id: str) -> Dict[str, str] | None:
+def get_equipment_info(*, eqp_id: str, line_id: str = "") -> Dict[str, str] | None:
     """eqpId 기준 설비 메타데이터를 반환합니다.
 
     입력:
     - eqp_id: 설비 ID
+    - line_id: Drone target line ID(선택)
 
     반환:
     - Dict[str, str] | None: 설비 메타데이터(없으면 None)
@@ -671,22 +733,17 @@ def get_equipment_info(*, eqp_id: str) -> Dict[str, str] | None:
     - DB 연결 실패 시 예외
     """
 
-    filters = _normalize_filters(eqp_id=eqp_id)
+    filters = _normalize_filters(eqp_id=eqp_id, line_id=line_id)
     eqp_key = filters["eqp_id"]
     row = _fetch_one(
         """
         select distinct
             station.station as id,
-            mapping.gpm_line_name as line_id,
             station.sdwt_prod as sdwt_prod,
+            station.sdwt_prod_lookup as sdwt_prod_lookup,
             station.prc_group as prc_group
         from station_master station
-        join mes_line_mapping_info mapping
-          on mapping.msg_line_id = station.floor_line_id
         where station.station_lookup = %s
-          and mapping.gbm_name = 'MEMORY'
-          and mapping.use_yn = 'Y'
-          and mapping.del_yn = 'N'
         limit 1
         """,
         [eqp_key],
@@ -695,15 +752,19 @@ def get_equipment_info(*, eqp_id: str) -> Dict[str, str] | None:
     if not row:
         return None
 
-    return _build_text_record(
-        row,
-        (
-            ("id", "id"),
-            ("lineId", "line_id"),
-            ("sdwtId", "sdwt_prod"),
-            ("prcGroup", "prc_group"),
-        ),
+    target = _find_drone_target_for_sdwt(
+        sdwt_id=_safe_text(row.get("sdwt_prod_lookup") or row.get("sdwt_prod")),
+        preferred_line_id=filters["line_id"],
     )
+    if not target:
+        return None
+
+    return {
+        "id": _safe_text(row.get("id")),
+        "lineId": target["lineId"],
+        "sdwtId": target["sdwtId"],
+        "prcGroup": _safe_text(row.get("prc_group")),
+    }
 
 
 # =============================================================================

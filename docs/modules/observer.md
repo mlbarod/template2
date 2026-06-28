@@ -29,10 +29,10 @@ Observer 기준정보와 로그는 기본 DB의 data movement/업무 테이블�
 
 | 데이터 | Backend source | 설명 |
 | --- | --- | --- |
-| Line | 기본 DB `mes_line_mapping_info` | 선택 가능한 line 목록 |
-| SDWT | 기본 DB `mes_line_mapping_info`, `station_master` | line별 SDWT 목록 |
-| Process group | 기본 DB `station_master` | SDWT별 공정 그룹 |
-| Equipment | 기본 DB `station_master`, `mes_line_mapping_info` | 설비 목록과 상세 |
+| Line | 기본 DB `drone_target` | 선택 가능한 line 목록 |
+| SDWT | 기본 DB `drone_target`, `station_master` | line별 target_user_sdwt_prod 목록 |
+| Process group | 기본 DB `station_master` | target_user_sdwt_prod와 매칭되는 SDWT별 공정 그룹 |
+| Equipment | 기본 DB `station_master`, `drone_target` | 설비 목록과 상세 |
 | EQP log | 기본 DB `eqp_status_chg` | 상태 변경 기반 설비 로그 |
 | TIP log | 기본 DB `mi_tip_update_hist` | TIP 유형별 설비 로그 |
 | CTTTM log | 기본 DB `ctttm_workorder_list`, `ct_process_comment` | CTTTM 유형별 설비 로그와 요약 |
@@ -45,9 +45,11 @@ Observer 기준정보와 로그는 기본 DB의 data movement/업무 테이블�
 1. 요청 query를 정리합니다.
 2. `lineId`, `sdwtId`, `prcGroup` 등 식별자를 대문자로 정규화합니다.
 3. 필수 query가 없으면 400을 반환합니다.
-4. `from`, `to`, `limit` 로그 옵션을 검증합니다.
-5. 기본 DB의 기준정보 또는 로그 데이터를 조회합니다.
-6. 프론트가 사용하기 쉬운 형태로 반환합니다.
+4. `lineId`는 `drone_target.line_id`, `sdwtId`는 `drone_target.target_user_sdwt_prod`로 해석합니다.
+5. `drone_target.target_user_sdwt_prod = station_master.sdwt_prod_lookup` 매칭으로 station 데이터를 제한합니다.
+6. `from`, `to`, `limit` 로그 옵션을 검증합니다.
+7. 기본 DB의 기준정보 또는 로그 데이터를 조회합니다.
+8. 프론트가 사용하기 쉬운 형태로 반환합니다.
 
 ## 로그 조회 정책
 

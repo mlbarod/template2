@@ -141,10 +141,19 @@ class ObserverEndpointTests(TestCase):
         )
 
     def test_observer_prc_groups_selector_uses_station_master(self) -> None:
-        with patch(
-            f"{OBSERVER_SELECTORS}._fetch_all",
-            return_value=[{"id": "ETCH"}],
-        ) as fetch_all:
+        with (
+            patch(
+                f"{OBSERVER_SELECTORS}.drone_selectors.get_tip_status_line_sdwt_options_payload",
+                return_value={
+                    "lines": [{"lineId": "LINE-A", "userSdwtProds": ["SD-10"]}],
+                    "userSdwtProds": ["SD-10"],
+                },
+            ) as options,
+            patch(
+                f"{OBSERVER_SELECTORS}._fetch_all",
+                return_value=[{"id": "ETCH"}],
+            ) as fetch_all,
+        ):
             groups = selectors.list_prc_groups(line_id="LINE-A", sdwt_id="sd-10")
 
         query, params = fetch_all.call_args.args
@@ -152,25 +161,51 @@ class ObserverEndpointTests(TestCase):
         self.assertIn("from station_master", query)
         self.assertIn("sdwt_prod_lookup = %s", query)
         self.assertEqual(params, ["SD-10"])
+        options.assert_called_once_with()
+
+    def test_observer_prc_groups_selector_rejects_unowned_sdwt(self) -> None:
+        with (
+            patch(
+                f"{OBSERVER_SELECTORS}.drone_selectors.get_tip_status_line_sdwt_options_payload",
+                return_value={
+                    "lines": [{"lineId": "LINE-B", "userSdwtProds": ["SD-10"]}],
+                    "userSdwtProds": ["SD-10"],
+                },
+            ),
+            patch(f"{OBSERVER_SELECTORS}._fetch_all") as fetch_all,
+        ):
+            groups = selectors.list_prc_groups(line_id="LINE-A", sdwt_id="sd-10")
+
+        self.assertEqual(groups, [])
+        fetch_all.assert_not_called()
 
     def test_observer_equipments_selector_uses_station_master(self) -> None:
-        with patch(
-            f"{OBSERVER_SELECTORS}._fetch_all",
-            return_value=[
-                {
-                    "id": "EQP-ALPHA",
-                    "line_id": "GPM-LINE-A",
-                    "sdwt_prod": "SD-10",
-                    "prc_group": "ETCH",
+        with (
+            patch(
+                f"{OBSERVER_SELECTORS}.drone_selectors.get_tip_status_line_sdwt_options_payload",
+                return_value={
+                    "lines": [{"lineId": "LINE-A", "userSdwtProds": ["SD-10"]}],
+                    "userSdwtProds": ["SD-10"],
                 },
-                {
-                    "id": "EQP-ALPHA",
-                    "line_id": "GPM-LINE-B",
-                    "sdwt_prod": "SD-10",
-                    "prc_group": "ETCH",
-                },
-            ],
-        ) as fetch_all:
+            ) as options,
+            patch(
+                f"{OBSERVER_SELECTORS}._fetch_all",
+                return_value=[
+                    {
+                        "id": "EQP-ALPHA",
+                        "line_id": "LINE-A",
+                        "sdwt_prod": "SD-10",
+                        "prc_group": "ETCH",
+                    },
+                    {
+                        "id": "EQP-ALPHA",
+                        "line_id": "LINE-A",
+                        "sdwt_prod": "SD-10",
+                        "prc_group": "ETCH",
+                    },
+                ],
+            ) as fetch_all,
+        ):
             equipments = selectors.list_equipments(
                 line_id="LINE-A",
                 sdwt_id="sd-10",
@@ -179,14 +214,15 @@ class ObserverEndpointTests(TestCase):
 
         query, params = fetch_all.call_args.args
         self.assertEqual(equipments[0]["id"], "EQP-ALPHA")
-        self.assertEqual(equipments[0]["lineId"], "GPM-LINE-A")
+        self.assertEqual(equipments[0]["lineId"], "LINE-A")
         self.assertEqual(len(equipments), 1)
         self.assertIn("select distinct on (station.station)", query)
         self.assertIn("from station_master station", query)
-        self.assertIn("left join mes_line_mapping_info mapping", query)
+        self.assertNotIn("mes_line_mapping_info", query)
         self.assertIn("station.prc_group_lookup = %s", query)
         self.assertIn("station.sdwt_prod_lookup = %s", query)
-        self.assertEqual(params, ["ETCH", "SD-10"])
+        self.assertEqual(params, ["LINE-A", "ETCH", "SD-10"])
+        options.assert_called_once_with()
 
     def test_observer_equipments_normalizes_query_values(self) -> None:
         with patch(
@@ -450,13 +486,14 @@ class ObserverEndpointTests(TestCase):
         with patch(
             f"{OBSERVER_VIEW_SELECTORS}.get_equipment_info",
             return_value=payload,
-        ):
+        ) as selector:
             response = self.client.get(
                 reverse("observer-equipment-info", kwargs={"eqp_id": "EQP-ALPHA"})
             )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["id"], "EQP-ALPHA")
+        selector.assert_called_once_with(eqp_id="EQP-ALPHA", line_id="")
 
     def test_observer_equipment_info_with_line_scope(self) -> None:
         payload = {
@@ -468,7 +505,7 @@ class ObserverEndpointTests(TestCase):
         with patch(
             f"{OBSERVER_VIEW_SELECTORS}.get_equipment_info",
             return_value=payload,
-        ):
+        ) as selector:
             response = self.client.get(
                 reverse(
                     "observer-equipment-info-line",
@@ -477,30 +514,38 @@ class ObserverEndpointTests(TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
+        selector.assert_called_once_with(eqp_id="EQP-ALPHA", line_id="LINE-A")
 
-    def test_observer_equipment_info_selector_uses_station_mapping(self) -> None:
-        with patch(
-            f"{OBSERVER_SELECTORS}._fetch_one",
-            return_value={
-                "id": "EQP-ALPHA",
-                "line_id": "GPM-LINE-A",
-                "sdwt_prod": "SD-10",
-                "prc_group": "ETCH",
-            },
-        ) as fetch_one:
+    def test_observer_equipment_info_selector_uses_drone_target_line(self) -> None:
+        with (
+            patch(
+                f"{OBSERVER_SELECTORS}.drone_selectors.get_tip_status_line_sdwt_options_payload",
+                return_value={
+                    "lines": [{"lineId": "LINE-A", "userSdwtProds": ["SD-10"]}],
+                    "userSdwtProds": ["SD-10"],
+                },
+            ) as options,
+            patch(
+                f"{OBSERVER_SELECTORS}._fetch_one",
+                return_value={
+                    "id": "EQP-ALPHA",
+                    "sdwt_prod": "Sd-10",
+                    "sdwt_prod_lookup": "SD-10",
+                    "prc_group": "ETCH",
+                },
+            ) as fetch_one,
+        ):
             info = selectors.get_equipment_info(eqp_id="eqp-alpha")
 
         query, params = fetch_one.call_args.args
         self.assertEqual(info["id"], "EQP-ALPHA")
-        self.assertEqual(info["lineId"], "GPM-LINE-A")
+        self.assertEqual(info["lineId"], "LINE-A")
+        self.assertEqual(info["sdwtId"], "SD-10")
         self.assertIn("from station_master station", query)
-        self.assertIn("join mes_line_mapping_info mapping", query)
-        self.assertIn("mapping.msg_line_id = station.floor_line_id", query)
+        self.assertNotIn("mes_line_mapping_info", query)
         self.assertIn("station.station_lookup = %s", query)
-        self.assertIn("mapping.gbm_name = 'MEMORY'", query)
-        self.assertIn("mapping.use_yn = 'Y'", query)
-        self.assertIn("mapping.del_yn = 'N'", query)
         self.assertEqual(params, ["EQP-ALPHA"])
+        options.assert_called_once_with()
 
     def test_observer_logs_requires_eqp_id(self) -> None:
         response = self.client.get(reverse("observer-logs"))

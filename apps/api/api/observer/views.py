@@ -494,7 +494,10 @@ class ObserverEquipmentInfoView(APIView):
         # -----------------------------------------------------------------------------
         # 2) 설비 메타데이터 조회
         # -----------------------------------------------------------------------------
-        info = selectors.get_equipment_info(eqp_id=eqp_key)
+        info = selectors.get_equipment_info(
+            eqp_id=eqp_key,
+            line_id=selectors.normalize_id(line_id) if line_id else "",
+        )
         if not info:
             return JsonResponse({"error": "Equipment not found"}, status=404)
 
