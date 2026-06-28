@@ -43,12 +43,14 @@ export default function DataLogSection({
               ) : null}
             </div>
           ) : null}
-          <ObserverDataTable
-            data={tableData}
-            typeFilters={typeFilters}
-            handleFilter={handleFilter}
-            getLogTypeBadgeClass={getLogTypeBadgeClass}
-          />
+          <div className="min-h-0 flex-1">
+            <ObserverDataTable
+              data={tableData}
+              typeFilters={typeFilters}
+              handleFilter={handleFilter}
+              getLogTypeBadgeClass={getLogTypeBadgeClass}
+            />
+          </div>
         </>
       )}
     </section>

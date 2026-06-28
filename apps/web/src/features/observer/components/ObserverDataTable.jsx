@@ -38,7 +38,7 @@ export default function ObserverDataTable({
   const handleSelect = (rowId) => setSelectedRow(rowId, "table");
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="flex justify-between items-center pt-1 bg-card text-foreground rounded-t-lg border-b border-border">
         <h3 className="text-md font-semibold mb-5">📜 Data Log</h3>
         <ObserverTableFilters
@@ -47,17 +47,17 @@ export default function ObserverDataTable({
         />
       </div>
 
-      <div className="flex-1 overflow-hidden">
+      <div className="min-h-0 flex-1 overflow-hidden">
         {data.length === 0 ? (
           <div className="p-4 text-center text-sm text-muted-foreground">
             표시할 데이터가 없습니다.
           </div>
         ) : (
-          <div className="h-full bg-card rounded-b-lg overflow-hidden border border-border">
+          <div className="grid h-full min-h-0 grid-rows-[auto_1fr] overflow-hidden rounded-b-lg border border-border bg-card">
             <ObserverTableHeader />
             <div
               ref={scrollContainerRef}
-              className="h-full overflow-auto"
+              className="min-h-0 overflow-auto"
               role="listbox"
               aria-label="Observer 로그 목록"
             >
