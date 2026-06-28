@@ -62,37 +62,37 @@ class ObserverEndpointTests(TestCase):
         self.assertTrue(isinstance(response.json(), list))
         selector.assert_called_once_with(line_id="LINE-A")
 
-    def test_observer_lines_selector_uses_mes_mapping_info_with_sdwt_station(self) -> None:
+    def test_observer_lines_selector_uses_drone_tip_status_options(self) -> None:
         with patch(
-            f"{OBSERVER_SELECTORS}._fetch_all",
-            return_value=[{"id": "GPM-LINE-A", "name": "GPM-LINE-A"}],
-        ) as fetch_all:
+            f"{OBSERVER_SELECTORS}.drone_selectors.get_tip_status_line_sdwt_options_payload",
+            return_value={
+                "lines": [
+                    {"lineId": "LINE-A", "userSdwtProds": ["SD-10"]},
+                    {"lineId": "", "userSdwtProds": ["SD-EMPTY"]},
+                ],
+                "userSdwtProds": ["SD-10"],
+            },
+        ) as options:
             lines = selectors.list_lines()
 
-        query = fetch_all.call_args.args[0]
-        self.assertEqual(lines[0]["id"], "GPM-LINE-A")
-        self.assertIn("from mes_line_mapping_info mapping", query)
-        self.assertIn("join station_master station", query)
-        self.assertIn("station.floor_line_id = mapping.msg_line_id", query)
-        self.assertIn("mapping.gpm_line_name as id", query)
-        self.assertIn("mapping.gbm_name = 'MEMORY'", query)
-        self.assertIn("mapping.use_yn = 'Y'", query)
-        self.assertIn("mapping.del_yn = 'N'", query)
-        self.assertIn("station.sdwt_prod_lookup is not null", query)
+        self.assertEqual(lines, [{"id": "LINE-A", "name": "LINE-A"}])
+        options.assert_called_once_with()
 
-    def test_observer_sdwt_selector_uses_lookup_line_filter(self) -> None:
-        with patch(f"{OBSERVER_SELECTORS}._fetch_all", return_value=[]) as fetch_all:
+    def test_observer_sdwt_selector_uses_drone_tip_status_options(self) -> None:
+        with patch(
+            f"{OBSERVER_SELECTORS}.drone_selectors.get_tip_status_line_sdwt_options_payload",
+            return_value={
+                "lines": [
+                    {"lineId": "LINE-A", "userSdwtProds": ["SD-10", ""]},
+                    {"lineId": "LINE-B", "userSdwtProds": ["SD-20"]},
+                ],
+                "userSdwtProds": ["SD-10", "SD-20"],
+            },
+        ) as options:
             sdwts = selectors.list_sdwt_for_line(line_id="line-a")
 
-        query, params = fetch_all.call_args.args
-        self.assertEqual(sdwts, [])
-        self.assertIn("from station_master station", query)
-        self.assertIn("join mes_line_mapping_info mapping", query)
-        self.assertIn("mapping.gpm_line_name_lookup = %s", query)
-        self.assertIn("mapping.gbm_name = 'MEMORY'", query)
-        self.assertIn("mapping.use_yn = 'Y'", query)
-        self.assertIn("mapping.del_yn = 'N'", query)
-        self.assertEqual(params, ["LINE-A"])
+        self.assertEqual(sdwts, [{"id": "SD-10", "name": "SD-10", "lineId": "LINE-A"}])
+        options.assert_called_once_with()
 
     def test_observer_prc_groups_returns_results(self) -> None:
         with patch(

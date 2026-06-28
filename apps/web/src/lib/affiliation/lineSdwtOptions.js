@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { buildBackendUrl } from "@/lib/api"
 
 const LINE_SDWT_OPTIONS_QUERY_KEY = ["affiliation", "line-sdwt-options"]
+const LINE_DASHBOARD_LINE_SDWT_OPTIONS_QUERY_KEY = ["line-dashboard", "line-sdwt-options"]
 
 function normalizeLineId(value) {
   if (value === null || value === undefined) return ""
@@ -54,8 +55,8 @@ function toLineOptions(payload) {
   return Array.from(new Set(normalized))
 }
 
-export async function getLineSdwtOptions() {
-  const endpoint = buildBackendUrl("/api/v1/account/line-sdwt-options")
+async function fetchLineSdwtOptions(endpointPath) {
+  const endpoint = buildBackendUrl(endpointPath)
 
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), 5_000)
@@ -91,12 +92,31 @@ export async function getLineSdwtOptions() {
   }
 }
 
+export function getLineSdwtOptions() {
+  return fetchLineSdwtOptions("/api/v1/account/line-sdwt-options")
+}
+
+export function getLineDashboardLineSdwtOptions() {
+  return fetchLineSdwtOptions("/api/v1/line-dashboard/line-sdwt-options")
+}
+
 export function useLineSdwtOptionsQuery(options = {}) {
   const { enabled = true } = options
 
   return useQuery({
     queryKey: LINE_SDWT_OPTIONS_QUERY_KEY,
     queryFn: getLineSdwtOptions,
+    refetchOnWindowFocus: false,
+    enabled,
+  })
+}
+
+export function useLineDashboardLineSdwtOptionsQuery(options = {}) {
+  const { enabled = true } = options
+
+  return useQuery({
+    queryKey: LINE_DASHBOARD_LINE_SDWT_OPTIONS_QUERY_KEY,
+    queryFn: getLineDashboardLineSdwtOptions,
     refetchOnWindowFocus: false,
     enabled,
   })

@@ -24,6 +24,7 @@ from .views import (
     DroneTablesView,
     DroneTableUpdateView,
     JiraUserSdwtProdListView,
+    LineDashboardLineSdwtOptionsView,
     LineHistoryView,
     LineIdListView,
 )
@@ -70,6 +71,11 @@ urlpatterns = [
     ),
     path("history", LineHistoryView.as_view(), name="line-dashboard-history"),
     path("line-ids", LineIdListView.as_view(), name="line-dashboard-line-ids"),
+    path(
+        "line-sdwt-options",
+        LineDashboardLineSdwtOptionsView.as_view(),
+        name="line-dashboard-line-sdwt-options",
+    ),
     path(
         "sop/<int:sop_id>/instant-inform",
         DroneSopInstantInformView.as_view(),

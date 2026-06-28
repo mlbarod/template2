@@ -3,7 +3,10 @@ import { RefreshCw, RotateCcw, TableProperties } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useActiveLine, useLineSdwtOptionsQuery } from "@/lib/affiliation";
+import {
+  useActiveLine,
+  useLineDashboardLineSdwtOptionsQuery,
+} from "@/lib/affiliation";
 
 import { LoadingSpinner } from "../components/Loaders";
 import {
@@ -182,7 +185,7 @@ export default function TkinPreventDashboardPage() {
   const [processId, setProcessId] = useState("");
   const [stepSeq, setStepSeq] = useState("");
 
-  const lineSdwtOptionsQuery = useLineSdwtOptionsQuery();
+  const lineSdwtOptionsQuery = useLineDashboardLineSdwtOptionsQuery();
   const userSdwtOptions = useMemo(
     () => getUserSdwtOptionsForLine(lineSdwtOptionsQuery.data, lineId),
     [lineSdwtOptionsQuery.data, lineId]

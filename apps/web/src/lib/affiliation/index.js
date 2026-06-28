@@ -4,7 +4,9 @@ export { SdwtProvider, useSdwt } from "./sdwtContext"
 export { useLineSwitcher } from "./lineSwitcher"
 export {
   buildLineSwitcherOptions,
+  getLineDashboardLineSdwtOptions,
   getLineSdwtOptions,
+  useLineDashboardLineSdwtOptionsQuery,
   useLineOptionsQuery,
   useLineSdwtOptionsQuery,
 } from "./lineSdwtOptions"

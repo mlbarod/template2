@@ -1246,6 +1246,31 @@ class DroneSelectorCaseInsensitiveTests(TestCase):
         self.assertTrue(selectors.line_id_exists(line_id="CUSTOM_LINE"))
         self.assertEqual(selectors.list_distinct_line_ids(), ["CUSTOM_LINE"])
 
+    def test_tip_status_line_sdwt_options_use_drone_targets_with_station_match(self) -> None:
+        """TIP status 선택지는 station_master에 있는 Drone target만 반환합니다."""
+
+        _upsert_target(line_id="L1", target_user_sdwt_prod="SD-10")
+        _upsert_target(line_id="L1", target_user_sdwt_prod="SD-20")
+        _upsert_target(line_id="L2", target_user_sdwt_prod="SD-99")
+        _upsert_target(line_id="", target_user_sdwt_prod="SD-EMPTY-LINE")
+
+        with patch(
+            "api.drone.selectors.station_master_selectors.list_distinct_sdwt_prod_lookup_values",
+            return_value={"SD-10", "SD-99"},
+        ):
+            payload = selectors.get_tip_status_line_sdwt_options_payload()
+
+        self.assertEqual(
+            payload,
+            {
+                "lines": [
+                    {"lineId": "L1", "userSdwtProds": ["SD-10"]},
+                    {"lineId": "L2", "userSdwtProds": ["SD-99"]},
+                ],
+                "userSdwtProds": ["SD-10", "SD-99"],
+            },
+        )
+
     def test_selector_lookups_ignore_case_for_user_sdwt_prod_and_target(self) -> None:
         """소속/채널/수신자 조회가 대소문자를 무시하는지 확인합니다."""
         User = get_user_model()
@@ -2098,6 +2123,25 @@ class DroneEndpointTests(TestCase):
         response = self.client.get(reverse("line-dashboard-line-ids"))
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["lineIds"], ["L1"])
+
+    @patch(
+        "api.drone.views.selectors.get_tip_status_line_sdwt_options_payload",
+        return_value={
+            "lines": [{"lineId": "L1", "userSdwtProds": ["SD-10"]}],
+            "userSdwtProds": ["SD-10"],
+        },
+    )
+    def test_drone_line_sdwt_options(self, _mock_options) -> None:
+        """TIP status line/user_sdwt_prod 옵션 API가 정상 응답하는지 확인합니다."""
+        response = self.client.get(reverse("line-dashboard-line-sdwt-options"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "lines": [{"lineId": "L1", "userSdwtProds": ["SD-10"]}],
+                "userSdwtProds": ["SD-10"],
+            },
+        )
 
     @patch(
         "api.drone.views.selectors.list_drone_sop_jira_target_user_sdwt_prods",

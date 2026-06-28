@@ -15,6 +15,7 @@ from django.test import SimpleTestCase, TestCase, override_settings
 from api.data_movement.common.services.postgres_copy import CopyFullReplaceResult
 from api.data_movement.station_master.management.commands.load_station_master import services
 from api.data_movement.station_master.models import StationMaster, StationMasterLoadJob
+from api.data_movement.station_master.selectors import list_distinct_sdwt_prod_lookup_values
 from api.data_movement.station_master.services import loader as loader_module
 from api.data_movement.station_master.services import spec
 from api.data_movement.station_master.services.loader import LoadFileOutcome, LoadRunSummary
@@ -98,6 +99,18 @@ class StationMasterStructureTests(SimpleTestCase):
 @override_settings(DATA_MOVEMENT_FILE_READY_MIN_AGE_SECONDS=0, DATA_MOVEMENT_FILE_READY_STABILITY_SECONDS=0)
 class StationMasterLifecycleTests(TestCase):
     """station_master 수신 파일과 loader 처리 파일의 생명주기를 검증합니다."""
+
+    def test_list_distinct_sdwt_prod_lookup_values_returns_normalized_values(self) -> None:
+        """빈 lookup을 제외하고 station_master 소속 lookup 값 집합을 반환합니다."""
+
+        StationMaster.objects.create(station="E01", sdwt_prod="sd-10")
+        StationMaster.objects.create(station="E02", sdwt_prod=" SD-20 ")
+        StationMaster.objects.create(station="E03", sdwt_prod="")
+        StationMaster.objects.create(station="E04", sdwt_prod=None)
+
+        values = list_distinct_sdwt_prod_lookup_values()
+
+        self.assertEqual(values, {"SD-10", "SD-20"})
 
     def test_loader_replaces_all_rows_in_database(self) -> None:
         """실제 COPY 경로로 기존 전체 row를 새 파일 내용으로 교체합니다."""

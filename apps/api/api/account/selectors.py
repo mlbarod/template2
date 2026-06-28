@@ -21,6 +21,7 @@ from django.db.models.functions import Lower
 from django.utils import timezone
 
 from api.common.services import UNKNOWN, UNCLASSIFIED_USER_SDWT_PROD
+from api.data_movement.station_master import selectors as station_master_selectors
 
 from .models import (
     Affiliation,
@@ -1562,7 +1563,7 @@ def list_current_affiliation_users_by_user_sdwt_prod(*, user_sdwt_prod: str) -> 
 
 
 def list_line_sdwt_pairs() -> list[dict[str, str]]:
-    """선택 가능한 (line_id, user_sdwt_prod) 쌍 목록을 조회합니다.
+    """station_master 매칭이 있는 선택 가능한 (line_id, user_sdwt_prod) 쌍 목록을 조회합니다.
 
     입력:
     - 없음
@@ -1578,7 +1579,16 @@ def list_line_sdwt_pairs() -> list[dict[str, str]]:
     """
 
     # -----------------------------------------------------------------------------
-    # 1) 라인/소속 값 조회 및 정제
+    # 1) station_master에 존재하는 소속 lookup key 조회
+    # -----------------------------------------------------------------------------
+    station_user_sdwt_lookup_keys = (
+        station_master_selectors.list_distinct_sdwt_prod_lookup_values()
+    )
+    if not station_user_sdwt_lookup_keys:
+        return []
+
+    # -----------------------------------------------------------------------------
+    # 2) 라인/소속 값 조회 및 정제
     # -----------------------------------------------------------------------------
     pairs = (
         Affiliation.objects.filter(line__isnull=False)
@@ -1590,9 +1600,13 @@ def list_line_sdwt_pairs() -> list[dict[str, str]]:
         .order_by("line", "user_sdwt_prod")
     )
     # -----------------------------------------------------------------------------
-    # 2) 응답 형식 변환
+    # 3) station_master 매칭 행만 응답 형식으로 변환
     # -----------------------------------------------------------------------------
-    return [{"line_id": row["line"], "user_sdwt_prod": row["user_sdwt_prod"]} for row in pairs]
+    return [
+        {"line_id": row["line"], "user_sdwt_prod": row["user_sdwt_prod"]}
+        for row in pairs
+        if row["user_sdwt_prod"].strip().upper() in station_user_sdwt_lookup_keys
+    ]
 
 
 def list_user_sdwt_prod_values_for_line(*, line_id: str) -> list[str]:

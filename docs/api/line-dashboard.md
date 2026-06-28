@@ -21,6 +21,7 @@ Line Dashboard API는 Drone SOP, 라인 테이블, 히스토리, 알림 설정�
 | 테이블 | `PATCH /api/v1/line-dashboard/tables/update` | 테이블 row 수정 |
 | 히스토리 | `GET /api/v1/line-dashboard/history` | 라인 히스토리 집계 |
 | 라인 | `GET /api/v1/line-dashboard/line-ids` | 라인 목록 |
+| 라인 | `GET /api/v1/line-dashboard/line-sdwt-options` | TIP status line/user_sdwt_prod 옵션 |
 | Jira | `GET/POST /api/v1/line-dashboard/jira-keys` | Jira key |
 | Jira | `GET /api/v1/line-dashboard/jira-user-sdwt-prods` | Jira 사용자 소속 후보 |
 | 알림 대상 | `GET/POST/PATCH/DELETE /api/v1/line-dashboard/notification-targets` | 알림 대상 |

@@ -50,7 +50,7 @@ feature 내부 파일은 다른 feature를 import하지 않습니다. 여러 fea
 | `account` | `/settings/account`, `/settings/members` | 내 계정, 소속, 멤버/권한 관리 |
 | `emails` | `/emails/inbox`, `/emails/sent`, `/emails/members` | 받은 메일, 보낸 메일, mailbox member |
 | `assistant` | `/assistant` | RAG 기반 채팅 |
-| `line-dashboard` | `/ESOP_Dashboard`, `/ESOP_Dashboard/status/:lineId`, `/ESOP_Dashboard/history/:lineId`, `/ESOP_Dashboard/settings/:lineId`, `/ESOP_Dashboard/settings/notification/:lineId`, `/ESOP_Dashboard/settings/recipients/:lineId`, `/ESOP_Dashboard/overview` | Drone SOP 현황/이력/설정 |
+| `line-dashboard` | `/ESOP_Dashboard`, `/ESOP_Dashboard/status/:lineId`, `/ESOP_Dashboard/tip-status`, `/ESOP_Dashboard/tip-status/:lineId`, `/ESOP_Dashboard/history/:lineId`, `/ESOP_Dashboard/settings/:lineId`, `/ESOP_Dashboard/settings/notification/:lineId`, `/ESOP_Dashboard/settings/recipients/:lineId`, `/ESOP_Dashboard/overview` | Drone SOP 현황/이력/설정 |
 | `l3-spider` | `/l3_spider` | EDS Parquet 기반 반도체 이상감지 대시보드 |
 | `observer` | `/observer`, `/observer/:eqpId` | 설비 로그 observer |
 | `appstore` | `/appstore` | 내부 앱 목록/등록/댓글 |

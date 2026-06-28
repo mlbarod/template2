@@ -14,6 +14,7 @@ from django.db.models.functions import Lower
 
 import api.account.selectors as account_selectors
 from api.common.services.db import run_query
+from api.data_movement.station_master import selectors as station_master_selectors
 
 from .models import (
     DroneEarlyInform,
@@ -1037,6 +1038,53 @@ def list_drone_sop_mapping_option_lines() -> list[dict[str, object]]:
             }
         )
     return option_lines
+
+
+def get_tip_status_line_sdwt_options_payload() -> dict[str, object]:
+    """TIP status 화면용 Drone target line/user_sdwt_prod 옵션을 반환합니다.
+
+    반환:
+        {"lines": [{"lineId": "...", "userSdwtProds": [...]}], "userSdwtProds": [...]} 형태.
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+    """
+
+    station_lookup_keys = station_master_selectors.list_distinct_sdwt_prod_lookup_values()
+    if not station_lookup_keys:
+        return {"lines": [], "userSdwtProds": []}
+
+    rows = (
+        DroneSopTarget.objects.exclude(line_id__isnull=True)
+        .exclude(line_id__exact="")
+        .exclude(target_user_sdwt_prod__isnull=True)
+        .exclude(target_user_sdwt_prod__exact="")
+        .values("line_id", "target_user_sdwt_prod")
+        .distinct()
+        .order_by("line_id", "target_user_sdwt_prod")
+    )
+    grouped: dict[str, list[str]] = {}
+    all_values: list[str] = []
+    for row in rows:
+        line_id = normalize_text(row.get("line_id"))
+        target_value = normalize_text(row.get("target_user_sdwt_prod"))
+        if not line_id or not target_value:
+            continue
+        if target_value.strip().upper() not in station_lookup_keys:
+            continue
+        grouped.setdefault(line_id, []).append(target_value)
+        all_values.append(target_value)
+
+    return {
+        "lines": [
+            {
+                "lineId": line_id,
+                "userSdwtProds": collapse_display_values(values),
+            }
+            for line_id, values in grouped.items()
+        ],
+        "userSdwtProds": collapse_display_values(all_values),
+    }
 
 
 def list_drone_sop_target_user_sdwt_prod_values() -> list[str]:

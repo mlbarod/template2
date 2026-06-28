@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
@@ -797,7 +798,7 @@ class AffiliationSelectorTests(TestCase):
         )
 
     def test_list_line_sdwt_pairs_filters_and_orders(self) -> None:
-        """라인-소속 쌍이 필터링되고 정렬되는지 확인합니다."""
+        """station_master에 존재하는 라인-소속 쌍만 정렬 반환되는지 확인합니다."""
         Affiliation.objects.bulk_create(
             [
                 Affiliation(department="DeptA", line="L1", user_sdwt_prod="S1"),
@@ -808,15 +809,31 @@ class AffiliationSelectorTests(TestCase):
             ignore_conflicts=True,
         )
 
-        rows = list_line_sdwt_pairs()
+        with patch(
+            "api.account.selectors.station_master_selectors.list_distinct_sdwt_prod_lookup_values",
+            return_value={"S1", "S2"},
+        ):
+            rows = list_line_sdwt_pairs()
+
         self.assertEqual(
             rows,
             [
                 {"line_id": "L1", "user_sdwt_prod": "S1"},
                 {"line_id": "L1", "user_sdwt_prod": "S2"},
-                {"line_id": "L2", "user_sdwt_prod": "S0"},
             ],
         )
+
+    def test_list_line_sdwt_pairs_returns_empty_without_station_match(self) -> None:
+        """station_master 매칭 값이 없으면 선택지를 반환하지 않습니다."""
+        _affiliation(department="DeptA", line="L1", user_sdwt_prod="S1")
+
+        with patch(
+            "api.account.selectors.station_master_selectors.list_distinct_sdwt_prod_lookup_values",
+            return_value=set(),
+        ):
+            rows = list_line_sdwt_pairs()
+
+        self.assertEqual(rows, [])
 
 
 class AccessibleUserSdwtProdTests(TestCase):

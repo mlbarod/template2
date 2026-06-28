@@ -19,6 +19,7 @@ from django.db import connection
 from api.data_movement.eqp_status_chg import selectors as eqp_status_chg_selectors
 from api.data_movement.mi_tip_update_hist import selectors as mi_tip_update_hist_selectors
 from api.data_movement.racb_list import selectors as racb_list_selectors
+from api.drone import selectors as drone_selectors
 
 DEFAULT_LOG_QUERY_DAYS = 60
 MAX_LOG_LIMIT = 5000
@@ -144,7 +145,7 @@ def normalize_id(value: str | None) -> str:
 
 
 def list_lines() -> List[Dict[str, str]]:
-    """라인 목록을 반환합니다.
+    """Drone target 기준으로 Observer에서 선택 가능한 라인 목록을 반환합니다.
 
     입력:
     - 없음
@@ -159,31 +160,19 @@ def list_lines() -> List[Dict[str, str]]:
     - DB 연결 실패 시 예외
     """
 
-    rows = _fetch_all(
-        """
-        select distinct
-            mapping.gpm_line_name as id,
-            mapping.gpm_line_name as name
-        from mes_line_mapping_info mapping
-        join station_master station
-          on station.floor_line_id = mapping.msg_line_id
-        where mapping.gbm_name = 'MEMORY'
-          and mapping.use_yn = 'Y'
-          and mapping.del_yn = 'N'
-          and mapping.gpm_line_name is not null
-          and station.sdwt_prod_lookup is not null
-        order by mapping.gpm_line_name
-        """
-    )
+    payload = drone_selectors.get_tip_status_line_sdwt_options_payload()
+    rows = payload.get("lines") if isinstance(payload, dict) else []
     return [
-        _build_text_record(row, (("id", "id"), ("name", "name")))
+        {"id": line_id, "name": line_id}
         for row in rows
-        if row.get("id") is not None
+        if isinstance(row, dict)
+        for line_id in [_safe_text(row.get("lineId")).strip()]
+        if line_id
     ]
 
 
 def list_sdwt_for_line(*, line_id: str) -> List[Dict[str, str]]:
-    """라인 기준 SDWT 목록을 반환합니다.
+    """Drone target line 기준으로 station_master에 존재하는 user_sdwt_prod 목록을 반환합니다.
 
     입력:
     - line_id: 라인 ID
@@ -200,30 +189,27 @@ def list_sdwt_for_line(*, line_id: str) -> List[Dict[str, str]]:
 
     filters = _normalize_filters(line_id=line_id)
     line_key = filters["line_id"]
-    rows = _fetch_all(
-        """
-        select distinct
-            station.sdwt_prod as id
-        from station_master station
-        join mes_line_mapping_info mapping
-          on mapping.msg_line_id = station.floor_line_id
-        where mapping.gpm_line_name_lookup = %s
-          and mapping.gbm_name = 'MEMORY'
-          and mapping.use_yn = 'Y'
-          and mapping.del_yn = 'N'
-          and station.sdwt_prod is not null
-        order by station.sdwt_prod
-        """,
-        [line_key],
+    payload = drone_selectors.get_tip_status_line_sdwt_options_payload()
+    rows = payload.get("lines") if isinstance(payload, dict) else []
+    matched_line = next(
+        (
+            row
+            for row in rows
+            if isinstance(row, dict) and normalize_id(_safe_text(row.get("lineId"))) == line_key
+        ),
+        {},
     )
+    values = matched_line.get("userSdwtProds") if isinstance(matched_line, dict) else []
 
     return [
         {
-            **_build_text_record(row, (("id", "id"), ("name", "id"))),
+            "id": value,
+            "name": value,
             "lineId": line_key,
         }
-        for row in rows
-        if row.get("id") is not None
+        for raw_value in values
+        for value in [_safe_text(raw_value).strip()]
+        if value
     ]
 
 

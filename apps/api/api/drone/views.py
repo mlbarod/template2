@@ -1767,6 +1767,39 @@ class LineIdListView(APIView):
             )
 
 
+class LineDashboardLineSdwtOptionsView(APIView):
+    """TIP status 화면용 line/user_sdwt_prod 옵션을 반환합니다."""
+
+    def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """Drone target과 station_master 기준 선택 옵션을 반환합니다.
+
+        요청 예시:
+            예시 요청: GET /api/v1/line-dashboard/line-sdwt-options
+
+        반환:
+            예시 응답: 200 {"lines": [{"lineId": "L1", "userSdwtProds": ["S1"]}]}
+
+        부작용:
+            없음. 읽기 전용 조회입니다.
+
+        오류:
+            500: 서버 오류
+
+        snake_case/camelCase 호환:
+            입력 파라미터는 없습니다.
+        """
+        # -----------------------------------------------------------------------------
+        # 1) Drone target 기준 line/user_sdwt_prod 옵션 조회
+        # -----------------------------------------------------------------------------
+        try:
+            return JsonResponse(selectors.get_tip_status_line_sdwt_options_payload())
+        except Exception:  # 방어적 로깅 (pragma: no cover)
+            return _internal_server_error_response(
+                log_message="Failed to load line SDWT options",
+                error_message="Failed to load line SDWT options",
+            )
+
+
 class DroneTablesView(APIView):
     """라인 대시보드 테이블 조회 엔드포인트입니다."""
 

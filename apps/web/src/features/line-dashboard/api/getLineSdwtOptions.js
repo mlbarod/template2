@@ -1,1 +1,1 @@
-export { getLineSdwtOptions } from "@/lib/affiliation"
+export { getLineDashboardLineSdwtOptions as getLineSdwtOptions } from "@/lib/affiliation"
