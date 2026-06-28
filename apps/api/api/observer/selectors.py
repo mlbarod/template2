@@ -23,6 +23,7 @@ from api.drone import selectors as drone_selectors
 
 DEFAULT_LOG_QUERY_DAYS = 60
 MAX_LOG_LIMIT = 5000
+TKIN_PREVENT_REGISTRATION_LEVELS = ("LEVEL1", "LEVEL2", "LEVEL3")
 TKIN_PREVENT_LEVEL2_NAMES = {"LEVEL2", "LEVEL3"}
 
 Row = Dict[str, object]
@@ -402,6 +403,19 @@ def _tkin_scope_params(
     return [filters["user_sdwt_prod"], filters["prc_group"]]
 
 
+def _tkin_registration_level_clause() -> str:
+    """TIP 상태 조회 대상 registration_level 조건을 반환합니다."""
+
+    placeholders = ", ".join(["%s"] * len(TKIN_PREVENT_REGISTRATION_LEVELS))
+    return f"and upper(trim(prevent.registration_level)) in ({placeholders})"
+
+
+def _tkin_registration_level_params() -> List[object]:
+    """TIP 상태 조회 대상 registration_level 파라미터를 반환합니다."""
+
+    return list(TKIN_PREVENT_REGISTRATION_LEVELS)
+
+
 def _build_tkin_option(row: Row, field_name: str) -> Dict[str, str]:
     """dropdown option 응답을 생성합니다."""
 
@@ -439,9 +453,13 @@ def list_tkin_prevent_processes(
           on upper(trim(prevent.eqp_id)) = upper(trim(target_eqp.eqp_id))
         where prevent.process_id is not null
           and trim(prevent.process_id) <> ''
+          {_tkin_registration_level_clause()}
         order by prevent.process_id
         """,
-        _tkin_scope_params(user_sdwt_prod=user_sdwt_prod, prc_group=prc_group),
+        [
+            *_tkin_scope_params(user_sdwt_prod=user_sdwt_prod, prc_group=prc_group),
+            *_tkin_registration_level_params(),
+        ],
     )
     return [
         _build_tkin_option(row, "process_id")
@@ -485,11 +503,13 @@ def list_tkin_prevent_step_seqs(
         where upper(trim(prevent.process_id)) = %s
           and prevent.step_seq is not null
           and trim(prevent.step_seq) <> ''
+          {_tkin_registration_level_clause()}
         order by prevent.step_seq
         """,
         [
             *_tkin_scope_params(user_sdwt_prod=user_sdwt_prod, prc_group=prc_group),
             process_key,
+            *_tkin_registration_level_params(),
         ],
     )
     return [
@@ -576,12 +596,14 @@ def get_tkin_prevent_matrix(
           and upper(trim(prevent.step_seq)) = %s
           and prevent.ppid is not null
           and trim(prevent.ppid) <> ''
+          {_tkin_registration_level_clause()}
         order by prevent.ppid, prevent.eqp_id, prevent.tkin_prevent_chamber_id
         """,
         [
             *_tkin_scope_params(user_sdwt_prod=user_sdwt_prod, prc_group=prc_group),
             filters["process_id"],
             filters["step_seq"],
+            *_tkin_registration_level_params(),
         ],
     )
 

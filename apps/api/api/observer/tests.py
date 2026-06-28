@@ -343,7 +343,11 @@ class ObserverEndpointTests(TestCase):
         self.assertNotIn("gpm_line_name_lookup", query)
         self.assertIn("station.sdwt_prod_lookup = %s", query)
         self.assertIn("station.prc_group_lookup = %s", query)
-        self.assertEqual(params, ["SD-10", "ETCH"])
+        self.assertIn(
+            "upper(trim(prevent.registration_level)) in (%s, %s, %s)",
+            query,
+        )
+        self.assertEqual(params, ["SD-10", "ETCH", "LEVEL1", "LEVEL2", "LEVEL3"])
 
     def test_tkin_prevent_prc_groups_selector_uses_station_master(self) -> None:
         with patch(
@@ -374,7 +378,14 @@ class ObserverEndpointTests(TestCase):
         query, params = fetch_all.call_args.args
         self.assertEqual(steps[0]["id"], "10")
         self.assertIn("upper(trim(prevent.process_id)) = %s", query)
-        self.assertEqual(params, ["SD-10", "ETCH", "PROC-1"])
+        self.assertIn(
+            "upper(trim(prevent.registration_level)) in (%s, %s, %s)",
+            query,
+        )
+        self.assertEqual(
+            params,
+            ["SD-10", "ETCH", "PROC-1", "LEVEL1", "LEVEL2", "LEVEL3"],
+        )
 
     def test_tkin_prevent_matrix_formats_cells(self) -> None:
         with patch(
@@ -412,6 +423,14 @@ class ObserverEndpointTests(TestCase):
         query, params = fetch_all.call_args.args
         self.assertEqual(matrix["totalRows"], 1)
         self.assertEqual(matrix["totalColumns"], 2)
+        self.assertIn(
+            "upper(trim(prevent.registration_level)) in (%s, %s, %s)",
+            query,
+        )
+        self.assertEqual(
+            params,
+            ["SD-10", "ETCH", "PROC-1", "10", "LEVEL1", "LEVEL2", "LEVEL3"],
+        )
         self.assertEqual(matrix["columns"][0]["label"], "EQP-1-CH-1")
         self.assertEqual(matrix["rows"][0]["cells"]["EQP-1-CH-1"][0]["status"], "DOING")
         self.assertEqual(
@@ -420,7 +439,6 @@ class ObserverEndpointTests(TestCase):
         )
         self.assertIn("upper(trim(prevent.process_id)) = %s", query)
         self.assertIn("upper(trim(prevent.step_seq)) = %s", query)
-        self.assertEqual(params, ["SD-10", "ETCH", "PROC-1", "10"])
 
     def test_observer_equipment_info_returns_result(self) -> None:
         payload = {
