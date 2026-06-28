@@ -5,8 +5,12 @@
 # =============================================================================
 from __future__ import annotations
 
+import fnmatch
 import functools
+import json
 import math
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -22,6 +26,7 @@ SUMMARY_COLUMNS = ["step_seq", "ppid", "eqp_id", "eqc", "bin_name", "display_sta
 # 파일명에서 step_seq/ppid 파싱 성공 시 파일에서 읽을 컬럼 (절반으로 감소)
 _SUMMARY_COLUMNS_SLIM = ["eqc", "bin_name", "display_status"]
 _SUMMARY_DEDUP_KEYS = ["step_seq", "ppid", "eqc", "bin_name", "display_status"]
+_STATS_COLUMNS = ["eqc", "bin_name", "display_status", "tkin_time"]
 CHART_COLUMNS = [
     "tkin_time",
     "tkout_time",
@@ -49,6 +54,39 @@ CHART_COLUMNS = [
 ]
 ANOMALY_STATUSES = {"Warning", "High Risk Chamber"}
 _MAX_PARALLEL_WORKERS = 8
+
+
+class _SimpleCache:
+    """스레드 안전한 TTL 인메모리 캐시."""
+
+    def __init__(self, ttl: float = 600.0) -> None:
+        self._ttl = ttl
+        self._lock = threading.Lock()
+        self._store: dict[str, tuple[float, Any]] = {}
+
+    def get(self, key: str) -> Any:
+        with self._lock:
+            entry = self._store.get(key)
+            if entry is None:
+                return None
+            ts, value = entry
+            if time.monotonic() - ts > self._ttl:
+                del self._store[key]
+                return None
+            return value
+
+    def set(self, key: str, value: Any) -> None:
+        with self._lock:
+            self._store[key] = (time.monotonic(), value)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._store.clear()
+
+
+_meta_cache = _SimpleCache(ttl=600.0)
+_structure_cache = _SimpleCache(ttl=600.0)
+_stats_cache = _SimpleCache(ttl=600.0)
 
 
 class L3SpiderServiceError(Exception):
@@ -103,6 +141,15 @@ def _has_required_selection(selection: dict[str, object]) -> bool:
     return all(selection.get(key) for key in ("dates", "lineIds", "processIds", "edsSteps"))
 
 
+def _make_selection_cache_key(selection: dict) -> str:
+    return json.dumps({
+        "dates": sorted(selection.get("dates") or []),
+        "lineIds": sorted(selection.get("lineIds") or []),
+        "processIds": sorted(selection.get("processIds") or []),
+        "edsSteps": sorted(selection.get("edsSteps") or []),
+    }, sort_keys=True)
+
+
 def _parse_filename_key(path: Path) -> tuple[str, str] | None:
     """파일명에서 (step_seq, ppid)를 파싱합니다."""
     try:
@@ -119,6 +166,13 @@ def _parse_filename_key(path: Path) -> tuple[str, str] | None:
 
 def _add_path_context(frame: pd.DataFrame, path: Path, *, override_filename_keys: bool = False) -> pd.DataFrame:
     relative_parts = path.relative_to(selectors.get_data_root()).parts
+    # parts: (date, line_id, process_id, eds_step, filename)
+    if len(relative_parts) >= 1:
+        frame["date"] = relative_parts[0]
+    if len(relative_parts) >= 2:
+        frame["line_id"] = relative_parts[1]
+    if len(relative_parts) >= 3:
+        frame["process_id"] = relative_parts[2]
     if len(relative_parts) >= 4:
         frame["eds_step"] = relative_parts[3]
 
@@ -152,6 +206,19 @@ def _read_summary_file(path: Path) -> pd.DataFrame | None:
         return frame.drop_duplicates(subset=available_dedup) if not frame.empty else None
     except Exception as exc:
         print(f"[WARN] L3 Spider summary read failed: {path}: {exc}")
+        return None
+
+
+def _read_stats_file(path: Path) -> pd.DataFrame | None:
+    """stats 읽기: 3컬럼만 읽고 파일명에서 eds_step/step_seq/ppid 추가."""
+    try:
+        parsed = _parse_filename_key(path)
+        frame = selectors.read_parquet_columns(path, _STATS_COLUMNS)
+        frame = _normalize_display_status(frame)
+        frame = _add_path_context(frame, path, override_filename_keys=bool(parsed))
+        return frame if not frame.empty else None
+    except Exception as exc:
+        print(f"[WARN] L3 Spider stats read failed: {path}: {exc}")
         return None
 
 
@@ -279,12 +346,16 @@ def _dataframe_to_columnar(merged: pd.DataFrame) -> dict[str, object]:
 # ─── 서비스 함수 ─────────────────────────────────────────────────────────────
 
 def get_meta() -> dict[str, object]:
-    """사용 가능한 날짜/라인/프로세스/EDS step 메타데이터를 반환합니다."""
-    dates: set[str] = set()
-    line_ids: set[str] = set()
-    process_ids: set[str] = set()
-    eds_steps: set[str] = set()
-    availability: dict[str, dict[str, dict[str, set[str]]]] = {}
+    """사용 가능한 날짜/라인/프로세스/EDS step 메타데이터를 반환합니다.
+
+    활성 제외 필터의 경로 필드(line_id, process_id, eds_step)를 적용하여
+    완전히 제외된 항목은 DataSelector에 표시되지 않습니다.
+    """
+    rules = _get_exclusion_rules()
+    rules_hash = str(hash(tuple(sorted(str(r) for r in rules))))
+    cached = _meta_cache.get(rules_hash)
+    if cached is not None:
+        return cached
 
     try:
         files = list(selectors.iter_all_data_files())
@@ -294,18 +365,40 @@ def get_meta() -> dict[str, object]:
         raise L3SpiderServiceError(str(exc), status_code=400) from exc
 
     root = selectors.get_data_root()
+    file_rows: list[dict[str, str]] = []
     for path in files:
         parts = path.relative_to(root).parts
         if len(parts) != 5:
             continue
         date, line_id, process_id, eds_step = parts[:4]
-        dates.add(date)
-        line_ids.add(line_id)
-        process_ids.add(process_id)
-        eds_steps.add(eds_step)
-        availability.setdefault(date, {}).setdefault(line_id, {}).setdefault(process_id, set()).add(eds_step)
+        file_rows.append({
+            "date": date,
+            "line_id": line_id,
+            "process_id": process_id,
+            "eds_step": eds_step,
+        })
 
-    return {
+    if file_rows:
+        df = pd.DataFrame(file_rows).drop_duplicates()
+        # step_seq·ppid·eqc·bin_name 컬럼 없음 → 해당 필드 규칙은 자동으로 무시
+        df = _apply_exclusion_filters_with_rules(df, rules)
+    else:
+        df = pd.DataFrame(columns=["date", "line_id", "process_id", "eds_step"])
+
+    dates: set[str] = set()
+    line_ids: set[str] = set()
+    process_ids: set[str] = set()
+    eds_steps: set[str] = set()
+    availability: dict[str, dict[str, dict[str, set[str]]]] = {}
+
+    for row in df.itertuples(index=False):
+        dates.add(row.date)
+        line_ids.add(row.line_id)
+        process_ids.add(row.process_id)
+        eds_steps.add(row.eds_step)
+        availability.setdefault(row.date, {}).setdefault(row.line_id, {}).setdefault(row.process_id, set()).add(row.eds_step)
+
+    result = {
         "dates": sorted(dates),
         "lineIds": sorted(line_ids),
         "processIds": sorted(process_ids),
@@ -321,6 +414,329 @@ def get_meta() -> dict[str, object]:
             for date, lines in sorted(availability.items())
         },
     }
+    _meta_cache.set(rules_hash, result)
+    return result
+
+
+def _matches_pattern(value: str, pattern: str) -> bool:
+    """와일드카드 패턴 매칭 (* 또는 % 를 임의 문자열로, 대소문자 무시)."""
+    if pattern == "*":
+        return True
+    return fnmatch.fnmatch(str(value).lower(), pattern.replace("%", "*").lower())
+
+
+def _get_exclusion_rules() -> list[dict]:
+    """활성 제외 필터 규칙을 DB에서 조회합니다.
+
+    multi-worker 환경에서 캐시 불일치를 방지하기 위해 항상 DB를 직접 읽습니다.
+    rules 테이블은 소규모이므로 쿼리 비용이 무시할 수준입니다.
+    """
+    try:
+        from ..models import L3SpiderExclusionFilter
+        return list(
+            L3SpiderExclusionFilter.objects.filter(is_active=True).values(
+                "line_id", "process_id", "eds_step", "step_seq",
+                "ppid", "eqpch", "bin_name", "date_from", "date_to",
+            )
+        )
+    except Exception as exc:
+        print(f"[WARN] L3 Spider exclusion rules load failed: {exc}")
+        return []
+
+
+def _serialize_exclusion_filter(row) -> dict[str, object]:
+    """제외 필터 모델을 API 응답 형태로 변환합니다."""
+
+    created_by = None
+    if row.created_by:
+        created_by = row.created_by.get_full_name() or row.created_by.username
+
+    return {
+        "id": row.id,
+        "lineId": row.line_id,
+        "processId": row.process_id,
+        "edsStep": row.eds_step,
+        "stepSeq": row.step_seq,
+        "ppid": row.ppid,
+        "eqpch": row.eqpch,
+        "binName": row.bin_name,
+        "dateFrom": row.date_from.isoformat() if row.date_from else None,
+        "dateTo": row.date_to.isoformat() if row.date_to else None,
+        "isActive": row.is_active,
+        "memo": row.memo,
+        "createdBy": created_by,
+        "createdAt": row.created_at.strftime("%Y-%m-%d %H:%M"),
+        "updatedAt": row.updated_at.strftime("%Y-%m-%d %H:%M"),
+    }
+
+
+def list_exclusion_filters() -> list[dict[str, object]]:
+    """제외 필터 목록을 최신 등록순으로 조회합니다."""
+
+    from ..models import L3SpiderExclusionFilter
+
+    filters = L3SpiderExclusionFilter.objects.select_related("created_by").all()
+    return [_serialize_exclusion_filter(row) for row in filters]
+
+
+def create_exclusion_filter(data: dict[str, object], *, user) -> dict[str, int]:
+    """제외 필터를 생성하고 관련 캐시를 무효화합니다."""
+
+    from ..models import L3SpiderExclusionFilter
+
+    row = L3SpiderExclusionFilter.objects.create(
+        line_id=data["line_id"],
+        process_id=data["process_id"],
+        eds_step=data["eds_step"],
+        step_seq=data["step_seq"],
+        ppid=data["ppid"],
+        eqpch=data["eqpch"],
+        bin_name=data["bin_name"],
+        date_from=data.get("date_from"),
+        date_to=data.get("date_to"),
+        is_active=data["is_active"],
+        memo=data.get("memo", ""),
+        created_by=user if getattr(user, "is_authenticated", False) else None,
+    )
+    invalidate_exclusion_cache()
+    return {"id": row.id}
+
+
+def update_exclusion_filter(filter_id: int, data: dict[str, object]) -> dict[str, int]:
+    """제외 필터를 부분 수정하고 관련 캐시를 무효화합니다."""
+
+    from ..models import L3SpiderExclusionFilter
+
+    try:
+        row = L3SpiderExclusionFilter.objects.get(pk=filter_id)
+    except L3SpiderExclusionFilter.DoesNotExist as exc:
+        raise L3SpiderServiceError("Not found", status_code=404) from exc
+
+    field_map = {
+        "line_id": "line_id",
+        "process_id": "process_id",
+        "eds_step": "eds_step",
+        "step_seq": "step_seq",
+        "ppid": "ppid",
+        "eqpch": "eqpch",
+        "bin_name": "bin_name",
+        "date_from": "date_from",
+        "date_to": "date_to",
+        "is_active": "is_active",
+        "memo": "memo",
+    }
+    for source, target in field_map.items():
+        if source in data:
+            setattr(row, target, data[source])
+    row.save()
+    invalidate_exclusion_cache()
+    return {"id": row.id}
+
+
+def delete_exclusion_filter(filter_id: int) -> None:
+    """제외 필터를 삭제하고 관련 캐시를 무효화합니다."""
+
+    from ..models import L3SpiderExclusionFilter
+
+    try:
+        row = L3SpiderExclusionFilter.objects.get(pk=filter_id)
+    except L3SpiderExclusionFilter.DoesNotExist as exc:
+        raise L3SpiderServiceError("Not found", status_code=404) from exc
+
+    row.delete()
+    invalidate_exclusion_cache()
+
+
+def invalidate_exclusion_cache() -> None:
+    """필터 변경 시 meta·stats·structure 캐시를 무효화합니다."""
+    _meta_cache.clear()
+    _stats_cache.clear()
+    _structure_cache.clear()
+
+
+def _apply_exclusion_filters_with_rules(merged: pd.DataFrame, rules: list[dict]) -> pd.DataFrame:
+    """주어진 rules를 DataFrame에 적용합니다."""
+    if not rules:
+        return merged
+
+    _FIELD_COL = [
+        ("line_id", "line_id"),
+        ("process_id", "process_id"),
+        ("eds_step", "eds_step"),
+        ("step_seq", "step_seq"),
+        ("ppid", "ppid"),
+        ("eqpch", "eqc"),
+        ("bin_name", "bin_name"),
+    ]
+
+    exclude_mask = pd.Series(False, index=merged.index)
+
+    for rule in rules:
+        row_mask = pd.Series(True, index=merged.index)
+
+        for field, col in _FIELD_COL:
+            pattern = rule.get(field) or "*"
+            if pattern == "*":
+                continue
+            if col not in merged.columns:
+                row_mask = pd.Series(False, index=merged.index)
+                break
+            row_mask = row_mask & merged[col].astype(str).apply(
+                lambda v, p=pattern: _matches_pattern(v, p)
+            )
+
+        # 파일 경로 date 폴더명 기준 날짜 범위 (선택 날짜와 동일 기준)
+        date_from = rule.get("date_from")
+        date_to = rule.get("date_to")
+        if (date_from or date_to) and "date" in merged.columns:
+            date_col = merged["date"].astype(str)
+            if date_from:
+                row_mask = row_mask & (date_col >= date_from.isoformat() if hasattr(date_from, "isoformat") else date_col >= str(date_from))
+            if date_to:
+                row_mask = row_mask & (date_col <= date_to.isoformat() if hasattr(date_to, "isoformat") else date_col <= str(date_to))
+
+        exclude_mask = exclude_mask | row_mask
+
+    return merged[~exclude_mask]
+
+
+def _apply_exclusion_filters(merged: pd.DataFrame) -> pd.DataFrame:
+    """활성 제외 필터를 DB에서 읽어 적용합니다 (get_data 전용)."""
+    return _apply_exclusion_filters_with_rules(merged, _get_exclusion_rules())
+
+
+def get_structure(selection: dict[str, object]) -> dict[str, object]:
+    """파일명 스캔만으로 edsStepSeqs·edsStepPpids를 즉시 반환합니다 (parquet 읽기 없음).
+
+    제외 필터의 경로 필드(line_id, process_id, eds_step, step_seq, ppid)를 적용합니다.
+    eqpch·bin_name 기준 규칙은 parquet 데이터 없이 판단 불가하므로 자동으로 무시됩니다.
+    """
+    empty: dict[str, object] = {"edsStepSeqs": {}, "edsStepPpids": {}}
+    if not _has_required_selection(selection):
+        return empty
+
+    rules = _get_exclusion_rules()
+    rules_hash = str(hash(tuple(sorted(str(r) for r in rules))))
+    cache_key = f"{rules_hash}:{_make_selection_cache_key(selection)}"
+    cached = _structure_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    root = selectors.get_data_root()
+    file_rows: list[dict[str, str]] = []
+
+    try:
+        for path in selectors.iter_data_files(selection):
+            parsed = _parse_filename_key(path)
+            if not parsed:
+                continue
+            step_seq, ppid = parsed
+            relative_parts = path.relative_to(root).parts
+            if len(relative_parts) < 5:
+                continue
+            date, line_id, process_id, eds_step = relative_parts[:4]
+            file_rows.append({
+                "date": date,
+                "line_id": line_id,
+                "process_id": process_id,
+                "eds_step": eds_step,
+                "step_seq": step_seq,
+                "ppid": ppid,
+            })
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        raise L3SpiderServiceError(str(exc), status_code=404) from exc
+
+    if not file_rows:
+        _structure_cache.set(cache_key, empty)
+        return empty
+
+    df = pd.DataFrame(file_rows).drop_duplicates()
+    # eqc·bin_name 컬럼이 없으므로 해당 필드가 있는 규칙은 자동으로 제외 대상 없음 처리됨
+    df = _apply_exclusion_filters_with_rules(df, rules)
+
+    eds_step_seqs: dict[str, set[str]] = {}
+    eds_step_ppids: dict[str, set[str]] = {}
+
+    if not df.empty:
+        for _, row in df[["eds_step", "step_seq", "ppid"]].drop_duplicates().iterrows():
+            eds_step = str(row["eds_step"])
+            step_seq = str(row["step_seq"])
+            ppid_val = str(row["ppid"])
+            eds_step_seqs.setdefault(eds_step, set()).add(step_seq)
+            eds_step_ppids.setdefault(f"{eds_step}|||{step_seq}", set()).add(ppid_val)
+
+    result: dict[str, object] = {
+        "edsStepSeqs": {eds: sorted(steps) for eds, steps in sorted(eds_step_seqs.items())},
+        "edsStepPpids": {key: sorted(ppids) for key, ppids in sorted(eds_step_ppids.items())},
+    }
+    _structure_cache.set(cache_key, result)
+    return result
+
+
+def get_stats(selection: dict[str, object]) -> dict[str, object]:
+    """slim parquet 읽기로 stats + PPID별 last_tkin_time을 반환합니다."""
+    empty: dict[str, object] = {"stats": _empty_stats(), "ppidLastTkinTime": {}}
+    if not _has_required_selection(selection):
+        return empty
+
+    # rules hash를 포함한 cache key: 필터 변경 시 자동으로 다른 key가 사용됨
+    rules = _get_exclusion_rules()
+    rules_hash = str(hash(tuple(sorted(str(r) for r in rules))))
+    cache_key = f"{rules_hash}:{_make_selection_cache_key(selection)}"
+    cached = _stats_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    try:
+        files = list(selectors.iter_data_files(selection))
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        raise L3SpiderServiceError(str(exc), status_code=404) from exc
+
+    frames = _parallel_read(files, _read_stats_file)
+    if not frames:
+        _stats_cache.set(cache_key, empty)
+        return empty
+
+    merged = pd.concat(frames, ignore_index=True)
+    merged = _normalize_display_status(merged)
+    # rules는 이미 읽었으므로 직접 적용 (DB 재조회 방지)
+    merged = _apply_exclusion_filters_with_rules(merged, rules)
+
+    if "display_status" not in merged.columns:
+        _stats_cache.set(cache_key, empty)
+        return empty
+
+    status = merged["display_status"]
+    anomaly_mask = status.isin(ANOMALY_STATUSES)
+    high_risk_mask = status == "High Risk Chamber"
+
+    stats = {
+        "total": int(len(merged)),
+        "normal": int((status == "Normal (Ref)").sum()),
+        "warning": int((status == "Warning").sum()),
+        "risk": int(high_risk_mask.sum()),
+        "anomalySteps": int(merged.loc[anomaly_mask, "step_seq"].dropna().nunique())
+            if "step_seq" in merged.columns else 0,
+        "highRiskEqpchs": int(merged.loc[high_risk_mask, "eqc"].dropna().nunique())
+            if "eqc" in merged.columns else 0,
+    }
+
+    ppid_last_tkin_time: dict[str, str] = {}
+    if {"eds_step", "step_seq", "ppid", "tkin_time"}.issubset(merged.columns):
+        try:
+            tkin = merged[["eds_step", "step_seq", "ppid", "tkin_time"]].copy()
+            tkin["tkin_time"] = pd.to_datetime(tkin["tkin_time"], errors="coerce")
+            tkin = tkin.dropna(subset=["tkin_time"])
+            if not tkin.empty:
+                grouped = tkin.groupby(["eds_step", "step_seq", "ppid"], sort=False)["tkin_time"].max()
+                for (eds, step, ppid), ts in grouped.items():
+                    ppid_last_tkin_time[f"{eds}|||{step}|||{ppid}"] = ts.strftime("%Y-%m-%d %H:%M")
+        except Exception as exc:
+            print(f"[WARN] L3 Spider ppidLastTkinTime compute failed: {exc}")
+
+    result = {"stats": stats, "ppidLastTkinTime": ppid_last_tkin_time}
+    _stats_cache.set(cache_key, result)
+    return result
 
 
 def get_summary(selection: dict[str, object]) -> dict[str, object]:
@@ -547,12 +963,17 @@ def get_data(selection: dict[str, object]) -> dict[str, object]:
         return _empty
 
     merged = pd.concat(frames, ignore_index=True)
+    merged = _normalize_display_status(merged)
+    merged = _apply_exclusion_filters(merged)
+
+    if merged.empty:
+        return _empty
+
     if selected_eqcs:
         merged = _sample_chart_points(merged, ["step_seq", "bin_name"])
     elif checked_bins or selected_step_bins or selected_ppid_bins:
         merged = _sample_chart_points(merged, ["eqc"])
 
-    merged = _normalize_display_status(merged)
     if "comment" not in merged.columns:
         merged["comment"] = None
 
@@ -587,7 +1008,9 @@ def get_filter_candidates(selection: dict[str, object]) -> dict[str, object]:
     def _read_candidate_file(path: Path) -> pd.DataFrame | None:
         try:
             frame = selectors.read_parquet_columns(path, ["eqc", "bin_name", "display_status"])
-            return _normalize_display_status(frame)
+            frame = _normalize_display_status(frame)
+            frame = _add_path_context(frame, path)
+            return frame
         except Exception as exc:
             print(f"[WARN] L3 Spider filter-candidates read failed: {path}: {exc}")
             return None
@@ -597,6 +1020,7 @@ def get_filter_candidates(selection: dict[str, object]) -> dict[str, object]:
         return {"eqcHighRiskBins": {}}
 
     merged = pd.concat(frames, ignore_index=True)
+    merged = _apply_exclusion_filters(merged)
 
     eqc_high_risk_bins: dict[str, list[str]] = {}
     if {"eqc", "bin_name", "display_status"}.issubset(merged.columns):

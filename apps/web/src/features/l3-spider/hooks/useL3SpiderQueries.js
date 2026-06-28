@@ -5,6 +5,8 @@ import {
   fetchL3SpiderData,
   fetchL3SpiderFilterCandidates,
   fetchL3SpiderMeta,
+  fetchL3SpiderStats,
+  fetchL3SpiderStructure,
   fetchL3SpiderSummary,
   l3SpiderQueryKeys,
 } from "../api"
@@ -19,6 +21,24 @@ export function useL3SpiderMeta() {
   return useQuery({
     queryKey: l3SpiderQueryKeys.meta(),
     queryFn: fetchL3SpiderMeta,
+  })
+}
+
+export function useL3SpiderStructure(selection) {
+  const selectionKey = buildSelectionKey(selection)
+  return useQuery({
+    queryKey: l3SpiderQueryKeys.structure(selectionKey),
+    queryFn: () => fetchL3SpiderStructure(buildSelectionPayload(selection)),
+    enabled: hasCompleteSelection(selection),
+  })
+}
+
+export function useL3SpiderStats(selection) {
+  const selectionKey = buildSelectionKey(selection)
+  return useQuery({
+    queryKey: l3SpiderQueryKeys.stats(selectionKey),
+    queryFn: () => fetchL3SpiderStats(buildSelectionPayload(selection)),
+    enabled: hasCompleteSelection(selection),
   })
 }
 

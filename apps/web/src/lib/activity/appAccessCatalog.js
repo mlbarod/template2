@@ -26,7 +26,7 @@ const APP_ACCESS_RULES = [
   },
   {
     appId: "pm-spider",
-    appName: "PM SPIDER",
+    appName: "PM Spider",
     prefixes: ["/pm_spider"],
   },
   {

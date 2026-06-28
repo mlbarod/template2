@@ -93,7 +93,7 @@ export const PORTAL_BRAND_REGISTRY = Object.freeze({
   },
   "pm-spider": {
     key: "pm-spider",
-    name: "PM SPIDER",
+    name: "PM Spider",
     pathPrefixes: ["/pm_spider"],
     mark: {
       type: "image",

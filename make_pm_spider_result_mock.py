@@ -1,9 +1,9 @@
 """
-make_dashboard_mock.py — 대시보드 연동 테스트용 mock 데이터 생성
-DASHBOARD_SPEC.md 기준
+make_pm_spider_result_mock.py — PM SPIDER 결과 모의 데이터 생성
+score_data와 decomp_data 구조를 생성합니다.
 
-대시보드 서버에서 실행:
-  python make_dashboard_mock.py
+실행:
+  python make_pm_spider_result_mock.py
 """
 from pathlib import Path
 import numpy as np

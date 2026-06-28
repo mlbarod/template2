@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from django.test import SimpleTestCase, override_settings
 
@@ -17,6 +18,18 @@ from . import services
 
 class L3SpiderServiceTests(SimpleTestCase):
     """L3 Spider 파일 기반 서비스 동작을 검증합니다."""
+
+    def _columnar_rows(self, data: dict[str, object]) -> list[dict[str, object]]:
+        """columnar 응답을 테스트 검증용 row 목록으로 변환합니다."""
+
+        cols = data.get("cols", [])
+        col_data = data.get("colData", [])
+        if not cols or not col_data:
+            return []
+        return [
+            {column: col_data[column_index][row_index] for column_index, column in enumerate(cols)}
+            for row_index in range(len(col_data[0]))
+        ]
 
     def _write_sample(self, root: Path) -> None:
         """테스트용 Parquet 파일을 생성합니다."""
@@ -105,10 +118,15 @@ class L3SpiderServiceTests(SimpleTestCase):
                 "checkedBins": ["BIN_A"],
             }
 
-            with override_settings(L3_SPIDER_DATA_ROOT=str(root)):
+            with override_settings(L3_SPIDER_DATA_ROOT=str(root)), patch.object(
+                services,
+                "_get_exclusion_rules",
+                return_value=[],
+            ):
                 meta = services.get_meta()
                 summary = services.get_summary(selection)
                 data = services.get_data(selection)
+                rows = self._columnar_rows(data)
 
         self.assertEqual(meta["lineIds"], ["L1"])
         self.assertEqual(meta["processIds"], ["P1"])
@@ -119,8 +137,8 @@ class L3SpiderServiceTests(SimpleTestCase):
         self.assertEqual(summary["ppidHighRiskEqcs"], {"PPID_A": ["EQC_A"]})
         self.assertEqual(summary["eqcHighRiskBins"], {"EQC_A": ["BIN_A"]})
         self.assertEqual(summary["anomalies"][0]["binName"], "BIN_A")
-        self.assertEqual(data["rows"][0]["stepSeq"], "S1")
-        self.assertIn("displayStatus", data["rows"][0])
+        self.assertEqual(rows[0]["stepSeq"], "S1")
+        self.assertIn("displayStatus", rows[0])
 
     def test_extensionless_filename_key_supplies_step_and_ppid(self) -> None:
         """확장자 없는 STEP#PPID#N 파일명이 summary/data 필터에 반영되는지 확인합니다."""
@@ -141,11 +159,16 @@ class L3SpiderServiceTests(SimpleTestCase):
                 "checkedBins": ["BIN_A"],
             }
 
-            with override_settings(L3_SPIDER_DATA_ROOT=str(root)):
+            with override_settings(L3_SPIDER_DATA_ROOT=str(root)), patch.object(
+                services,
+                "_get_exclusion_rules",
+                return_value=[],
+            ):
                 summary = services.get_summary(selection)
                 data = services.get_data(selection)
+                rows = self._columnar_rows(data)
 
         self.assertEqual(summary["stepPpids"], {"S1": ["PPID_A"]})
         self.assertEqual(summary["edsStepPpids"], {"EDS_M|||S1": ["PPID_A"]})
-        self.assertEqual(data["rows"][0]["stepSeq"], "S1")
-        self.assertEqual(data["rows"][0]["ppid"], "PPID_A")
+        self.assertEqual(rows[0]["stepSeq"], "S1")
+        self.assertEqual(rows[0]["ppid"], "PPID_A")

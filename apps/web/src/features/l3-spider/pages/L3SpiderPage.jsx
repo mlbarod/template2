@@ -5,17 +5,18 @@ import { Button } from "@/components/ui/button"
 
 import { L3SpiderChart } from "../components/L3SpiderChart"
 import { L3SpiderDataSelector } from "../components/L3SpiderDataSelector"
+import { L3SpiderExclusionSheet } from "../components/L3SpiderExclusionSheet"
 import { L3SpiderFilterPanel } from "../components/L3SpiderFilterPanel"
 import {
   useL3SpiderData,
   useL3SpiderFilterCandidates,
   useL3SpiderMeta,
-  useL3SpiderSummary,
+  useL3SpiderStats,
+  useL3SpiderStructure,
 } from "../hooks/useL3SpiderQueries"
 import {
   EMPTY_META,
   EMPTY_SELECTION,
-  EMPTY_SUMMARY,
   hasCompleteSelection,
 } from "../utils/selection"
 
@@ -34,10 +35,10 @@ export function L3SpiderPage() {
 
 
   const metaQuery = useL3SpiderMeta()
-  const summaryQuery = useL3SpiderSummary(selection)
+  const structureQuery = useL3SpiderStructure(selection)
+  const statsQuery = useL3SpiderStats(selection)
 
   const meta = metaQuery.data ?? EMPTY_META
-  const summary = summaryQuery.data ?? EMPTY_SUMMARY
   const isSelectionReady = hasCompleteSelection(selection)
 
   const resetLeafSelections = () => {
@@ -49,9 +50,9 @@ export function L3SpiderPage() {
 
   useEffect(() => { resetLeafSelections() }, [selection])
   useEffect(() => {
-    if (!summaryQuery.isSuccess) return
+    if (!structureQuery.isSuccess) return
     resetLeafSelections()
-  }, [summary, summaryQuery.isSuccess])
+  }, [structureQuery.data, structureQuery.isSuccess])
   useEffect(() => {
     const page = pageRef.current
     if (!page) return undefined
@@ -127,12 +128,14 @@ export function L3SpiderPage() {
         onSelectionChange={setSelection}
         isLoading={metaQuery.isFetching}
         onRefresh={() => metaQuery.refetch()}
-        stats={summary.stats}
+        stats={statsQuery.data?.stats}
         showStats={isSelectionReady}
+        headerExtra={<L3SpiderExclusionSheet />}
         rightContent={
           <L3SpiderFilterPanel
-            edsStepSeqs={summary.edsStepSeqs ?? {}}
-            edsStepPpids={summary.edsStepPpids ?? {}}
+            edsStepSeqs={structureQuery.data?.edsStepSeqs ?? {}}
+            edsStepPpids={structureQuery.data?.edsStepPpids ?? {}}
+            ppidLastTkinTime={statsQuery.data?.ppidLastTkinTime ?? {}}
             selectedEdsSteps={selection.edsSteps}
             eqcHighRiskBins={candidateEqcHighRiskBins}
             isCandidatesLoading={filterCandidatesQuery.isFetching && !!checkedPpid}
@@ -166,8 +169,8 @@ export function L3SpiderPage() {
         <main className="grid gap-5 px-6 pb-6 pt-4">
           <L3SpiderChart
             rows={rows}
-            isLoading={summaryQuery.isFetching || dataQuery.isFetching}
-            error={summaryQuery.error || dataQuery.error}
+            isLoading={structureQuery.isFetching || statsQuery.isFetching || dataQuery.isFetching}
+            error={structureQuery.error || statsQuery.error || dataQuery.error}
             groupBy={groupBy}
             xAxisMode={xAxisMode}
             onXAxisModeChange={setXAxisMode}

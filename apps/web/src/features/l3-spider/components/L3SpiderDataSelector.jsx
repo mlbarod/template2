@@ -153,6 +153,7 @@ export function L3SpiderDataSelector({
   stats,
   showStats,
   rightContent,
+  headerExtra,
 }) {
   const availabilityForDate = selection.date ? meta.availability?.[selection.date] ?? {} : {}
   const visibleLineIds = sortedValues(Object.keys(availabilityForDate))
@@ -297,6 +298,7 @@ export function L3SpiderDataSelector({
             noData={noData}
             selection={selection}
           />
+          {headerExtra}
           <Button
             type="button"
             variant="outline"

@@ -56,6 +56,10 @@ class PmComparisonRequestSerializer(serializers.Serializer):
     selectedStep = serializers.CharField(required=False, allow_blank=True, default="")
     selectedWavelength = serializers.CharField(required=False, allow_blank=True, default="")
     includeDetails = serializers.BooleanField(required=False, default=True)
+    includeTraceDetails = serializers.BooleanField(required=False, default=True)
+    includeOesDetails = serializers.BooleanField(required=False, default=True)
+    includeOesHeatmap = serializers.BooleanField(required=False, default=True)
+    includeOesSpectrum = serializers.BooleanField(required=False, default=True)
     refPmDates = serializers.ListField(
         child=serializers.CharField(),
         allow_empty=True,

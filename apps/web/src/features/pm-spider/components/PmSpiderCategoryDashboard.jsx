@@ -1019,6 +1019,10 @@ function OesWavelengthLineChart({
     { step: selectedStep, wavelength: selectedWl },
     refPmDates,
     { step: selectedStep, wavelength: selectedWl },
+    {
+      includeOesHeatmap: false,
+      includeOesSpectrum: activeTab === "스펙트럼",
+    },
   )
   const lineChart = detailQuery.data?.oes?.lineChart
   const fallbackSpectrum = detailQuery.data?.oes?.spectrumChart
@@ -1072,11 +1076,17 @@ function OesWavelengthLineChart({
         )}
 
         {activeTab === "스펙트럼" && (
-          <CanvasLineChart
-            chart={activeSpectrum}
-            height={180}
-            emptyLabel="스펙트럼 데이터가 없습니다"
-          />
+          detailQuery.isFetching && !activeSpectrum?.series?.length ? (
+            <div className="flex min-h-[180px] items-center justify-center rounded-lg border text-sm text-muted-foreground">
+              <Waves className="mr-2 size-4 animate-pulse" /> spectrum 조회 중...
+            </div>
+          ) : (
+            <CanvasLineChart
+              chart={activeSpectrum}
+              height={180}
+              emptyLabel="스펙트럼 데이터가 없습니다"
+            />
+          )
         )}
       </CardContent>
     </Card>
@@ -1182,7 +1192,18 @@ function OesIntensityHeatmaps({
 // ── OES step 개별 쿼리 + 히트맵 래퍼 ──────────────────────────
 function OesStepDetail({ category, selectedStep, refPmDates, onRemove }) {
   const stepCell    = { step: selectedStep }
-  const detailQuery = usePmSpiderDetailResult(category, stepCell, refPmDates, stepCell)
+  const detailQuery = usePmSpiderDetailResult(
+    category,
+    stepCell,
+    refPmDates,
+    stepCell,
+    {
+      includeOesHeatmap: true,
+      includeOesSpectrum: false,
+      heatmapXBins: 1200,
+      limit: 50,
+    },
+  )
   const heatmap = detailQuery.data?.oes?.heatmap
   const spectrumChart = detailQuery.data?.oes?.spectrumChart
 
@@ -1276,7 +1297,7 @@ export function PmSpiderCategoryDashboard({
   if (!categories.length) {
     return (
       <div className="flex min-h-96 items-center justify-center rounded-lg border bg-card text-sm text-muted-foreground">
-        PM SPIDER category 데이터가 없습니다.
+        PM Spider category 데이터가 없습니다.
       </div>
     )
   }
@@ -1352,7 +1373,7 @@ export function PmSpiderCategoryDashboard({
 
       {isFetching && (
         <div className="pointer-events-none fixed bottom-4 right-4 rounded-md border bg-card px-3 py-2 text-xs text-muted-foreground shadow-sm">
-          PM SPIDER 데이터 갱신 중...
+          PM Spider 데이터 갱신 중...
         </div>
       )}
     </div>

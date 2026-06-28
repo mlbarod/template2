@@ -26,7 +26,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from . import services
-from .serializers import L3SpiderDataRequestSerializer, L3SpiderFilterCandidatesSerializer
+from .serializers import (
+    L3SpiderDataRequestSerializer,
+    L3SpiderExclusionFilterSerializer,
+    L3SpiderFilterCandidatesSerializer,
+)
 
 
 def _error_response(error: Exception) -> Response:
@@ -40,6 +44,34 @@ class L3SpiderMetaView(APIView):
     def get(self, request, *args, **kwargs) -> Response:
         try:
             return Response(services.get_meta())
+        except services.L3SpiderServiceError as error:
+            return _error_response(error)
+
+
+class L3SpiderStructureView(APIView):
+    """파일명 스캔만으로 edsStepSeqs·edsStepPpids를 즉시 반환합니다."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs) -> Response:
+        serializer = L3SpiderDataRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            return Response(services.get_structure(serializer.validated_data))
+        except services.L3SpiderServiceError as error:
+            return _error_response(error)
+
+
+class L3SpiderStatsView(APIView):
+    """slim parquet 읽기로 stats + PPID별 last_tkin_time을 반환합니다."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs) -> Response:
+        serializer = L3SpiderDataRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            return _fast_response(services.get_stats(serializer.validated_data))
         except services.L3SpiderServiceError as error:
             return _error_response(error)
 
@@ -68,6 +100,42 @@ class L3SpiderDataView(APIView):
             return _fast_response(services.get_data(serializer.validated_data))
         except services.L3SpiderServiceError as error:
             return _error_response(error)
+
+
+class L3SpiderExclusionFilterListCreateView(APIView):
+    """제외 필터 목록 조회 및 생성."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs) -> Response:
+        return Response(services.list_exclusion_filters())
+
+    def post(self, request, *args, **kwargs) -> Response:
+        serializer = L3SpiderExclusionFilterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = services.create_exclusion_filter(serializer.validated_data, user=request.user)
+        return Response(data, status=201)
+
+
+class L3SpiderExclusionFilterDetailView(APIView):
+    """제외 필터 단건 수정/삭제."""
+
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk: int, *args, **kwargs) -> Response:
+        serializer = L3SpiderExclusionFilterSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        try:
+            return Response(services.update_exclusion_filter(pk, serializer.validated_data))
+        except services.L3SpiderServiceError as error:
+            return _error_response(error)
+
+    def delete(self, request, pk: int, *args, **kwargs) -> Response:
+        try:
+            services.delete_exclusion_filter(pk)
+        except services.L3SpiderServiceError as error:
+            return _error_response(error)
+        return Response(status=204)
 
 
 class L3SpiderFilterCandidatesView(APIView):

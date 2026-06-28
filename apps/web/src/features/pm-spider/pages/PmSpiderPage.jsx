@@ -11,7 +11,7 @@ function ErrorBanner({ error }) {
   return (
     <div className="mx-6 mt-3 flex shrink-0 items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
       <AlertTriangle className="size-4" aria-hidden="true" />
-      <span>{error.message || "PM SPIDER 데이터를 불러오지 못했습니다."}</span>
+      <span>{error.message || "PM Spider 데이터를 불러오지 못했습니다."}</span>
     </div>
   )
 }
@@ -22,7 +22,7 @@ function EmptyState() {
       <div className="grid justify-items-center gap-3 rounded-lg border border-dashed bg-card px-8 py-10 text-center text-sm text-muted-foreground">
         <Database className="size-7" aria-hidden="true" />
         <div>
-          <p className="font-medium text-foreground">PM SPIDER 조건을 입력하세요.</p>
+          <p className="font-medium text-foreground">PM Spider 조건을 입력하세요.</p>
           <p className="mt-1">Line ID, EQP ID, FDC Bin, PM 시점을 선택하면 랭킹을 조회합니다.</p>
         </div>
       </div>
@@ -105,7 +105,7 @@ export function PmSpiderPage() {
           <EmptyState />
         ) : categoryResults.isLoading ? (
           <div className="flex h-full min-h-0 items-center justify-center rounded-lg border bg-card text-sm text-muted-foreground">
-            PM SPIDER category 데이터를 계산하는 중입니다.
+            PM Spider category 데이터를 계산하는 중입니다.
           </div>
         ) : (
           <PmSpiderCategoryDashboard

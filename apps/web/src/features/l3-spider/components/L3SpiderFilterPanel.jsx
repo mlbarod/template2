@@ -103,14 +103,15 @@ function applyQuery(items, query) {
 
 export function L3SpiderFilterPanel({
   edsStepSeqs,
-  edsStepPpids,      // dict: eds_step|||step_seq → [ppids]
-  selectedEdsSteps,  // Set<string> — DataSelector에서 선택된 EDS Steps
-  eqcHighRiskBins,   // null(로딩/미선택) | dict: eqc → [high_risk_bins] (candidates)
+  edsStepPpids,         // dict: eds_step|||step_seq → [ppids]
+  ppidLastTkinTime,     // dict: eds_step|||step_seq|||ppid → "YYYY-MM-DD HH:mm"
+  selectedEdsSteps,     // Set<string> — DataSelector에서 선택된 EDS Steps
+  eqcHighRiskBins,      // null(로딩/미선택) | dict: eqc → [high_risk_bins] (candidates)
   isCandidatesLoading,
-  checkedStep,       // string | null — 복합키: "eds_step|||step_seq"
-  checkedPpid,       // string | null
-  checkedEqc,        // string | null — EQPCH 모드 (단일)
-  checkedBin,        // string | null — Bin 모드 (단일)
+  checkedStep,          // string | null — 복합키: "eds_step|||step_seq"
+  checkedPpid,          // string | null
+  checkedEqc,           // string | null — EQPCH 모드 (단일)
+  checkedBin,           // string | null — Bin 모드 (단일)
   onCheckedStepChange,
   onCheckedPpidChange,
   onCheckedEqcChange,
@@ -224,14 +225,19 @@ export function L3SpiderFilterPanel({
         isActive={checkedPpid !== null}
       >
         {(query) =>
-          applyQuery(visiblePpids, query).map((ppid) => (
-            <SelectRow
-              key={ppid}
-              label={ppid}
-              selected={checkedPpid === ppid}
-              onClick={() => selectPpid(ppid)}
-            />
-          ))
+          applyQuery(visiblePpids, query).map((ppid) => {
+            const tkinKey = checkedStep ? `${checkedStep}|||${ppid}` : null
+            const lastTkin = tkinKey ? (ppidLastTkinTime?.[tkinKey] ?? null) : null
+            return (
+              <SelectRow
+                key={ppid}
+                label={ppid}
+                hint={lastTkin}
+                selected={checkedPpid === ppid}
+                onClick={() => selectPpid(ppid)}
+              />
+            )
+          })
         }
       </ColumnCard>
 

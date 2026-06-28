@@ -80,6 +80,22 @@ class L3SpiderDataRequestSerializer(serializers.Serializer):
         return attrs
 
 
+class L3SpiderExclusionFilterSerializer(serializers.Serializer):
+    """제외 필터 생성/수정 요청을 검증합니다."""
+
+    line_id = serializers.CharField(max_length=200, default="*")
+    process_id = serializers.CharField(max_length=200, default="*")
+    eds_step = serializers.CharField(max_length=200, default="*")
+    step_seq = serializers.CharField(max_length=200, default="*")
+    ppid = serializers.CharField(max_length=200, default="*")
+    eqpch = serializers.CharField(max_length=200, default="*")
+    bin_name = serializers.CharField(max_length=200, default="*")
+    date_from = serializers.DateField(required=False, allow_null=True, default=None)
+    date_to = serializers.DateField(required=False, allow_null=True, default=None)
+    is_active = serializers.BooleanField(default=True)
+    memo = serializers.CharField(allow_blank=True, default="", max_length=2000)
+
+
 class L3SpiderFilterCandidatesSerializer(serializers.Serializer):
     """PPID 선택 기준 EQPCH/Bin 후보 조회 요청을 검증합니다."""
 

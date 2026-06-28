@@ -108,7 +108,7 @@ function getRowItemKey(category, row) {
   return `${row.step || ""}:${row.wavelength || ""}`
 }
 
-export function usePmSpiderDetailResult(category, row, refPmDates = null, oesCell = null) {
+export function usePmSpiderDetailResult(category, row, refPmDates = null, oesCell = null, options = {}) {
   const itemKey = getRowItemKey(category, row)
   // OES는 히트맵 클릭으로 전달된 step/wavelength를 row 값보다 우선합니다.
   const oesStep = oesCell?.step ?? row?.step ?? ""
@@ -120,13 +120,19 @@ export function usePmSpiderDetailResult(category, row, refPmDates = null, oesCel
     payload = {
       ...withRefPmDates(category.payload, refPmDates),
       includeDetails: true,
+      includeTraceDetails: category.kind === "trace",
+      includeOesDetails: category.kind === "oes",
       traceParamNames: category.kind === "trace" ? [itemKey].filter(Boolean) : [],
       selectedStep: category.kind === "oes" ? oesStep : "",
       selectedWavelength: category.kind === "oes" ? oesWl : "",
-      limit: category.kind === "oes" ? 800 : 1200,
-      maxPoints: category.kind === "oes" && oesWl ? 3600 : 2400,
-      heatmapXBins: 1200,
-      heatmapYBins: 100,
+      limit: options.limit ?? (category.kind === "oes" ? 800 : 1200),
+      maxPoints: options.maxPoints ?? (category.kind === "oes" && oesWl ? 3600 : 2400),
+      heatmapXBins: options.heatmapXBins ?? 1200,
+      heatmapYBins: options.heatmapYBins ?? 100,
+    }
+    if (category.kind === "oes") {
+      payload.includeOesHeatmap = options.includeOesHeatmap ?? true
+      payload.includeOesSpectrum = options.includeOesSpectrum ?? true
     }
   }
   const cellKey = oesCell ? `${oesCell.step}:${oesCell.wavelength}` : "none"

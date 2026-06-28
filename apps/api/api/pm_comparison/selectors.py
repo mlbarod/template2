@@ -8,11 +8,12 @@ from __future__ import annotations
 from collections import deque
 from functools import lru_cache
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Any, Iterable, Sequence
 
 from django.conf import settings
 
 import pandas as pd
+import pyarrow.parquet as pq
 
 RAW_DIR_NAME = "data"
 SCORE_DIR_NAME = "result"
@@ -885,16 +886,43 @@ def collect_partition_options(selection: dict[str, object] | None = None) -> dic
     return {key: sorted(values) for key, values in options.items()}
 
 
-def read_parquet(path: Path, columns: Sequence[str] | None = None) -> pd.DataFrame:
-    """Parquet 파일을 읽고 요청 컬럼이 없으면 전체 컬럼으로 fallback합니다."""
+@lru_cache(maxsize=4096)
+def _parquet_columns(path_text: str, mtime_ns: int, size: int) -> tuple[str, ...]:
+    """Parquet schema에서 컬럼명만 빠르게 읽어 캐시합니다."""
+
+    return tuple(pq.read_schema(path_text).names)
+
+
+def parquet_columns(path: Path) -> tuple[str, ...]:
+    """Parquet 파일의 컬럼명을 반환합니다."""
+
+    stat = path.stat()
+    return _parquet_columns(str(path), stat.st_mtime_ns, stat.st_size)
+
+
+def read_parquet(
+    path: Path,
+    columns: Sequence[str] | None = None,
+    *,
+    filters: Sequence[tuple[str, str, Any]] | None = None,
+) -> pd.DataFrame:
+    """Parquet 파일을 읽고 요청 컬럼/filter가 실패하면 안전하게 fallback합니다."""
 
     if columns:
         try:
-            return pd.read_parquet(path, engine="pyarrow", columns=list(columns))
+            return pd.read_parquet(path, engine="pyarrow", columns=list(columns), filters=filters)
         except Exception:
-            frame = pd.read_parquet(path, engine="pyarrow")
+            try:
+                frame = pd.read_parquet(path, engine="pyarrow", filters=filters)
+            except Exception:
+                frame = pd.read_parquet(path, engine="pyarrow")
             available = [column for column in columns if column in frame.columns]
             if available:
                 return frame[available]
             return frame
-    return pd.read_parquet(path, engine="pyarrow")
+    try:
+        return pd.read_parquet(path, engine="pyarrow", filters=filters)
+    except Exception:
+        if filters:
+            return pd.read_parquet(path, engine="pyarrow")
+        raise

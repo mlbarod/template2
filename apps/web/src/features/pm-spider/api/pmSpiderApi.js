@@ -17,7 +17,7 @@ async function request(path, options = {}) {
         ? payload.error
         : typeof payload?.detail === "string"
           ? payload.detail
-          : `PM SPIDER 요청 실패 (${response.status})`
+          : `PM Spider 요청 실패 (${response.status})`
     const error = new Error(message)
     error.status = response.status
     throw error
