@@ -65,6 +65,11 @@ class MTkinPrevent(models.Model):
         db_table = "m_tkin_prevent"
         indexes = [
             models.Index(fields=["line_id"], name="idx_m_tkin_prevent_ln"),
+            models.Index(fields=["eqp_id", "registration_level", "process_id"], name="idx_mtk_eqp_lvl_proc"),
+            models.Index(
+                fields=["process_id", "eqp_id", "registration_level", "step_seq"],
+                name="idx_mtk_prc_eqp_lvl_stp",
+            ),
         ]
 
     def __str__(self) -> str:

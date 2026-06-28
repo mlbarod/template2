@@ -373,14 +373,15 @@ class ObserverEndpointTests(TestCase):
         self.assertIn("from station_master station", query)
         self.assertIn("station.ch_main as eqp_id", query)
         self.assertIn("from m_tkin_prevent prevent", query)
-        self.assertIn("upper(trim(prevent.eqp_id))", query)
-        self.assertIn("upper(trim(target_eqp.eqp_id))", query)
+        self.assertIn("prevent.eqp_id = target_eqp.eqp_id", query)
+        self.assertNotIn("upper(trim(prevent.eqp_id))", query)
+        self.assertNotIn("upper(trim(target_eqp.eqp_id))", query)
         self.assertNotIn("mes_line_mapping_info", query)
         self.assertNotIn("gpm_line_name_lookup", query)
         self.assertIn("station.sdwt_prod_lookup = %s", query)
         self.assertIn("station.prc_group_lookup = %s", query)
         self.assertIn(
-            "upper(trim(prevent.registration_level)) in (%s, %s, %s)",
+            "prevent.registration_level in (%s, %s, %s)",
             query,
         )
         self.assertEqual(params, ["SD-10", "ETCH", "LEVEL1", "LEVEL2", "LEVEL3"])
@@ -413,9 +414,10 @@ class ObserverEndpointTests(TestCase):
 
         query, params = fetch_all.call_args.args
         self.assertEqual(steps[0]["id"], "10")
-        self.assertIn("upper(trim(prevent.process_id)) = %s", query)
+        self.assertIn("prevent.process_id = %s", query)
+        self.assertNotIn("upper(trim(prevent.process_id))", query)
         self.assertIn(
-            "upper(trim(prevent.registration_level)) in (%s, %s, %s)",
+            "prevent.registration_level in (%s, %s, %s)",
             query,
         )
         self.assertEqual(
@@ -460,7 +462,7 @@ class ObserverEndpointTests(TestCase):
         self.assertEqual(matrix["totalRows"], 1)
         self.assertEqual(matrix["totalColumns"], 2)
         self.assertIn(
-            "upper(trim(prevent.registration_level)) in (%s, %s, %s)",
+            "prevent.registration_level in (%s, %s, %s)",
             query,
         )
         self.assertEqual(
@@ -473,8 +475,10 @@ class ObserverEndpointTests(TestCase):
             matrix["rows"][0]["cells"]["EQP-1-CH-2"][0]["status"],
             "LEVEL2(2/4/10)",
         )
-        self.assertIn("upper(trim(prevent.process_id)) = %s", query)
-        self.assertIn("upper(trim(prevent.step_seq)) = %s", query)
+        self.assertIn("prevent.process_id = %s", query)
+        self.assertIn("prevent.step_seq = %s", query)
+        self.assertNotIn("upper(trim(prevent.process_id))", query)
+        self.assertNotIn("upper(trim(prevent.step_seq))", query)
 
     def test_observer_equipment_info_returns_result(self) -> None:
         payload = {

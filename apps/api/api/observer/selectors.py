@@ -445,7 +445,7 @@ def _target_tkin_eqp_cte() -> str:
             where station.sdwt_prod_lookup = %s
               and station.prc_group_lookup = %s
               and station.ch_main is not null
-              and trim(station.ch_main) <> ''
+              and station.ch_main <> ''
         )
     """
 
@@ -468,7 +468,7 @@ def _tkin_registration_level_clause() -> str:
     """TIP 상태 조회 대상 registration_level 조건을 반환합니다."""
 
     placeholders = ", ".join(["%s"] * len(TKIN_PREVENT_REGISTRATION_LEVELS))
-    return f"and upper(trim(prevent.registration_level)) in ({placeholders})"
+    return f"and prevent.registration_level in ({placeholders})"
 
 
 def _tkin_registration_level_params() -> List[object]:
@@ -511,9 +511,9 @@ def list_tkin_prevent_processes(
             prevent.process_id as process_id
         from m_tkin_prevent prevent
         join target_eqp
-          on upper(trim(prevent.eqp_id)) = upper(trim(target_eqp.eqp_id))
+          on prevent.eqp_id = target_eqp.eqp_id
         where prevent.process_id is not null
-          and trim(prevent.process_id) <> ''
+          and prevent.process_id <> ''
           {_tkin_registration_level_clause()}
         order by prevent.process_id
         """,
@@ -560,10 +560,10 @@ def list_tkin_prevent_step_seqs(
             prevent.step_seq as step_seq
         from m_tkin_prevent prevent
         join target_eqp
-          on upper(trim(prevent.eqp_id)) = upper(trim(target_eqp.eqp_id))
-        where upper(trim(prevent.process_id)) = %s
+          on prevent.eqp_id = target_eqp.eqp_id
+        where prevent.process_id = %s
           and prevent.step_seq is not null
-          and trim(prevent.step_seq) <> ''
+          and prevent.step_seq <> ''
           {_tkin_registration_level_clause()}
         order by prevent.step_seq
         """,
@@ -652,11 +652,11 @@ def get_tkin_prevent_matrix(
             prevent.level2_restrc_lot_count
         from m_tkin_prevent prevent
         join target_eqp
-          on upper(trim(prevent.eqp_id)) = upper(trim(target_eqp.eqp_id))
-        where upper(trim(prevent.process_id)) = %s
-          and upper(trim(prevent.step_seq)) = %s
+          on prevent.eqp_id = target_eqp.eqp_id
+        where prevent.process_id = %s
+          and prevent.step_seq = %s
           and prevent.ppid is not null
-          and trim(prevent.ppid) <> ''
+          and prevent.ppid <> ''
           {_tkin_registration_level_clause()}
         order by prevent.ppid, prevent.eqp_id, prevent.tkin_prevent_chamber_id
         """,
