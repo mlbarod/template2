@@ -14,6 +14,8 @@ from .models import ActivityLog
 INTERNAL_BRIDGE_REMOTE_ADDR = "172.18.0.1"
 MAX_APP_ID_LENGTH = 120
 MAX_APP_NAME_LENGTH = 160
+MAX_SOURCE_NAME_LENGTH = 80
+MAX_PASTED_TEXT_LENGTH = 200_000
 
 
 def _clean_text(value: Any, *, max_length: int) -> str:
@@ -122,4 +124,46 @@ def normalize_app_access_payload(payload: Any) -> tuple[dict[str, str] | None, s
     }, None
 
 
-__all__ = ["normalize_app_access_payload", "serialize_activity_log"]
+def normalize_manual_app_access_paste_payload(payload: Any) -> tuple[dict[str, str] | None, str | None]:
+    """외부 앱 수동 접속현황 붙여넣기 요청을 검증하고 정규화합니다.
+
+    입력:
+    - payload: JSON 요청 본문
+
+    반환:
+    - tuple[dict[str, str] | None, str | None]: pasted_text/source_name 또는 오류 메시지
+
+    부작용:
+    - 없음
+
+    오류:
+    - 없음(검증 실패는 오류 메시지로 반환)
+    """
+
+    if not isinstance(payload, dict):
+        return None, "Invalid JSON body"
+
+    pasted_text = payload.get("pastedText") or payload.get("pasted_text")
+    if not isinstance(pasted_text, str) or not pasted_text.strip():
+        return None, "pastedText is required"
+    if len(pasted_text) > MAX_PASTED_TEXT_LENGTH:
+        return None, f"pastedText must be {MAX_PASTED_TEXT_LENGTH} characters or less"
+
+    source_name = _clean_text(
+        payload.get("sourceName") or payload.get("source_name") or "manual",
+        max_length=MAX_SOURCE_NAME_LENGTH,
+    )
+    if not source_name:
+        source_name = "manual"
+
+    return {
+        "pasted_text": pasted_text,
+        "source_name": source_name,
+    }, None
+
+
+__all__ = [
+    "normalize_app_access_payload",
+    "normalize_manual_app_access_paste_payload",
+    "serialize_activity_log",
+]

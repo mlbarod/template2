@@ -9,6 +9,8 @@
 from __future__ import annotations
 
 from .activity_logs import (
+    build_manual_app_access_preview,
+    commit_manual_app_access_stats,
     get_app_access_stats_payload,
     get_recent_activity_payload,
     record_activity_log,
@@ -16,6 +18,8 @@ from .activity_logs import (
 )
 
 __all__ = [
+    "build_manual_app_access_preview",
+    "commit_manual_app_access_stats",
     "get_app_access_stats_payload",
     "get_recent_activity_payload",
     "record_activity_log",

@@ -5,13 +5,13 @@
 # =============================================================================
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from django.db.models import Count, Max, Q, QuerySet
+from django.db.models import Count, Max, Q, QuerySet, Sum
 from django.db.models.functions import TruncDate
 
-from .models import ActivityLog
+from .models import ActivityLog, ExternalAppAccessDailyStat
 
 APP_ACCESS_ACTION = "APP_ACCESS"
 KST = ZoneInfo("Asia/Seoul")
@@ -173,4 +173,132 @@ def summarize_app_access_by_date(
         .values("local_date", "metadata__app_id", "metadata__app_name")
         .annotate(access_count=Count("id"))
         .order_by("local_date", "metadata__app_name", "metadata__app_id")
+    )
+
+
+def get_external_app_access_daily_stats(
+    *,
+    start_date: date,
+    end_date: date,
+    app_id: str | None = None,
+) -> QuerySet[ExternalAppAccessDailyStat]:
+    """외부 앱 일별 접속 집계 rows를 기간/앱 기준으로 조회합니다.
+
+    입력:
+    - start_date/end_date: KST 기준 조회 날짜 범위(포함)
+    - app_id: 특정 앱 id 필터(선택)
+
+    반환:
+    - QuerySet[ExternalAppAccessDailyStat]: 외부 앱 일별 집계 QuerySet
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - 없음
+    """
+
+    queryset = ExternalAppAccessDailyStat.objects.filter(
+        stat_date__gte=start_date,
+        stat_date__lte=end_date,
+    )
+    if app_id:
+        queryset = queryset.filter(app_id=app_id)
+    return queryset
+
+
+def summarize_external_app_access_by_app(
+    *,
+    start_date: date,
+    end_date: date,
+    app_id: str | None = None,
+) -> list[dict[str, object]]:
+    """외부 앱 접속 집계를 앱 기준으로 합산합니다.
+
+    입력:
+    - start_date/end_date: KST 기준 조회 날짜 범위(포함)
+    - app_id: 특정 앱 id 필터(선택)
+
+    반환:
+    - list[dict[str, object]]: 앱별 외부 집계 row
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - 없음
+    """
+
+    queryset = get_external_app_access_daily_stats(start_date=start_date, end_date=end_date, app_id=app_id)
+    return list(
+        queryset.values("app_id", "app_name", "source_type", "source_name")
+        .annotate(
+            access_count=Sum("access_count"),
+            unique_user_count=Sum("unique_user_count"),
+            last_stat_date=Max("stat_date"),
+        )
+        .order_by("-access_count", "app_name", "app_id")
+    )
+
+
+def summarize_external_app_access_totals(
+    *,
+    start_date: date,
+    end_date: date,
+    app_id: str | None = None,
+) -> dict[str, int]:
+    """외부 앱 접속 집계 전체 합계를 반환합니다.
+
+    입력:
+    - start_date/end_date: KST 기준 조회 날짜 범위(포함)
+    - app_id: 특정 앱 id 필터(선택)
+
+    반환:
+    - dict[str, int]: 전체 접속수와 외부 고유 사용자 수 합계
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - 없음
+    """
+
+    queryset = get_external_app_access_daily_stats(start_date=start_date, end_date=end_date, app_id=app_id)
+    totals = queryset.aggregate(
+        access_count=Sum("access_count"),
+        unique_user_count=Sum("unique_user_count"),
+    )
+    return {
+        "access_count": int(totals.get("access_count") or 0),
+        "unique_user_count": int(totals.get("unique_user_count") or 0),
+    }
+
+
+def summarize_external_app_access_by_date(
+    *,
+    start_date: date,
+    end_date: date,
+    app_id: str | None = None,
+) -> list[dict[str, object]]:
+    """외부 앱 접속 집계를 날짜와 앱 기준으로 합산합니다.
+
+    입력:
+    - start_date/end_date: KST 기준 조회 날짜 범위(포함)
+    - app_id: 특정 앱 id 필터(선택)
+
+    반환:
+    - list[dict[str, object]]: 날짜/앱별 외부 집계 row
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - 없음
+    """
+
+    queryset = get_external_app_access_daily_stats(start_date=start_date, end_date=end_date, app_id=app_id)
+    return list(
+        queryset.values("stat_date", "app_id", "app_name", "source_type", "source_name")
+        .annotate(access_count=Sum("access_count"))
+        .order_by("stat_date", "app_name", "app_id")
     )

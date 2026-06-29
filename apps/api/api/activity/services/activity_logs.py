@@ -5,14 +5,22 @@
 # =============================================================================
 from __future__ import annotations
 
+import csv
 from datetime import UTC, date, datetime, time, timedelta
+from io import StringIO
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from ..models import ActivityLog
+from django.db import transaction
+from django.utils import timezone
+
+from ..models import ActivityLog, ExternalAppAccessDailyStat
 from ..selectors import (
     APP_ACCESS_ACTION,
     get_recent_activity_logs,
+    summarize_external_app_access_by_app,
+    summarize_external_app_access_by_date,
+    summarize_external_app_access_totals,
     summarize_app_access_by_app,
     summarize_app_access_by_date,
     summarize_app_access_totals,
@@ -22,6 +30,39 @@ from ..serializers import serialize_activity_log
 KST = ZoneInfo("Asia/Seoul")
 DEFAULT_STATS_DAYS = 7
 MAX_STATS_DAYS = 90
+DEFAULT_STATS_PERIOD = "day"
+ALLOWED_STATS_PERIODS = {"day", "week", "month"}
+MANUAL_SOURCE_TYPE = ExternalAppAccessDailyStat.SOURCE_TYPE_MANUAL
+MANUAL_PASTE_EXPECTED_COLUMNS = ["date", "app_id", "app_name", "access_count", "unique_user_count", "memo"]
+
+HEADER_ALIASES = {
+    "date": "date",
+    "stat_date": "date",
+    "날짜": "date",
+    "일자": "date",
+    "app_id": "app_id",
+    "appid": "app_id",
+    "앱id": "app_id",
+    "앱_id": "app_id",
+    "앱아이디": "app_id",
+    "app_name": "app_name",
+    "appname": "app_name",
+    "앱명": "app_name",
+    "앱이름": "app_name",
+    "access_count": "access_count",
+    "accesscount": "access_count",
+    "접속횟수": "access_count",
+    "접속수": "access_count",
+    "unique_user_count": "unique_user_count",
+    "uniqueusercount": "unique_user_count",
+    "접속사용자": "unique_user_count",
+    "접속사용자수": "unique_user_count",
+    "사용자수": "unique_user_count",
+    "memo": "memo",
+    "메모": "memo",
+    "비고": "memo",
+}
+REQUIRED_MANUAL_COLUMNS = ["date", "app_id", "access_count", "unique_user_count"]
 
 
 def _parse_iso_date(value: str | None, *, field_name: str) -> date | None:
@@ -59,6 +100,27 @@ def _resolve_stats_range(
     return from_date, to_date, start_local.astimezone(UTC), end_local.astimezone(UTC)
 
 
+def _resolve_stats_period(value: str | None) -> str:
+    """통계 집계 단위를 정규화합니다."""
+
+    if value is None or not value.strip():
+        return DEFAULT_STATS_PERIOD
+    period = value.strip().lower()
+    if period not in ALLOWED_STATS_PERIODS:
+        raise ValueError("period must be one of day, week, month")
+    return period
+
+
+def _get_period_start(value: date, *, period: str) -> date:
+    """날짜가 속한 집계 기간의 시작일을 반환합니다."""
+
+    if period == "week":
+        return value - timedelta(days=value.weekday())
+    if period == "month":
+        return value.replace(day=1)
+    return value
+
+
 def _safe_text(value: Any, fallback: str) -> str:
     """집계 row의 문자열 값을 안전하게 반환합니다."""
 
@@ -73,6 +135,349 @@ def _serialize_datetime(value: Any) -> str | None:
     if isinstance(value, datetime):
         return value.astimezone(KST).isoformat()
     return None
+
+
+def _serialize_date(value: Any) -> str:
+    """date 값을 ISO 문자열로 변환합니다."""
+
+    if isinstance(value, date):
+        return value.isoformat()
+    return ""
+
+
+def _serialize_kst_date_end(value: Any) -> str | None:
+    """KST 날짜의 종료 시각을 ISO 문자열로 변환합니다."""
+
+    if isinstance(value, date):
+        return datetime.combine(value, time.max, tzinfo=KST).isoformat()
+    return None
+
+
+def _normalize_header(value: Any) -> str:
+    """붙여넣기 헤더 이름을 내부 컬럼명으로 정규화합니다."""
+
+    if not isinstance(value, str):
+        return ""
+    key = value.strip().lstrip("\ufeff").lower().replace(" ", "").replace("-", "_")
+    return HEADER_ALIASES.get(key, key)
+
+
+def _detect_paste_delimiter(pasted_text: str) -> str:
+    """붙여넣기 원문에서 TSV/CSV 구분자를 판별합니다."""
+
+    first_line = next((line for line in pasted_text.splitlines() if line.strip()), "")
+    return "\t" if "\t" in first_line else ","
+
+
+def _read_paste_rows(pasted_text: str) -> tuple[list[str], list[list[str]]]:
+    """붙여넣기 원문을 헤더와 데이터 행으로 분리합니다."""
+
+    delimiter = _detect_paste_delimiter(pasted_text)
+    reader = csv.reader(StringIO(pasted_text), delimiter=delimiter)
+    rows = [[cell.strip() for cell in row] for row in reader if any(cell.strip() for cell in row)]
+    if not rows:
+        return [], []
+    return rows[0], rows[1:]
+
+
+def _parse_manual_date(value: str) -> tuple[date | None, str | None]:
+    """수동 입력 날짜 값을 검증합니다."""
+
+    if not value:
+        return None, "date is required"
+    try:
+        return date.fromisoformat(value), None
+    except ValueError:
+        return None, "date must be YYYY-MM-DD"
+
+
+def _parse_manual_count(value: str, *, field_name: str) -> tuple[int | None, str | None]:
+    """수동 입력 숫자 값을 0 이상의 정수로 검증합니다."""
+
+    if value == "":
+        return None, f"{field_name} is required"
+    try:
+        parsed = int(value.replace(",", ""))
+    except ValueError:
+        return None, f"{field_name} must be a number"
+    if parsed < 0:
+        return None, f"{field_name} must be greater than or equal to 0"
+    return parsed, None
+
+
+def _build_manual_row(
+    *,
+    row_number: int,
+    headers: list[str],
+    cells: list[str],
+) -> dict[str, Any]:
+    """붙여넣기 데이터 한 행을 미리보기 row로 변환합니다."""
+
+    values_by_header = {header: cells[index].strip() if index < len(cells) else "" for index, header in enumerate(headers)}
+    errors: list[str] = []
+
+    stat_date, date_error = _parse_manual_date(values_by_header.get("date", ""))
+    if date_error:
+        errors.append(date_error)
+
+    app_id = values_by_header.get("app_id", "").strip()[:120]
+    if not app_id:
+        errors.append("app_id is required")
+
+    app_name = values_by_header.get("app_name", "").strip()[:160] or app_id
+
+    access_count, access_error = _parse_manual_count(values_by_header.get("access_count", ""), field_name="access_count")
+    if access_error:
+        errors.append(access_error)
+
+    unique_user_count, unique_error = _parse_manual_count(
+        values_by_header.get("unique_user_count", ""),
+        field_name="unique_user_count",
+    )
+    if unique_error:
+        errors.append(unique_error)
+
+    if access_count is not None and unique_user_count is not None and unique_user_count > access_count:
+        errors.append("unique_user_count must be less than or equal to access_count")
+
+    return {
+        "rowNumber": row_number,
+        "values": {
+            "date": _serialize_date(stat_date),
+            "appId": app_id,
+            "appName": app_name,
+            "accessCount": access_count if access_count is not None else values_by_header.get("access_count", ""),
+            "uniqueUserCount": unique_user_count
+            if unique_user_count is not None
+            else values_by_header.get("unique_user_count", ""),
+            "memo": values_by_header.get("memo", "").strip(),
+        },
+        "errors": errors,
+    }
+
+
+def build_manual_app_access_preview(*, pasted_text: str, source_name: str) -> dict[str, Any]:
+    """수동 붙여넣기 원문을 검증 미리보기 payload로 변환합니다.
+
+    입력:
+    - pasted_text: 스프레드시트에서 복사한 TSV/CSV 원문
+    - source_name: 입력 출처 이름
+
+    반환:
+    - dict[str, Any]: summary/rows/errors preview payload
+
+    부작용:
+    - 없음
+
+    오류:
+    - 없음(검증 실패는 payload errors로 반환)
+    """
+
+    raw_headers, raw_rows = _read_paste_rows(pasted_text)
+    headers = [_normalize_header(header) for header in raw_headers]
+    missing_columns = [column for column in REQUIRED_MANUAL_COLUMNS if column not in headers]
+    top_level_errors = [f"Missing required columns: {', '.join(missing_columns)}"] if missing_columns else []
+
+    preview_rows: list[dict[str, Any]] = []
+    if not top_level_errors:
+        preview_rows = [
+            _build_manual_row(row_number=index + 2, headers=headers, cells=row)
+            for index, row in enumerate(raw_rows)
+        ]
+
+    error_rows = sum(1 for row in preview_rows if row["errors"])
+    valid_rows = len(preview_rows) - error_rows
+    if not preview_rows and not top_level_errors:
+        top_level_errors.append("No data rows found")
+
+    return {
+        "sourceType": MANUAL_SOURCE_TYPE,
+        "sourceName": source_name,
+        "expectedColumns": MANUAL_PASTE_EXPECTED_COLUMNS,
+        "summary": {
+            "totalRows": len(preview_rows),
+            "validRows": valid_rows,
+            "errorRows": error_rows + (1 if top_level_errors else 0),
+        },
+        "errors": top_level_errors,
+        "rows": preview_rows,
+    }
+
+
+def _has_preview_errors(preview: dict[str, Any]) -> bool:
+    """미리보기 payload에 저장 차단 오류가 있는지 확인합니다."""
+
+    if preview.get("errors"):
+        return True
+    return any(row.get("errors") for row in preview.get("rows", []))
+
+
+def commit_manual_app_access_stats(
+    *,
+    pasted_text: str,
+    source_name: str,
+    user: Any,
+) -> dict[str, Any]:
+    """검증된 수동 외부 앱 접속 집계를 저장합니다.
+
+    입력:
+    - pasted_text: 스프레드시트에서 복사한 TSV/CSV 원문
+    - source_name: 입력 출처 이름
+    - user: 저장 요청 사용자
+
+    반환:
+    - dict[str, Any]: 반영 요약과 preview payload
+
+    부작용:
+    - ExternalAppAccessDailyStat rows를 생성하거나 갱신합니다.
+
+    오류:
+    - ValueError: preview 오류가 있어 저장할 수 없을 때
+    """
+
+    preview = build_manual_app_access_preview(pasted_text=pasted_text, source_name=source_name)
+    if _has_preview_errors(preview):
+        error = ValueError("Manual access stats contain invalid rows")
+        error.preview = preview  # type: ignore[attr-defined]
+        raise error
+
+    created_count = 0
+    updated_count = 0
+    now = timezone.now()
+    with transaction.atomic():
+        for row in preview["rows"]:
+            values = row["values"]
+            stat, created = ExternalAppAccessDailyStat.objects.update_or_create(
+                app_id=values["appId"],
+                stat_date=date.fromisoformat(values["date"]),
+                source_name=source_name,
+                defaults={
+                    "app_name": values["appName"],
+                    "access_count": values["accessCount"],
+                    "unique_user_count": values["uniqueUserCount"],
+                    "source_type": MANUAL_SOURCE_TYPE,
+                    "memo": values["memo"],
+                    "raw_payload": {"rowNumber": row["rowNumber"], "source": "spreadsheet_paste"},
+                    "updated_by": user,
+                    "updated_at": now,
+                },
+            )
+            if created:
+                stat.created_by = user
+                stat.created_at = now
+                stat.save(update_fields=["created_by", "created_at"])
+                created_count += 1
+            else:
+                updated_count += 1
+
+    return {
+        **preview,
+        "commit": {
+            "createdRows": created_count,
+            "updatedRows": updated_count,
+        },
+    }
+
+
+def _merge_source_labels(existing: set[str], value: str) -> str:
+    """집계 row의 source label을 병합해 단일 표시값을 반환합니다."""
+
+    existing.add(value)
+    if len(existing) == 1:
+        return next(iter(existing))
+    return "mixed"
+
+
+def _append_app_summary(
+    *,
+    merged: dict[str, dict[str, Any]],
+    app_id: str,
+    app_name: str,
+    access_count: int,
+    unique_user_count: int,
+    last_accessed_at: str | None,
+    source_type: str,
+    source_name: str,
+) -> None:
+    """앱별 집계 row를 app_id 기준으로 누적합니다."""
+
+    row = merged.setdefault(
+        app_id,
+        {
+            "appId": app_id,
+            "appName": app_name,
+            "accessCount": 0,
+            "uniqueUserCount": 0,
+            "avgAccessPerUser": 0,
+            "lastAccessedAt": None,
+            "sourceType": source_type,
+            "sourceName": source_name,
+            "_sourceTypes": set(),
+            "_sourceNames": set(),
+        },
+    )
+    row["accessCount"] += access_count
+    row["uniqueUserCount"] += unique_user_count
+    row["sourceType"] = _merge_source_labels(row["_sourceTypes"], source_type)
+    row["sourceName"] = _merge_source_labels(row["_sourceNames"], source_name)
+    if last_accessed_at and (row["lastAccessedAt"] is None or last_accessed_at > row["lastAccessedAt"]):
+        row["lastAccessedAt"] = last_accessed_at
+
+
+def _finalize_app_summaries(merged: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """누적된 앱별 집계 row를 API 응답 형태로 정리합니다."""
+
+    apps = []
+    for row in merged.values():
+        access_count = int(row["accessCount"] or 0)
+        unique_user_count = int(row["uniqueUserCount"] or 0)
+        row["avgAccessPerUser"] = round(access_count / unique_user_count, 1) if unique_user_count else 0
+        row.pop("_sourceTypes", None)
+        row.pop("_sourceNames", None)
+        apps.append(row)
+    return sorted(apps, key=lambda item: (-item["accessCount"], item["appName"], item["appId"]))
+
+
+def _append_series_summary(
+    *,
+    merged: dict[tuple[str, str], dict[str, Any]],
+    bucket_date: str,
+    app_id: str,
+    app_name: str,
+    access_count: int,
+    source_type: str,
+    source_name: str,
+) -> None:
+    """날짜/앱별 집계 row를 누적합니다."""
+
+    key = (bucket_date, app_id)
+    row = merged.setdefault(
+        key,
+        {
+            "date": bucket_date,
+            "appId": app_id,
+            "appName": app_name,
+            "accessCount": 0,
+            "sourceType": source_type,
+            "sourceName": source_name,
+            "_sourceTypes": set(),
+            "_sourceNames": set(),
+        },
+    )
+    row["accessCount"] += access_count
+    row["sourceType"] = _merge_source_labels(row["_sourceTypes"], source_type)
+    row["sourceName"] = _merge_source_labels(row["_sourceNames"], source_name)
+
+
+def _finalize_series_summaries(merged: dict[tuple[str, str], dict[str, Any]]) -> list[dict[str, Any]]:
+    """누적된 날짜/앱별 집계 row를 API 응답 형태로 정리합니다."""
+
+    rows = []
+    for row in merged.values():
+        row.pop("_sourceTypes", None)
+        row.pop("_sourceNames", None)
+        rows.append(row)
+    return sorted(rows, key=lambda item: (item["date"], item["appName"], item["appId"]))
 
 
 def record_activity_log(
@@ -179,6 +584,7 @@ def get_app_access_stats_payload(
     from_value: str | None,
     to_value: str | None,
     app_id: str | None = None,
+    period_value: str | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """앱별 접속 통계 payload를 생성합니다.
@@ -186,6 +592,7 @@ def get_app_access_stats_payload(
     입력:
     - from_value/to_value: KST 기준 YYYY-MM-DD 쿼리 문자열
     - app_id: 특정 앱 id 필터(선택)
+    - period_value: chart series 집계 단위(day/week/month)
     - now: 테스트용 현재 시각(선택)
 
     반환:
@@ -199,53 +606,107 @@ def get_app_access_stats_payload(
     """
 
     clean_app_id = app_id.strip() if isinstance(app_id, str) and app_id.strip() else None
+    period = _resolve_stats_period(period_value)
     from_date, to_date, start_at, end_at = _resolve_stats_range(
         from_value=from_value,
         to_value=to_value,
         now=now,
     )
     app_rows = summarize_app_access_by_app(start_at=start_at, end_at=end_at, app_id=clean_app_id)
+    external_app_rows = summarize_external_app_access_by_app(
+        start_date=from_date,
+        end_date=to_date,
+        app_id=clean_app_id,
+    )
     series_rows = summarize_app_access_by_date(start_at=start_at, end_at=end_at, app_id=clean_app_id)
+    external_series_rows = summarize_external_app_access_by_date(
+        start_date=from_date,
+        end_date=to_date,
+        app_id=clean_app_id,
+    )
     totals = summarize_app_access_totals(start_at=start_at, end_at=end_at, app_id=clean_app_id)
+    external_totals = summarize_external_app_access_totals(
+        start_date=from_date,
+        end_date=to_date,
+        app_id=clean_app_id,
+    )
 
-    apps: list[dict[str, Any]] = []
+    merged_apps: dict[str, dict[str, Any]] = {}
     for row in app_rows:
         app_key = _safe_text(row.get("metadata__app_id"), "unknown")
         app_name = _safe_text(row.get("metadata__app_name"), app_key)
         access_count = int(row.get("access_count") or 0)
         unique_user_count = int(row.get("unique_user_count") or 0)
-        apps.append(
-            {
-                "appId": app_key,
-                "appName": app_name,
-                "accessCount": access_count,
-                "uniqueUserCount": unique_user_count,
-                "avgAccessPerUser": round(access_count / unique_user_count, 1) if unique_user_count else 0,
-                "lastAccessedAt": _serialize_datetime(row.get("last_accessed_at")),
-            }
+        _append_app_summary(
+            merged=merged_apps,
+            app_id=app_key,
+            app_name=app_name,
+            access_count=access_count,
+            unique_user_count=unique_user_count,
+            last_accessed_at=_serialize_datetime(row.get("last_accessed_at")),
+            source_type="internal",
+            source_name="portal",
         )
 
-    series = [
-        {
-            "date": row["local_date"].isoformat() if hasattr(row.get("local_date"), "isoformat") else "",
-            "appId": _safe_text(row.get("metadata__app_id"), "unknown"),
-            "appName": _safe_text(row.get("metadata__app_name"), _safe_text(row.get("metadata__app_id"), "unknown")),
-            "accessCount": int(row.get("access_count") or 0),
-        }
-        for row in series_rows
-    ]
+    for row in external_app_rows:
+        app_key = _safe_text(row.get("app_id"), "unknown")
+        app_name = _safe_text(row.get("app_name"), app_key)
+        _append_app_summary(
+            merged=merged_apps,
+            app_id=app_key,
+            app_name=app_name,
+            access_count=int(row.get("access_count") or 0),
+            unique_user_count=int(row.get("unique_user_count") or 0),
+            last_accessed_at=_serialize_kst_date_end(row.get("last_stat_date")),
+            source_type=_safe_text(row.get("source_type"), MANUAL_SOURCE_TYPE),
+            source_name=_safe_text(row.get("source_name"), MANUAL_SOURCE_TYPE),
+        )
+
+    apps = _finalize_app_summaries(merged_apps)
+
+    merged_series: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in series_rows:
+        app_key = _safe_text(row.get("metadata__app_id"), "unknown")
+        local_date = row.get("local_date")
+        bucket_date = _get_period_start(local_date, period=period) if isinstance(local_date, date) else None
+        _append_series_summary(
+            merged=merged_series,
+            bucket_date=_serialize_date(bucket_date),
+            app_id=app_key,
+            app_name=_safe_text(row.get("metadata__app_name"), app_key),
+            access_count=int(row.get("access_count") or 0),
+            source_type="internal",
+            source_name="portal",
+        )
+
+    for row in external_series_rows:
+        app_key = _safe_text(row.get("app_id"), "unknown")
+        stat_date = row.get("stat_date")
+        bucket_date = _get_period_start(stat_date, period=period) if isinstance(stat_date, date) else None
+        _append_series_summary(
+            merged=merged_series,
+            bucket_date=_serialize_date(bucket_date),
+            app_id=app_key,
+            app_name=_safe_text(row.get("app_name"), app_key),
+            access_count=int(row.get("access_count") or 0),
+            source_type=_safe_text(row.get("source_type"), MANUAL_SOURCE_TYPE),
+            source_name=_safe_text(row.get("source_name"), MANUAL_SOURCE_TYPE),
+        )
+
+    series = _finalize_series_summaries(merged_series)
 
     top_app = apps[0] if apps else None
 
     return {
         "timezone": "Asia/Seoul",
+        "period": period,
         "range": {
             "from": from_date.isoformat(),
             "to": to_date.isoformat(),
         },
         "summary": {
-            "totalAccessCount": totals["access_count"],
-            "uniqueUserCount": totals["unique_user_count"],
+            "totalAccessCount": totals["access_count"] + external_totals["access_count"],
+            "uniqueUserCount": totals["unique_user_count"] + external_totals["unique_user_count"],
             "activeAppCount": len(apps),
             "topApp": top_app,
         },

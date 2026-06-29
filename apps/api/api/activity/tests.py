@@ -14,7 +14,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.test import TestCase
 from django.urls import reverse
 
-from api.activity.models import ActivityLog
+from api.activity.models import ActivityLog, ExternalAppAccessDailyStat
 
 
 class ActivityLogEndpointTests(TestCase):
@@ -210,6 +210,7 @@ class ActivityLogEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["timezone"], "Asia/Seoul")
+        self.assertEqual(payload["period"], "day")
         self.assertEqual(payload["summary"]["totalAccessCount"], 3)
         self.assertEqual(payload["summary"]["uniqueUserCount"], 2)
         self.assertEqual(payload["summary"]["activeAppCount"], 2)
@@ -217,3 +218,199 @@ class ActivityLogEndpointTests(TestCase):
         self.assertEqual(payload["apps"][0]["accessCount"], 2)
         self.assertEqual(payload["apps"][0]["uniqueUserCount"], 1)
         self.assertEqual(payload["series"][0]["date"], "2026-06-17")
+
+    def test_app_access_stats_rejects_invalid_period(self) -> None:
+        """앱 접속 통계 조회가 허용되지 않은 집계 단위를 거부하는지 확인합니다."""
+        self.client.force_login(self.superuser)
+
+        response = self.client.get(
+            reverse("activity-app-access-stats"),
+            {"from": "2026-06-17", "to": "2026-06-17", "period": "quarter"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("period", response.json()["error"])
+
+    def test_app_access_stats_groups_series_by_week(self) -> None:
+        """주별 보기에서 내부/외부 접속 추이가 KST 월요일 기준으로 묶이는지 확인합니다."""
+        ActivityLog.objects.create(
+            user=self.user,
+            action="APP_ACCESS",
+            path="/appstore",
+            method="EVENT",
+            status_code=200,
+            metadata={"app_id": "appstore", "app_name": "Appstore", "event_type": "app_access"},
+            created_at=datetime(2026, 6, 16, 15, 30, tzinfo=UTC),
+        )
+        ActivityLog.objects.create(
+            user=self.other_user,
+            action="APP_ACCESS",
+            path="/appstore",
+            method="EVENT",
+            status_code=200,
+            metadata={"app_id": "appstore", "app_name": "Appstore", "event_type": "app_access"},
+            created_at=datetime(2026, 6, 18, 1, 0, tzinfo=UTC),
+        )
+        ExternalAppAccessDailyStat.objects.create(
+            app_id="external-foo",
+            app_name="외부 Foo",
+            stat_date="2026-06-19",
+            access_count=7,
+            unique_user_count=3,
+            source_type="manual",
+            source_name="manual",
+            created_by=self.superuser,
+            updated_by=self.superuser,
+        )
+        self.client.force_login(self.superuser)
+
+        response = self.client.get(
+            reverse("activity-app-access-stats"),
+            {"from": "2026-06-17", "to": "2026-06-21", "period": "week"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["period"], "week")
+        appstore_series = next(row for row in payload["series"] if row["appId"] == "appstore")
+        external_series = next(row for row in payload["series"] if row["appId"] == "external-foo")
+        self.assertEqual(appstore_series["date"], "2026-06-15")
+        self.assertEqual(appstore_series["accessCount"], 2)
+        self.assertEqual(external_series["date"], "2026-06-15")
+        self.assertEqual(external_series["accessCount"], 7)
+
+    def test_app_access_stats_groups_series_by_month(self) -> None:
+        """월별 보기에서 접속 추이가 월 시작일 기준으로 묶이는지 확인합니다."""
+        ActivityLog.objects.create(
+            user=self.user,
+            action="APP_ACCESS",
+            path="/emails",
+            method="EVENT",
+            status_code=200,
+            metadata={"app_id": "emails", "app_name": "Emails", "event_type": "app_access"},
+            created_at=datetime(2026, 6, 1, 0, 0, tzinfo=UTC),
+        )
+        ExternalAppAccessDailyStat.objects.create(
+            app_id="external-foo",
+            app_name="외부 Foo",
+            stat_date="2026-06-29",
+            access_count=11,
+            unique_user_count=5,
+            source_type="manual",
+            source_name="manual",
+            created_by=self.superuser,
+            updated_by=self.superuser,
+        )
+        self.client.force_login(self.superuser)
+
+        response = self.client.get(
+            reverse("activity-app-access-stats"),
+            {"from": "2026-06-01", "to": "2026-06-30", "period": "month"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["period"], "month")
+        self.assertTrue(all(row["date"] == "2026-06-01" for row in payload["series"]))
+
+    def test_manual_app_access_preview_validates_spreadsheet_paste(self) -> None:
+        """외부 앱 접속현황 붙여넣기 미리보기가 행 단위 오류를 반환하는지 확인합니다."""
+        self.client.force_login(self.superuser)
+        pasted_text = "\t".join(["date", "app_id", "app_name", "access_count", "unique_user_count"]) + "\n"
+        pasted_text += "\t".join(["2026-06-17", "external-foo", "외부 Foo", "10", "3"]) + "\n"
+        pasted_text += "\t".join(["2026-06-17", "external-bar", "외부 Bar", "2", "5"])
+
+        response = self.client.post(
+            reverse("activity-app-access-manual-preview"),
+            data=json.dumps({"pastedText": pasted_text}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["summary"]["totalRows"], 2)
+        self.assertEqual(payload["summary"]["validRows"], 1)
+        self.assertEqual(payload["summary"]["errorRows"], 1)
+        self.assertEqual(payload["rows"][0]["values"]["appId"], "external-foo")
+        self.assertTrue(payload["rows"][1]["errors"])
+
+    def test_manual_app_access_commit_requires_superuser(self) -> None:
+        """외부 앱 접속현황 수동 반영은 슈퍼유저만 허용합니다."""
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("activity-app-access-manual-commit"),
+            data=json.dumps({"pastedText": "date\tapp_id\taccess_count\tunique_user_count\n2026-06-17\text\t1\t1"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_manual_app_access_commit_upserts_daily_stats(self) -> None:
+        """외부 앱 접속현황 수동 반영이 앱/날짜/출처 기준으로 upsert되는지 확인합니다."""
+        self.client.force_login(self.superuser)
+        first_text = (
+            "date\tapp_id\tapp_name\taccess_count\tunique_user_count\tmemo\n"
+            "2026-06-17\texternal-foo\t외부 Foo\t10\t3\t초기 입력"
+        )
+        second_text = (
+            "date\tapp_id\tapp_name\taccess_count\tunique_user_count\tmemo\n"
+            "2026-06-17\texternal-foo\t외부 Foo\t12\t4\t수정 입력"
+        )
+
+        first_response = self.client.post(
+            reverse("activity-app-access-manual-commit"),
+            data=json.dumps({"pastedText": first_text}),
+            content_type="application/json",
+        )
+        second_response = self.client.post(
+            reverse("activity-app-access-manual-commit"),
+            data=json.dumps({"pastedText": second_text}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(first_response.status_code, 201)
+        self.assertEqual(second_response.status_code, 201)
+        self.assertEqual(ExternalAppAccessDailyStat.objects.count(), 1)
+        stat = ExternalAppAccessDailyStat.objects.get(app_id="external-foo")
+        self.assertEqual(stat.access_count, 12)
+        self.assertEqual(stat.unique_user_count, 4)
+        self.assertEqual(stat.memo, "수정 입력")
+        self.assertEqual(second_response.json()["commit"]["updatedRows"], 1)
+
+    def test_app_access_stats_includes_manual_external_stats(self) -> None:
+        """기존 앱 접속 통계 API가 외부 수동 집계를 합산하는지 확인합니다."""
+        ExternalAppAccessDailyStat.objects.create(
+            app_id="external-foo",
+            app_name="외부 Foo",
+            stat_date="2026-06-17",
+            access_count=10,
+            unique_user_count=3,
+            source_type="manual",
+            source_name="manual",
+            created_by=self.superuser,
+            updated_by=self.superuser,
+        )
+        ActivityLog.objects.create(
+            user=self.user,
+            action="APP_ACCESS",
+            path="/appstore",
+            method="EVENT",
+            status_code=200,
+            metadata={"app_id": "appstore", "app_name": "Appstore", "event_type": "app_access"},
+            created_at=datetime(2026, 6, 17, 1, 0, tzinfo=UTC),
+        )
+        self.client.force_login(self.superuser)
+
+        response = self.client.get(
+            reverse("activity-app-access-stats"),
+            {"from": "2026-06-17", "to": "2026-06-17"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["summary"]["totalAccessCount"], 11)
+        self.assertEqual(payload["summary"]["uniqueUserCount"], 4)
+        external_row = next(app for app in payload["apps"] if app["appId"] == "external-foo")
+        self.assertEqual(external_row["sourceType"], "manual")
+        self.assertEqual(external_row["accessCount"], 10)

@@ -1,6 +1,6 @@
 # =============================================================================
 # 모듈 설명: 활동 로그 조회 APIView를 제공합니다.
-# - 주요 클래스: ActivityLogView, AppAccessEventView, AppAccessStatsView
+# - 주요 클래스: ActivityLogView, AppAccessEventView, AppAccessStatsView, ManualAppAccessStatsView
 # - 불변 조건: 권한 확인 후 view는 HTTP 처리만 수행합니다.
 # =============================================================================
 
@@ -16,8 +16,14 @@ from rest_framework.views import APIView
 
 from api.common.services import parse_json_body
 
-from .serializers import normalize_app_access_payload
-from .services import get_app_access_stats_payload, get_recent_activity_payload, record_app_access
+from .serializers import normalize_app_access_payload, normalize_manual_app_access_paste_payload
+from .services import (
+    build_manual_app_access_preview,
+    commit_manual_app_access_stats,
+    get_app_access_stats_payload,
+    get_recent_activity_payload,
+    record_app_access,
+)
 
 # 조회 건수 관련 상수(한 곳에서 관리)
 DEFAULT_LIMIT: int = 50
@@ -156,6 +162,7 @@ class AppAccessStatsView(APIView):
         - from: YYYY-MM-DD(선택)
         - to: YYYY-MM-DD(선택)
         - appId: 특정 앱 id(선택)
+        - period: day/week/month(선택)
 
         반환:
         - JsonResponse: summary/apps/series payload
@@ -180,6 +187,7 @@ class AppAccessStatsView(APIView):
                 from_value=request.GET.get("from"),
                 to_value=request.GET.get("to"),
                 app_id=request.GET.get("appId") or request.GET.get("app_id"),
+                period_value=request.GET.get("period") or request.GET.get("granularity"),
             )
         except ValueError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
@@ -187,4 +195,103 @@ class AppAccessStatsView(APIView):
         return JsonResponse(payload)
 
 
-__all__ = ["ActivityLogView", "AppAccessEventView", "AppAccessStatsView"]
+class ManualAppAccessStatsPreviewView(APIView):
+    """슈퍼유저 전용 외부 앱 접속현황 붙여넣기 미리보기 API입니다."""
+
+    permission_classes: list[type] = []
+
+    def post(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """붙여넣기 원문을 검증하고 반영 전 미리보기를 반환합니다.
+
+        입력:
+        - pastedText: 스프레드시트에서 복사한 TSV/CSV 원문
+        - sourceName: 입력 출처 이름(선택)
+
+        반환:
+        - JsonResponse: summary/errors/rows preview payload
+
+        부작용:
+        - 없음(검증 전용)
+
+        오류:
+        - 401: 인증 실패
+        - 403: 슈퍼유저 아님
+        - 400: JSON/필수값 오류
+        """
+
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "Unauthorized"}, status=401)
+
+        if not request.user.is_superuser:
+            return JsonResponse({"error": "Forbidden"}, status=403)
+
+        normalized, error = normalize_manual_app_access_paste_payload(parse_json_body(request))
+        if error or normalized is None:
+            return JsonResponse({"error": error or "Invalid payload"}, status=400)
+
+        payload = build_manual_app_access_preview(
+            pasted_text=normalized["pasted_text"],
+            source_name=normalized["source_name"],
+        )
+        return JsonResponse(payload)
+
+
+class ManualAppAccessStatsCommitView(APIView):
+    """슈퍼유저 전용 외부 앱 접속현황 수동 반영 API입니다."""
+
+    permission_classes: list[type] = []
+
+    def post(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """검증된 붙여넣기 데이터를 외부 앱 일별 접속현황으로 반영합니다.
+
+        입력:
+        - pastedText: 스프레드시트에서 복사한 TSV/CSV 원문
+        - sourceName: 입력 출처 이름(선택)
+
+        반환:
+        - JsonResponse: commit 요약과 preview payload
+
+        부작용:
+        - ExternalAppAccessDailyStat rows를 생성하거나 갱신합니다.
+
+        오류:
+        - 401: 인증 실패
+        - 403: 슈퍼유저 아님
+        - 400: JSON/필수값/행 검증 오류
+        """
+
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "Unauthorized"}, status=401)
+
+        if not request.user.is_superuser:
+            return JsonResponse({"error": "Forbidden"}, status=403)
+
+        normalized, error = normalize_manual_app_access_paste_payload(parse_json_body(request))
+        if error or normalized is None:
+            return JsonResponse({"error": error or "Invalid payload"}, status=400)
+
+        try:
+            payload = commit_manual_app_access_stats(
+                pasted_text=normalized["pasted_text"],
+                source_name=normalized["source_name"],
+                user=request.user,
+            )
+        except ValueError as exc:
+            return JsonResponse(
+                {
+                    "error": str(exc),
+                    "preview": getattr(exc, "preview", None),
+                },
+                status=400,
+            )
+
+        return JsonResponse(payload, status=201)
+
+
+__all__ = [
+    "ActivityLogView",
+    "AppAccessEventView",
+    "AppAccessStatsView",
+    "ManualAppAccessStatsCommitView",
+    "ManualAppAccessStatsPreviewView",
+]
