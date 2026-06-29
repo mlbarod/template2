@@ -39,6 +39,7 @@
 - [x] account affiliation 기반 user_sdwt_prod 드릴다운 적용
 - [x] T/K Prevent 전용 PRC group endpoint 추가 및 테스트 보강
 - [x] matrix cell hover comment 표시 추가
+- [x] TIP현황 matrix 행 헤더에 line_id 표시 추가
 
 ## 검증
 - [x] `docker compose -f docker-compose.dev.yml exec -T api python manage.py test api.observer --keepdb`
@@ -59,6 +60,12 @@
 - [x] `npm run web:lint -- --quiet`
 - [x] `npm run web:build`
 - [x] `git diff --check`
+- [x] `docker compose -f docker-compose.dev.yml exec -T api python manage.py test api.observer --keepdb`
+- [x] `npm run agent:audit:api-boundary`
+- [x] `npm run agent:audit:web-boundary`
+- [x] `npm run agent:audit:ui`
+- [x] `npm run web:lint -- --quiet`
+- [x] `git diff --check`
 
 ## 위험과 대응
 - 위험: 실제 데이터에서 동일 cell에 다중 row가 있을 수 있다.
@@ -77,3 +84,5 @@
 - 2026-06-23: T/K Prevent 전용 PRC endpoint와 frontend account affiliation drilldown 전환을 완료하고 backend/frontend/docs 검증을 통과했다.
 - 2026-06-23: T/K Prevent query 계약을 `userSdwtProd`로 명확히 하고 PRC 후보 기준을 `station_master.prc_group_lookup`으로 정정했다.
 - 2026-06-29: matrix cell hover 시 `tkin_prevent_comment`를 표시하도록 matrix 응답과 frontend cell tooltip을 확장했다.
+- 2026-06-29: TIP현황 matrix 행 헤더에 실제 `m_tkin_prevent.line_id`를 `EQP ID` 앞에 표시하는 작업을 시작했다.
+- 2026-06-29: `lineId` matrix 응답과 frontend 고정 행 헤더 반영을 완료하고 observer 테스트, boundary/UI audit, web lint, diff check를 통과했다.

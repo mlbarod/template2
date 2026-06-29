@@ -643,6 +643,7 @@ def get_tkin_prevent_matrix(
         {_target_tkin_eqp_cte()}
         select
             prevent.ppid,
+            prevent.line_id,
             prevent.eqp_id,
             prevent.tkin_prevent_chamber_id,
             prevent.tkin_prevent_type,
@@ -675,6 +676,7 @@ def get_tkin_prevent_matrix(
 
     for row in rows:
         ppid = _safe_text(row.get("ppid")).strip()
+        line_id = _safe_text(row.get("line_id")).strip()
         eqp_id = _safe_text(row.get("eqp_id")).strip()
         chamber_id = _safe_text(row.get("tkin_prevent_chamber_id")).strip() or "-"
         if not ppid or not eqp_id:
@@ -685,6 +687,7 @@ def get_tkin_prevent_matrix(
             column_id,
             {
                 "id": column_id,
+                "lineId": line_id,
                 "eqpId": eqp_id,
                 "chamberId": chamber_id,
                 "label": column_id,

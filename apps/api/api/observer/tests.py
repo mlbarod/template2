@@ -431,6 +431,7 @@ class ObserverEndpointTests(TestCase):
             return_value=[
                 {
                     "ppid": "PPID-A",
+                    "line_id": "LINE-A",
                     "eqp_id": "EQP-1",
                     "tkin_prevent_chamber_id": "CH-1",
                     "tkin_prevent_type": "DOING",
@@ -442,6 +443,7 @@ class ObserverEndpointTests(TestCase):
                 },
                 {
                     "ppid": "PPID-A",
+                    "line_id": "LINE-A",
                     "eqp_id": "EQP-1",
                     "tkin_prevent_chamber_id": "CH-2",
                     "tkin_prevent_type": "PREVENT",
@@ -472,6 +474,7 @@ class ObserverEndpointTests(TestCase):
             ["SD-10", "ETCH", "PROC-1", "10", "LEVEL1", "LEVEL2", "LEVEL3"],
         )
         self.assertEqual(matrix["columns"][0]["label"], "EQP-1-CH-1")
+        self.assertEqual(matrix["columns"][0]["lineId"], "LINE-A")
         self.assertEqual(matrix["rows"][0]["cells"]["EQP-1-CH-1"][0]["status"], "DOING")
         self.assertEqual(
             matrix["rows"][0]["cells"]["EQP-1-CH-1"][0]["comment"],

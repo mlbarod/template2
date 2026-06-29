@@ -173,10 +173,16 @@ function getEquipmentDisplayRows(columns) {
   const originalIndexById = new Map(
     columns.map((column, index) => [column.id, index])
   );
-  const seenEqpIds = new Set();
+  const seenEquipmentKeys = new Set();
   const sortedColumns = [...columns].sort((left, right) => {
+    const leftLineId = left.lineId || "-";
+    const rightLineId = right.lineId || "-";
     const leftEqpId = left.eqpId || "-";
     const rightEqpId = right.eqpId || "-";
+
+    if (leftLineId !== rightLineId) {
+      return originalIndexById.get(left.id) - originalIndexById.get(right.id);
+    }
 
     if (leftEqpId !== rightEqpId) {
       return originalIndexById.get(left.id) - originalIndexById.get(right.id);
@@ -192,15 +198,18 @@ function getEquipmentDisplayRows(columns) {
   });
 
   return sortedColumns.map((column) => {
+    const lineId = column.lineId || "-";
     const eqpId = column.eqpId || "-";
-    const showEqpId = !seenEqpIds.has(eqpId);
-    seenEqpIds.add(eqpId);
+    const equipmentKey = `${lineId}\0${eqpId}`;
+    const showEquipment = !seenEquipmentKeys.has(equipmentKey);
+    seenEquipmentKeys.add(equipmentKey);
 
     return {
       ...column,
+      lineId,
       eqpId,
       chamberId: column.chamberId || "-",
-      showEqpId,
+      showEquipment,
     };
   });
 }
@@ -224,10 +233,13 @@ function TkinPreventMatrixTable({ matrix }) {
       <table className="min-w-full border-separate border-spacing-0 text-sm">
         <thead>
           <tr>
-            <th className="sticky left-0 top-0 z-30 w-32 min-w-32 border-b border-r bg-card px-2 py-1 text-left text-xs font-semibold leading-tight text-muted-foreground">
+            <th className="sticky left-0 top-0 z-30 w-24 min-w-24 border-b border-r bg-card px-2 py-1 text-left text-xs font-semibold leading-tight text-muted-foreground">
+              line_id
+            </th>
+            <th className="sticky left-24 top-0 z-30 w-32 min-w-32 border-b border-r bg-card px-2 py-1 text-left text-xs font-semibold leading-tight text-muted-foreground">
               EQP ID
             </th>
-            <th className="sticky left-32 top-0 z-30 w-24 min-w-24 border-b border-r bg-card px-2 py-1 text-left text-xs font-semibold leading-tight text-muted-foreground">
+            <th className="sticky left-56 top-0 z-30 w-24 min-w-24 border-b border-r bg-card px-2 py-1 text-left text-xs font-semibold leading-tight text-muted-foreground">
               CH
             </th>
             {ppidColumns.map((ppidColumn) => (
@@ -244,15 +256,23 @@ function TkinPreventMatrixTable({ matrix }) {
         <tbody>
           {equipmentRows.map((equipmentRow) => (
             <tr key={equipmentRow.id} className="hover:bg-muted/40">
-              <th className="sticky left-0 z-20 w-32 min-w-32 border-b border-r bg-card px-3 py-2 text-left align-top text-xs font-semibold text-foreground">
+              <th className="sticky left-0 z-20 w-24 min-w-24 border-b border-r bg-card px-3 py-2 text-left align-top text-xs font-semibold text-foreground">
+                <span
+                  className="block max-w-20 truncate"
+                  title={equipmentRow.lineId}
+                >
+                  {equipmentRow.showEquipment ? equipmentRow.lineId : ""}
+                </span>
+              </th>
+              <th className="sticky left-24 z-20 w-32 min-w-32 border-b border-r bg-card px-3 py-2 text-left align-top text-xs font-semibold text-foreground">
                 <span
                   className="block max-w-28 truncate"
                   title={equipmentRow.eqpId}
                 >
-                  {equipmentRow.showEqpId ? equipmentRow.eqpId : ""}
+                  {equipmentRow.showEquipment ? equipmentRow.eqpId : ""}
                 </span>
               </th>
-              <th className="sticky left-32 z-20 w-24 min-w-24 border-b border-r bg-card px-3 py-2 text-left align-top text-xs font-medium text-foreground">
+              <th className="sticky left-56 z-20 w-24 min-w-24 border-b border-r bg-card px-3 py-2 text-left align-top text-xs font-medium text-foreground">
                 <span className="block max-w-20 truncate" title={equipmentRow.chamberId}>
                   {equipmentRow.chamberId}
                 </span>
