@@ -377,10 +377,10 @@ export default function TkinPreventDashboardPage() {
         <div className="flex items-start justify-between gap-4">
           <div className="grid gap-1">
             <h1 className="text-2xl font-semibold tracking-tight">
-              T/K-IN Prevent Dashboard
+              Tkin Prevent Dashboard
             </h1>
             <p className="text-sm text-muted-foreground">
-              {lineId ? `${lineId} Line m_tkin_prevent 기준 예방 상태 표` : "Line을 선택하세요"}
+              {lineId ? `${lineId} TIP현황` : "Line을 선택하세요"}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">

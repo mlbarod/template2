@@ -27,10 +27,10 @@ Observer API는 설비 Observer 화면에 필요한 라인, SDWT, 공정, 설비
 | GET | `/api/v1/observer/logs/ctttm?eqpId=...` | CTTTM 로그 |
 | GET | `/api/v1/observer/logs/racb?eqpId=...` | RACB 로그 |
 | GET | `/api/v1/observer/logs/esop?eqpId=...` | ESOP 로그 |
-| GET | `/api/v1/observer/tkin-prevent/prc-groups?userSdwtProd=...` | T/K-IN Prevent PRC 그룹 목록 |
-| GET | `/api/v1/observer/tkin-prevent/processes?userSdwtProd=...&prcGroup=...` | T/K-IN Prevent process_id 목록 |
-| GET | `/api/v1/observer/tkin-prevent/step-seqs?userSdwtProd=...&prcGroup=...&processId=...` | T/K-IN Prevent step_seq 목록 |
-| GET | `/api/v1/observer/tkin-prevent/matrix?userSdwtProd=...&prcGroup=...&processId=...&stepSeq=...` | T/K-IN Prevent matrix |
+| GET | `/api/v1/observer/tkin-prevent/prc-groups?userSdwtProd=...` | tkin Prevent PRC 그룹 목록 |
+| GET | `/api/v1/observer/tkin-prevent/processes?userSdwtProd=...&prcGroup=...` | tkin Prevent process_id 목록 |
+| GET | `/api/v1/observer/tkin-prevent/step-seqs?userSdwtProd=...&prcGroup=...&processId=...` | tkin Prevent step_seq 목록 |
+| GET | `/api/v1/observer/tkin-prevent/matrix?userSdwtProd=...&prcGroup=...&processId=...&stepSeq=...` | tkin Prevent matrix |
 
 ## Query 규칙
 
@@ -44,10 +44,10 @@ Observer API는 설비 Observer 화면에 필요한 라인, SDWT, 공정, 설비
 - `from`을 생략하면 backend 기본 조회 기간인 최근 60일을 사용합니다.
 - `limit`은 양의 정수만 허용하며 최대 5000건으로 제한됩니다.
 - frontend 기본 로그 조회는 `limit`을 명시하지 않고 backend 기본 기간 정책을 따릅니다.
-- T/K-IN Prevent 화면은 ESOP Dashboard line 선택과 `account_affiliation.line/user_sdwt_prod` 매핑으로 `userSdwtProd` 후보를 정합니다.
-- T/K-IN Prevent PRC 후보는 `station_master.sdwt_prod_lookup = userSdwtProd`인 row의 `station_master.prc_group_lookup`에서 가져옵니다.
-- T/K-IN Prevent process/step/matrix 조회는 `userSdwtProd`와 `prcGroup`으로 대상 `station_master.ch_main`을 찾습니다.
-- T/K-IN Prevent 조회는 `station_master.ch_main`과 `m_tkin_prevent.eqp_id`를 정규화 비교해 대상 설비를 제한합니다.
+- tkin Prevent 화면은 ESOP Dashboard line 선택과 `account_affiliation.line/user_sdwt_prod` 매핑으로 `userSdwtProd` 후보를 정합니다.
+- tkin Prevent PRC 후보는 `station_master.sdwt_prod_lookup = userSdwtProd`인 row의 `station_master.prc_group_lookup`에서 가져옵니다.
+- tkin Prevent process/step/matrix 조회는 `userSdwtProd`와 `prcGroup`으로 대상 `station_master.ch_main`을 찾습니다.
+- tkin Prevent 조회는 `station_master.ch_main`과 `m_tkin_prevent.eqp_id`를 정규화 비교해 대상 설비를 제한합니다.
 - tkin Prevent matrix 응답의 `columns[]`는 `lineId`, `eqpId`, `chamberId`, `label`을 포함합니다.
 
 ## 예시

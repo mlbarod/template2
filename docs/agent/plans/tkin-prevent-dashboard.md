@@ -58,13 +58,13 @@
 - [x] `npm run agent:audit:web-boundary`
 - [x] `npm run agent:audit:ui`
 - [x] `npm run web:lint -- --quiet`
-- [x] `npm run web:build`
 - [x] `git diff --check`
 - [x] `docker compose -f docker-compose.dev.yml exec -T api python manage.py test api.observer --keepdb`
 - [x] `npm run agent:audit:api-boundary`
 - [x] `npm run agent:audit:web-boundary`
 - [x] `npm run agent:audit:ui`
 - [x] `npm run web:lint -- --quiet`
+- [x] `npm run web:build`
 - [x] `git diff --check`
 
 ## 위험과 대응
@@ -77,7 +77,7 @@
 - 2026-06-23: observer 기준정보 API 재사용과 `m_tkin_prevent` matrix 신규 endpoint 추가 방향으로 계획을 작성했다.
 - 2026-06-23: observer API에 `tkin-prevent` process/step/matrix endpoint를 추가하고 React dashboard route를 연결했다.
 - 2026-06-23: `api` 컨테이너와 test DB의 `pg_trgm` extension을 보정한 뒤 observer 테스트, web build, agent audit을 통과했다.
-- 2026-06-23: 사용자 확인에 따라 Line은 SDWT 선택까지만 사용하고 T/K-IN Prevent process/step/matrix 조회 scope에서 제거했다.
+- 2026-06-23: 사용자 확인에 따라 Line은 SDWT 선택까지만 사용하고 tkin Prevent process/step/matrix 조회 scope에서 제거했다.
 - 2026-06-23: `TIP현황`을 ESOP Dashboard 내부 route로 이동하고 `/observer/tkin-prevent` 호환 route를 제거했다.
 - 2026-06-23: 사용자 확인에 따라 matrix 표시 방향을 `ppid = 컬럼`, `eqp_id-chamber_id = 행`으로 전치했다.
 - 2026-06-23: ESOP line selector와 `account_affiliation.line/user_sdwt_prod` 기반 드릴다운으로 전환하는 작업을 시작했다.

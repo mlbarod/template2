@@ -14,7 +14,7 @@ const ObserverRoute = () => (
 );
 
 export const TkinPreventDashboardRoute = () => (
-  <Suspense fallback={<PageLoader label="T/K-IN Prevent를 불러오는 중입니다" />}>
+  <Suspense fallback={<PageLoader label="tkin Prevent를 불러오는 중입니다" />}>
     <TkinPreventDashboardPage />
   </Suspense>
 );

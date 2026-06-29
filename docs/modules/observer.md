@@ -11,7 +11,7 @@ Observer는 설비 Observer 화면에 필요한 기준 정보와 로그를 조�
 - 설비별 통합 로그 조회
 - EQP, TIP, CTTTM, RACB, ESOP 유형별 로그 조회
 - URL의 `eqpId`를 기준으로 설비 상세와 observer item 동기화
-- T/K-IN Prevent process/step matrix 조회
+- tkin Prevent process/step matrix 조회
 
 ## 화면과 route
 
@@ -38,7 +38,7 @@ Observer 기준정보와 로그는 기본 DB의 data movement/업무 테이블�
 | CTTTM log | 기본 DB `ctttm_workorder_list`, `ct_process_comment` | CTTTM 유형별 설비 로그와 요약 |
 | RACB log | 기본 DB `racb_list` | RACB 유형별 설비 로그 |
 | ESOP log | 기본 DB `drone_sop` | ESOP 관련 로그 |
-| T/K-IN Prevent | 기본 DB `m_tkin_prevent`, `station_master` | SDWT/PRC/process/step 기준 예방 상태 matrix |
+| tkin Prevent | 기본 DB `m_tkin_prevent`, `station_master` | SDWT/PRC/process/step 기준 예방 상태 matrix |
 
 ## 조회 흐름
 
@@ -66,7 +66,7 @@ Observer 기준정보와 로그는 기본 DB의 data movement/업무 테이블�
 | 경로 | 역할 |
 | --- | --- |
 | `apps/web/src/features/observer/pages/ObserverPage.jsx` | observer route page |
-| `apps/web/src/features/observer/pages/TkinPreventDashboardPage.jsx` | T/K-IN Prevent route page |
+| `apps/web/src/features/observer/pages/TkinPreventDashboardPage.jsx` | tkin Prevent route page |
 | `apps/web/src/features/observer/api/observerApi.js` | backend API 호출 |
 | `apps/web/src/features/observer/hooks/useObserverLogs.js` | 로그 query orchestration |
 | `apps/web/src/features/observer/hooks/useObserverLogQuery.js` | 유형별 로그 query 공통화 |
@@ -80,9 +80,9 @@ Observer 기준정보와 로그는 기본 DB의 data movement/업무 테이블�
 - 기본 조회 기간은 `OBSERVER_QUERY_DAYS`로 조정합니다.
 - 화면이 느리면 로그 API의 `from`, `to`, `limit` 조합과 응답 건수를 먼저 확인합니다.
 - ESOP 로그가 누락되면 `api.drone` 데이터와 observer 로그 결합 지점을 함께 확인합니다.
-- T/K-IN Prevent matrix가 비어 있으면 `station_master.ch_main`과 `m_tkin_prevent.eqp_id` 매핑부터 확인합니다.
-- T/K-IN Prevent에서 Line은 ESOP Dashboard 선택값을 사용하며, user_sdwt_prod 후보는 `account_affiliation.line/user_sdwt_prod` 기준입니다.
-- T/K-IN Prevent의 PRC/process/step/matrix 조회는 선택된 user_sdwt_prod와 PRC Group 기준입니다.
+- tkin Prevent matrix가 비어 있으면 `station_master.ch_main`과 `m_tkin_prevent.eqp_id` 매핑부터 확인합니다.
+- tkin Prevent에서 Line은 ESOP Dashboard 선택값을 사용하며, user_sdwt_prod 후보는 `account_affiliation.line/user_sdwt_prod` 기준입니다.
+- tkin Prevent의 PRC/process/step/matrix 조회는 선택된 user_sdwt_prod와 PRC Group 기준입니다.
 
 ## 관련 API
 
