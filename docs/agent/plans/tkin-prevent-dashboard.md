@@ -38,6 +38,7 @@
 - [x] ESOP line selector 기반 TIP현황 route로 전환
 - [x] account affiliation 기반 user_sdwt_prod 드릴다운 적용
 - [x] T/K Prevent 전용 PRC group endpoint 추가 및 테스트 보강
+- [x] matrix cell hover comment 표시 추가
 
 ## 검증
 - [x] `docker compose -f docker-compose.dev.yml exec -T api python manage.py test api.observer --keepdb`
@@ -45,6 +46,13 @@
 - [x] `npm run agent:audit`
 - [x] `docker compose -f docker-compose.dev.yml exec -T api python manage.py test api.observer --keepdb`
 - [x] `docker compose -f docker-compose.dev.yml exec -T api python manage.py makemigrations --check --dry-run`
+- [x] `npm run agent:audit:api-boundary`
+- [x] `npm run agent:audit:web-boundary`
+- [x] `npm run agent:audit:ui`
+- [x] `npm run web:lint -- --quiet`
+- [x] `npm run web:build`
+- [x] `git diff --check`
+- [x] `docker compose -f docker-compose.dev.yml exec -T api python manage.py test api.observer --keepdb`
 - [x] `npm run agent:audit:api-boundary`
 - [x] `npm run agent:audit:web-boundary`
 - [x] `npm run agent:audit:ui`
@@ -68,3 +76,4 @@
 - 2026-06-23: ESOP line selector와 `account_affiliation.line/user_sdwt_prod` 기반 드릴다운으로 전환하는 작업을 시작했다.
 - 2026-06-23: T/K Prevent 전용 PRC endpoint와 frontend account affiliation drilldown 전환을 완료하고 backend/frontend/docs 검증을 통과했다.
 - 2026-06-23: T/K Prevent query 계약을 `userSdwtProd`로 명확히 하고 PRC 후보 기준을 `station_master.prc_group_lookup`으로 정정했다.
+- 2026-06-29: matrix cell hover 시 `tkin_prevent_comment`를 표시하도록 matrix 응답과 frontend cell tooltip을 확장했다.

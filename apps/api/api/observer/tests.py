@@ -434,6 +434,7 @@ class ObserverEndpointTests(TestCase):
                     "eqp_id": "EQP-1",
                     "tkin_prevent_chamber_id": "CH-1",
                     "tkin_prevent_type": "DOING",
+                    "tkin_prevent_comment": "DOING COMMENT",
                     "registration_level": None,
                     "tkin_restrc_lot_count": None,
                     "tkin_lot_count": None,
@@ -444,6 +445,7 @@ class ObserverEndpointTests(TestCase):
                     "eqp_id": "EQP-1",
                     "tkin_prevent_chamber_id": "CH-2",
                     "tkin_prevent_type": "PREVENT",
+                    "tkin_prevent_comment": "PREVENT COMMENT",
                     "registration_level": "LEVEL2",
                     "tkin_restrc_lot_count": 4.0,
                     "tkin_lot_count": 10.0,
@@ -472,9 +474,18 @@ class ObserverEndpointTests(TestCase):
         self.assertEqual(matrix["columns"][0]["label"], "EQP-1-CH-1")
         self.assertEqual(matrix["rows"][0]["cells"]["EQP-1-CH-1"][0]["status"], "DOING")
         self.assertEqual(
+            matrix["rows"][0]["cells"]["EQP-1-CH-1"][0]["comment"],
+            "DOING COMMENT",
+        )
+        self.assertEqual(
             matrix["rows"][0]["cells"]["EQP-1-CH-2"][0]["status"],
             "LEVEL2(2/4/10)",
         )
+        self.assertEqual(
+            matrix["rows"][0]["cells"]["EQP-1-CH-2"][0]["comment"],
+            "PREVENT COMMENT",
+        )
+        self.assertIn("prevent.tkin_prevent_comment", query)
         self.assertIn("prevent.process_id = %s", query)
         self.assertIn("prevent.step_seq = %s", query)
         self.assertNotIn("upper(trim(prevent.process_id))", query)

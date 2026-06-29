@@ -646,6 +646,7 @@ def get_tkin_prevent_matrix(
             prevent.eqp_id,
             prevent.tkin_prevent_chamber_id,
             prevent.tkin_prevent_type,
+            prevent.tkin_prevent_comment,
             prevent.registration_level,
             prevent.tkin_restrc_lot_count,
             prevent.tkin_lot_count,
@@ -697,12 +698,15 @@ def get_tkin_prevent_matrix(
         cell_key = (ppid, column_id)
         seen_values.setdefault(cell_key, set())
         status = _format_tkin_status(row)
-        if status in seen_values[cell_key]:
+        comment = _safe_text(row.get("tkin_prevent_comment")).strip()
+        seen_key = f"{status}\0{comment}"
+        if seen_key in seen_values[cell_key]:
             continue
-        seen_values[cell_key].add(status)
+        seen_values[cell_key].add(seen_key)
         cells.setdefault(column_id, []).append(
             {
                 "status": status,
+                "comment": comment,
                 "type": _safe_text(row.get("tkin_prevent_type")),
                 "registrationLevel": _safe_text(row.get("registration_level")),
             }

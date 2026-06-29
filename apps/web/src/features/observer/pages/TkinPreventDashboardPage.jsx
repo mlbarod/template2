@@ -4,6 +4,11 @@ import { RefreshCw, RotateCcw, TableProperties } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   useActiveLine,
   useLineDashboardLineSdwtOptionsQuery,
 } from "@/lib/affiliation";
@@ -91,16 +96,34 @@ function MatrixCell({ values }) {
 
   return (
     <div className="grid gap-1">
-      {values.map((value, index) => (
-        <Badge
-          key={`${value.status}-${value.type}-${value.registrationLevel}-${index}`}
-          variant={value.status === "DOING" ? "default" : "secondary"}
-          className="max-w-full justify-start truncate rounded-md"
-          title={value.status}
-        >
-          {value.status}
-        </Badge>
-      ))}
+      {values.map((value, index) => {
+        const comment = normalizeOptionValue(value.comment);
+        const badge = (
+          <Badge
+            variant={value.status === "DOING" ? "default" : "secondary"}
+            className="max-w-full justify-start truncate rounded-md"
+            tabIndex={comment ? 0 : undefined}
+            aria-label={comment ? `${value.status} ${comment}` : value.status}
+          >
+            {value.status}
+          </Badge>
+        );
+
+        if (!comment) {
+          return React.cloneElement(badge, {
+            key: `${value.status}-${value.type}-${value.registrationLevel}-${index}`,
+          });
+        }
+
+        return (
+          <Tooltip key={`${value.status}-${value.type}-${value.registrationLevel}-${comment}-${index}`}>
+            <TooltipTrigger asChild>{badge}</TooltipTrigger>
+            <TooltipContent side="top" align="start" className="max-w-96 whitespace-pre-wrap text-left leading-5">
+              {comment}
+            </TooltipContent>
+          </Tooltip>
+        );
+      })}
     </div>
   );
 }
