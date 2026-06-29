@@ -26,6 +26,13 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -278,61 +285,50 @@ function ManualPastePanel({ onCommitted }) {
   }
 
   return (
-    <Card className="rounded-lg py-0 shadow-none">
-      <CardHeader className="border-b px-4 py-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <FileSpreadsheet className="size-4 text-muted-foreground" aria-hidden="true" />
-              <CardTitle className="text-sm font-semibold">외부 앱 수동 입력</CardTitle>
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              엑셀/스프레드시트에서 헤더 포함 영역을 복사해 붙여넣습니다.
-            </p>
-          </div>
-          {visiblePreview ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={previewHasErrors ? "destructive" : "secondary"}>
-                오류 {formatNumber(visiblePreview.summary?.errorRows)}
-              </Badge>
-              <Badge variant="outline">유효 {formatNumber(visiblePreview.summary?.validRows)}행</Badge>
-            </div>
-          ) : null}
+    <div className="grid gap-4">
+      {visiblePreview ? (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Badge variant={previewHasErrors ? "destructive" : "secondary"}>
+            오류 {formatNumber(visiblePreview.summary?.errorRows)}
+          </Badge>
+          <Badge variant="outline">유효 {formatNumber(visiblePreview.summary?.validRows)}행</Badge>
         </div>
-      </CardHeader>
-      <CardContent className="grid gap-4 p-4">
-        <div className="grid gap-4 lg:grid-cols-[220px,1fr]">
-          <div className="grid content-start gap-2">
-            <Label htmlFor="manual-source-name">출처</Label>
-            <Input
-              id="manual-source-name"
-              value={sourceName}
-              onChange={(event) => {
-                setSourceName(event.target.value)
-                commitMutation.reset()
-              }}
-              placeholder="manual"
-            />
-            <p className="text-xs leading-5 text-muted-foreground">
-              같은 앱/날짜/출처는 기존 값을 덮어씁니다.
-            </p>
+      ) : null}
+
+      <div className="rounded-lg border bg-card">
+        <div className="grid gap-4 p-4">
+          <div className="grid gap-4 lg:grid-cols-[220px,1fr]">
+            <div className="grid content-start gap-2">
+              <Label htmlFor="manual-source-name">출처</Label>
+              <Input
+                id="manual-source-name"
+                value={sourceName}
+                onChange={(event) => {
+                  setSourceName(event.target.value)
+                  commitMutation.reset()
+                }}
+                placeholder="manual"
+              />
+              <p className="text-xs leading-5 text-muted-foreground">
+                같은 앱/날짜/출처는 기존 값을 덮어씁니다.
+              </p>
+            </div>
+            <div className="grid min-w-0 gap-2">
+              <Label htmlFor="manual-paste-text">붙여넣기 데이터</Label>
+              <Textarea
+                id="manual-paste-text"
+                value={pastedText}
+                onChange={(event) => {
+                  setPastedText(event.target.value)
+                  setPreview(null)
+                  previewMutation.reset()
+                  commitMutation.reset()
+                }}
+                placeholder={MANUAL_PASTE_SAMPLE}
+                className="min-h-28 font-mono text-xs"
+              />
+            </div>
           </div>
-          <div className="grid min-w-0 gap-2">
-            <Label htmlFor="manual-paste-text">붙여넣기 데이터</Label>
-            <Textarea
-              id="manual-paste-text"
-              value={pastedText}
-              onChange={(event) => {
-                setPastedText(event.target.value)
-                setPreview(null)
-                previewMutation.reset()
-                commitMutation.reset()
-              }}
-              placeholder={MANUAL_PASTE_SAMPLE}
-              className="min-h-28 font-mono text-xs"
-            />
-          </div>
-        </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-muted-foreground">
@@ -429,8 +425,9 @@ function ManualPastePanel({ onCommitted }) {
             </Table>
           </div>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
+  </div>
   )
 }
 
@@ -516,54 +513,12 @@ function ChartPanel({ apps, chartRows, isLoading, error, period }) {
   )
 }
 
-function RankingPanel({ apps, isLoading }) {
-  const rankedApps = apps.slice(0, 10)
-
-  return (
-    <Card className="grid h-full min-h-0 min-w-0 grid-rows-[auto,1fr] gap-0 overflow-hidden rounded-lg py-0 shadow-none">
-      <CardHeader className="border-b px-4 py-3">
-        <CardTitle className="text-sm font-semibold">앱 순위</CardTitle>
-      </CardHeader>
-      <CardContent className="min-h-0 overflow-y-auto px-0 py-0">
-        {isLoading ? (
-          <div className="grid gap-2 p-4">
-            {Array.from({ length: 6 }).map((_, index) => (
-              <Skeleton key={index} className="h-10 w-full" />
-            ))}
-          </div>
-        ) : rankedApps.length === 0 ? (
-          <div className="flex h-full min-h-64 items-center justify-center px-4 text-center text-sm text-muted-foreground">
-            순위에 표시할 접속 기록이 없습니다.
-          </div>
-        ) : (
-          <div className="divide-y">
-            {rankedApps.map((app, index) => (
-              <div key={app.appId} className="flex items-center gap-3 px-4 py-3">
-                <span className="flex size-7 shrink-0 items-center justify-center rounded-md border bg-muted text-xs font-medium tabular-nums">
-                  {index + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{app.appName}</p>
-                  <p className="text-xs text-muted-foreground">{formatNumber(app.uniqueUserCount)}명</p>
-                </div>
-                <div className="text-right text-sm font-semibold tabular-nums">
-                  {formatNumber(app.accessCount)}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
 function AppTable({ apps, isLoading }) {
   return (
     <Card className="grid h-full min-h-0 min-w-0 grid-rows-[auto,1fr] gap-0 overflow-hidden rounded-lg py-0 shadow-none">
       <CardHeader className="border-b px-4 py-3">
         <div className="flex items-center justify-between gap-3">
-          <CardTitle className="text-sm font-semibold">앱별 상세 접속 현황</CardTitle>
+          <CardTitle className="text-sm font-semibold">앱별 접속 순위 및 상세 현황</CardTitle>
           <Badge variant="secondary">{formatNumber(apps.length)} apps</Badge>
         </div>
       </CardHeader>
@@ -578,6 +533,7 @@ function AppTable({ apps, isLoading }) {
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-card">
               <TableRow>
+                <TableHead className="w-20 px-4">순위</TableHead>
                 <TableHead className="px-4">앱명</TableHead>
                 <TableHead>출처</TableHead>
                 <TableHead className="text-right">접속횟수</TableHead>
@@ -589,13 +545,23 @@ function AppTable({ apps, isLoading }) {
             <TableBody>
               {apps.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
                     선택한 기간에 접속 기록이 없습니다.
                   </TableCell>
                 </TableRow>
               ) : (
-                apps.map((app) => (
+                apps.map((app, index) => (
                   <TableRow key={app.appId}>
+                    <TableCell className="px-4">
+                      <span
+                        className={cn(
+                          "inline-flex size-7 items-center justify-center rounded-md border bg-muted text-xs font-medium tabular-nums",
+                          index < 3 && "border-primary/30 bg-primary/10 text-primary"
+                        )}
+                      >
+                        {index + 1}
+                      </span>
+                    </TableCell>
                     <TableCell className="px-4 font-medium">{app.appName}</TableCell>
                     <TableCell>
                       <Badge variant={app.sourceType === "manual" ? "outline" : "secondary"}>
@@ -623,6 +589,7 @@ export function AccessStatsPage() {
   const { user } = useAuth()
   const [rangeKey, setRangeKey] = useState("7d")
   const [periodKey, setPeriodKey] = useState("day")
+  const [isManualDialogOpen, setIsManualDialogOpen] = useState(false)
   const selectedRange = RANGE_OPTIONS.find((option) => option.key === rangeKey) ?? RANGE_OPTIONS[1]
   const params = useMemo(
     () => buildStatsParams(buildRange(selectedRange.days), periodKey),
@@ -666,6 +633,10 @@ export function AccessStatsPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="outline" onClick={() => setIsManualDialogOpen(true)}>
+              <FileSpreadsheet className="size-4" />
+              외부 앱 수동입력
+            </Button>
             <div className="flex items-center rounded-md border bg-background p-1">
               {RANGE_OPTIONS.map((option) => (
                 <Button
@@ -707,8 +678,20 @@ export function AccessStatsPage() {
         </div>
       </header>
 
+      <Dialog open={isManualDialogOpen} onOpenChange={setIsManualDialogOpen}>
+        <DialogContent className="max-h-[88vh] max-w-5xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>외부 앱 수동 입력</DialogTitle>
+            <DialogDescription>
+              엑셀/스프레드시트에서 헤더 포함 영역을 복사해 붙여넣고 미리보기 후 반영합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <ManualPastePanel onCommitted={() => statsQuery.refetch()} />
+        </DialogContent>
+      </Dialog>
+
       <main className="flex-1 min-h-0 min-w-0 overflow-y-auto px-6 py-4">
-        <div className="grid min-h-full grid-rows-[auto,auto,minmax(360px,0.8fr),minmax(260px,0.7fr)] gap-4">
+        <div className="grid min-h-full grid-rows-[auto,minmax(360px,0.8fr),minmax(300px,0.7fr)] gap-4">
           <section className="grid grid-cols-4 gap-4">
             <KpiCard
               title="전체 접속횟수"
@@ -744,8 +727,6 @@ export function AccessStatsPage() {
             />
           </section>
 
-          <ManualPastePanel onCommitted={() => statsQuery.refetch()} />
-
           {statsQuery.error ? (
             <StatePanel
               icon={AlertTriangle}
@@ -759,7 +740,7 @@ export function AccessStatsPage() {
               }
             />
           ) : (
-            <section className="grid min-h-0 min-w-0 grid-cols-[2fr,1fr] gap-4">
+            <section className="min-h-0 min-w-0">
               <ChartPanel
                 apps={apps}
                 chartRows={chartRows}
@@ -767,7 +748,6 @@ export function AccessStatsPage() {
                 error={statsQuery.error}
                 period={responsePeriod}
               />
-              <RankingPanel apps={apps} isLoading={statsQuery.isLoading} />
             </section>
           )}
 
