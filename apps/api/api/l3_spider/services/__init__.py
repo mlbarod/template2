@@ -345,13 +345,13 @@ def _dataframe_to_columnar(merged: pd.DataFrame) -> dict[str, object]:
 
 # ─── 서비스 함수 ─────────────────────────────────────────────────────────────
 
-def get_meta() -> dict[str, object]:
+def get_meta(*, user: Any | None = None) -> dict[str, object]:
     """사용 가능한 날짜/라인/프로세스/EDS step 메타데이터를 반환합니다.
 
     활성 제외 필터의 경로 필드(line_id, process_id, eds_step)를 적용하여
     완전히 제외된 항목은 DataSelector에 표시되지 않습니다.
     """
-    rules = _get_exclusion_rules()
+    rules = _get_exclusion_rules(user=user)
     rules_hash = str(hash(tuple(sorted(str(r) for r in rules))))
     cached = _meta_cache.get(rules_hash)
     if cached is not None:
@@ -425,16 +425,23 @@ def _matches_pattern(value: str, pattern: str) -> bool:
     return fnmatch.fnmatch(str(value).lower(), pattern.replace("%", "*").lower())
 
 
-def _get_exclusion_rules() -> list[dict]:
-    """활성 제외 필터 규칙을 DB에서 조회합니다.
+def _get_exclusion_rules(*, user: Any | None = None) -> list[dict]:
+    """사용자 소유 활성 제외 필터 규칙을 DB에서 조회합니다.
 
     multi-worker 환경에서 캐시 불일치를 방지하기 위해 항상 DB를 직접 읽습니다.
     rules 테이블은 소규모이므로 쿼리 비용이 무시할 수준입니다.
     """
+    user_id = getattr(user, "id", None)
+    if not user_id:
+        return []
+
     try:
         from ..models import L3SpiderExclusionFilter
         return list(
-            L3SpiderExclusionFilter.objects.filter(is_active=True).values(
+            L3SpiderExclusionFilter.objects.filter(
+                is_active=True,
+                created_by_id=user_id,
+            ).values(
                 "line_id", "process_id", "eds_step", "step_seq",
                 "ppid", "eqpch", "bin_name", "date_from", "date_to",
             )
@@ -442,6 +449,15 @@ def _get_exclusion_rules() -> list[dict]:
     except Exception as exc:
         print(f"[WARN] L3 Spider exclusion rules load failed: {exc}")
         return []
+
+
+def _require_user_id(user: Any) -> int:
+    """인증 사용자 ID를 반환하고 없으면 권한 오류를 발생시킵니다."""
+
+    user_id = getattr(user, "id", None)
+    if not user_id:
+        raise L3SpiderServiceError("Authentication required", status_code=401)
+    return int(user_id)
 
 
 def _serialize_exclusion_filter(row) -> dict[str, object]:
@@ -470,12 +486,15 @@ def _serialize_exclusion_filter(row) -> dict[str, object]:
     }
 
 
-def list_exclusion_filters() -> list[dict[str, object]]:
-    """제외 필터 목록을 최신 등록순으로 조회합니다."""
+def list_exclusion_filters(*, user: Any) -> list[dict[str, object]]:
+    """요청 사용자가 소유한 제외 필터 목록을 최신 등록순으로 조회합니다."""
 
     from ..models import L3SpiderExclusionFilter
 
-    filters = L3SpiderExclusionFilter.objects.select_related("created_by").all()
+    user_id = _require_user_id(user)
+    filters = L3SpiderExclusionFilter.objects.select_related("created_by").filter(
+        created_by_id=user_id,
+    )
     return [_serialize_exclusion_filter(row) for row in filters]
 
 
@@ -484,6 +503,7 @@ def create_exclusion_filter(data: dict[str, object], *, user) -> dict[str, int]:
 
     from ..models import L3SpiderExclusionFilter
 
+    user_id = _require_user_id(user)
     row = L3SpiderExclusionFilter.objects.create(
         line_id=data["line_id"],
         process_id=data["process_id"],
@@ -496,19 +516,25 @@ def create_exclusion_filter(data: dict[str, object], *, user) -> dict[str, int]:
         date_to=data.get("date_to"),
         is_active=data["is_active"],
         memo=data.get("memo", ""),
-        created_by=user if getattr(user, "is_authenticated", False) else None,
+        created_by_id=user_id,
     )
     invalidate_exclusion_cache()
     return {"id": row.id}
 
 
-def update_exclusion_filter(filter_id: int, data: dict[str, object]) -> dict[str, int]:
-    """제외 필터를 부분 수정하고 관련 캐시를 무효화합니다."""
+def update_exclusion_filter(
+    filter_id: int,
+    data: dict[str, object],
+    *,
+    user: Any,
+) -> dict[str, int]:
+    """사용자 소유 제외 필터를 부분 수정하고 관련 캐시를 무효화합니다."""
 
     from ..models import L3SpiderExclusionFilter
 
+    user_id = _require_user_id(user)
     try:
-        row = L3SpiderExclusionFilter.objects.get(pk=filter_id)
+        row = L3SpiderExclusionFilter.objects.get(pk=filter_id, created_by_id=user_id)
     except L3SpiderExclusionFilter.DoesNotExist as exc:
         raise L3SpiderServiceError("Not found", status_code=404) from exc
 
@@ -533,13 +559,14 @@ def update_exclusion_filter(filter_id: int, data: dict[str, object]) -> dict[str
     return {"id": row.id}
 
 
-def delete_exclusion_filter(filter_id: int) -> None:
-    """제외 필터를 삭제하고 관련 캐시를 무효화합니다."""
+def delete_exclusion_filter(filter_id: int, *, user: Any) -> None:
+    """사용자 소유 제외 필터를 삭제하고 관련 캐시를 무효화합니다."""
 
     from ..models import L3SpiderExclusionFilter
 
+    user_id = _require_user_id(user)
     try:
-        row = L3SpiderExclusionFilter.objects.get(pk=filter_id)
+        row = L3SpiderExclusionFilter.objects.get(pk=filter_id, created_by_id=user_id)
     except L3SpiderExclusionFilter.DoesNotExist as exc:
         raise L3SpiderServiceError("Not found", status_code=404) from exc
 
@@ -600,12 +627,12 @@ def _apply_exclusion_filters_with_rules(merged: pd.DataFrame, rules: list[dict])
     return merged[~exclude_mask]
 
 
-def _apply_exclusion_filters(merged: pd.DataFrame) -> pd.DataFrame:
+def _apply_exclusion_filters(merged: pd.DataFrame, *, user: Any | None = None) -> pd.DataFrame:
     """활성 제외 필터를 DB에서 읽어 적용합니다 (get_data 전용)."""
-    return _apply_exclusion_filters_with_rules(merged, _get_exclusion_rules())
+    return _apply_exclusion_filters_with_rules(merged, _get_exclusion_rules(user=user))
 
 
-def get_structure(selection: dict[str, object]) -> dict[str, object]:
+def get_structure(selection: dict[str, object], *, user: Any | None = None) -> dict[str, object]:
     """파일명 스캔만으로 edsStepSeqs·edsStepPpids를 즉시 반환합니다 (parquet 읽기 없음).
 
     제외 필터의 경로 필드(line_id, process_id, eds_step, step_seq, ppid)를 적용합니다.
@@ -615,7 +642,7 @@ def get_structure(selection: dict[str, object]) -> dict[str, object]:
     if not _has_required_selection(selection):
         return empty
 
-    rules = _get_exclusion_rules()
+    rules = _get_exclusion_rules(user=user)
     rules_hash = str(hash(tuple(sorted(str(r) for r in rules))))
     cache_key = f"{rules_hash}:{_make_selection_cache_key(selection)}"
     cached = _structure_cache.get(cache_key)
@@ -673,14 +700,14 @@ def get_structure(selection: dict[str, object]) -> dict[str, object]:
     return result
 
 
-def get_stats(selection: dict[str, object]) -> dict[str, object]:
+def get_stats(selection: dict[str, object], *, user: Any | None = None) -> dict[str, object]:
     """slim parquet 읽기로 stats + PPID별 last_tkin_time을 반환합니다."""
     empty: dict[str, object] = {"stats": _empty_stats(), "ppidLastTkinTime": {}}
     if not _has_required_selection(selection):
         return empty
 
     # rules hash를 포함한 cache key: 필터 변경 시 자동으로 다른 key가 사용됨
-    rules = _get_exclusion_rules()
+    rules = _get_exclusion_rules(user=user)
     rules_hash = str(hash(tuple(sorted(str(r) for r in rules))))
     cache_key = f"{rules_hash}:{_make_selection_cache_key(selection)}"
     cached = _stats_cache.get(cache_key)
@@ -739,7 +766,7 @@ def get_stats(selection: dict[str, object]) -> dict[str, object]:
     return result
 
 
-def get_summary(selection: dict[str, object]) -> dict[str, object]:
+def get_summary(selection: dict[str, object], *, user: Any | None = None) -> dict[str, object]:
     """선택 조건의 이상감지 요약 정보를 반환합니다."""
     empty = {"stats": _empty_stats(), "edsStepSeqs": {}, "edsStepPpids": {}, "stepPpids": {}, "ppidEqcs": {}, "ppidHighRiskEqcs": {}, "ppidBins": {}, "eqcBins": {}, "eqcAnomalyBins": {}, "eqcHighRiskBins": {}, "bins": [], "anomalies": []}
     if not _has_required_selection(selection):
@@ -751,6 +778,9 @@ def get_summary(selection: dict[str, object]) -> dict[str, object]:
 
     merged = pd.concat(frames, ignore_index=True)
     merged = _normalize_display_status(merged)
+    merged = _apply_exclusion_filters(merged, user=user)
+    if merged.empty:
+        return empty
     if "display_status" not in merged.columns:
         return empty
 
@@ -891,7 +921,7 @@ def get_summary(selection: dict[str, object]) -> dict[str, object]:
     }
 
 
-def get_data(selection: dict[str, object]) -> dict[str, object]:
+def get_data(selection: dict[str, object], *, user: Any | None = None) -> dict[str, object]:
     """선택 조건과 필터에 맞는 차트 행 데이터를 반환합니다."""
     _empty = {"cols": [], "colData": []}
 
@@ -964,7 +994,7 @@ def get_data(selection: dict[str, object]) -> dict[str, object]:
 
     merged = pd.concat(frames, ignore_index=True)
     merged = _normalize_display_status(merged)
-    merged = _apply_exclusion_filters(merged)
+    merged = _apply_exclusion_filters(merged, user=user)
 
     if merged.empty:
         return _empty
@@ -988,7 +1018,7 @@ def get_data(selection: dict[str, object]) -> dict[str, object]:
     return _dataframe_to_columnar(merged)
 
 
-def get_filter_candidates(selection: dict[str, object]) -> dict[str, object]:
+def get_filter_candidates(selection: dict[str, object], *, user: Any | None = None) -> dict[str, object]:
     """PPID 선택 경로(date/line/process/eds_step/step_seq#ppid#*)에서 High Risk EQPCH·Bin 후보를 반환합니다."""
     dates = selection.get("dates") or []
     line_ids = selection.get("lineIds") or []
@@ -1020,7 +1050,7 @@ def get_filter_candidates(selection: dict[str, object]) -> dict[str, object]:
         return {"eqcHighRiskBins": {}}
 
     merged = pd.concat(frames, ignore_index=True)
-    merged = _apply_exclusion_filters(merged)
+    merged = _apply_exclusion_filters(merged, user=user)
 
     eqc_high_risk_bins: dict[str, list[str]] = {}
     if {"eqc", "bin_name", "display_status"}.issubset(merged.columns):

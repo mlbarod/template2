@@ -43,7 +43,7 @@ class L3SpiderMetaView(APIView):
 
     def get(self, request, *args, **kwargs) -> Response:
         try:
-            return Response(services.get_meta())
+            return Response(services.get_meta(user=request.user))
         except services.L3SpiderServiceError as error:
             return _error_response(error)
 
@@ -57,7 +57,9 @@ class L3SpiderStructureView(APIView):
         serializer = L3SpiderDataRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            return Response(services.get_structure(serializer.validated_data))
+            return Response(
+                services.get_structure(serializer.validated_data, user=request.user)
+            )
         except services.L3SpiderServiceError as error:
             return _error_response(error)
 
@@ -71,7 +73,9 @@ class L3SpiderStatsView(APIView):
         serializer = L3SpiderDataRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            return _fast_response(services.get_stats(serializer.validated_data))
+            return _fast_response(
+                services.get_stats(serializer.validated_data, user=request.user)
+            )
         except services.L3SpiderServiceError as error:
             return _error_response(error)
 
@@ -83,7 +87,9 @@ class L3SpiderSummaryView(APIView):
         serializer = L3SpiderDataRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            return Response(services.get_summary(serializer.validated_data))
+            return Response(
+                services.get_summary(serializer.validated_data, user=request.user)
+            )
         except services.L3SpiderServiceError as error:
             return _error_response(error)
 
@@ -97,7 +103,9 @@ class L3SpiderDataView(APIView):
         serializer = L3SpiderDataRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            return _fast_response(services.get_data(serializer.validated_data))
+            return _fast_response(
+                services.get_data(serializer.validated_data, user=request.user)
+            )
         except services.L3SpiderServiceError as error:
             return _error_response(error)
 
@@ -108,7 +116,7 @@ class L3SpiderExclusionFilterListCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs) -> Response:
-        return Response(services.list_exclusion_filters())
+        return Response(services.list_exclusion_filters(user=request.user))
 
     def post(self, request, *args, **kwargs) -> Response:
         serializer = L3SpiderExclusionFilterSerializer(data=request.data)
@@ -126,13 +134,19 @@ class L3SpiderExclusionFilterDetailView(APIView):
         serializer = L3SpiderExclusionFilterSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         try:
-            return Response(services.update_exclusion_filter(pk, serializer.validated_data))
+            return Response(
+                services.update_exclusion_filter(
+                    pk,
+                    serializer.validated_data,
+                    user=request.user,
+                )
+            )
         except services.L3SpiderServiceError as error:
             return _error_response(error)
 
     def delete(self, request, pk: int, *args, **kwargs) -> Response:
         try:
-            services.delete_exclusion_filter(pk)
+            services.delete_exclusion_filter(pk, user=request.user)
         except services.L3SpiderServiceError as error:
             return _error_response(error)
         return Response(status=204)
@@ -145,6 +159,11 @@ class L3SpiderFilterCandidatesView(APIView):
         serializer = L3SpiderFilterCandidatesSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            return Response(services.get_filter_candidates(serializer.validated_data))
+            return Response(
+                services.get_filter_candidates(
+                    serializer.validated_data,
+                    user=request.user,
+                )
+            )
         except services.L3SpiderServiceError as error:
             return _error_response(error)

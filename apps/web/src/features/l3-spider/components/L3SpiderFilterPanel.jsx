@@ -1,14 +1,15 @@
 import { useMemo, useState } from "react"
-import { ChevronRight, Loader2 } from "lucide-react"
+import { ChevronRight, Clock, Loader2 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
 import { sortedValues } from "../utils/selection"
 
-function SelectRow({ label, hint, selected, onClick }) {
+function SelectRow({ label, hint, timeHint, selected, onClick }) {
   return (
     <button
       type="button"
@@ -31,6 +32,17 @@ function SelectRow({ label, hint, selected, onClick }) {
         <span className="shrink-0 text-[11px] text-muted-foreground">
           {hint}
         </span>
+      )}
+      {timeHint != null && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
+              <Clock className="size-3" aria-hidden="true" />
+              {timeHint}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>Last TKin Time</TooltipContent>
+        </Tooltip>
       )}
       <ChevronRight className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
     </button>
@@ -232,7 +244,7 @@ export function L3SpiderFilterPanel({
               <SelectRow
                 key={ppid}
                 label={ppid}
-                hint={lastTkin}
+                timeHint={lastTkin}
                 selected={checkedPpid === ppid}
                 onClick={() => selectPpid(ppid)}
               />

@@ -9,11 +9,13 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from django.test import SimpleTestCase, override_settings
+from django.contrib.auth import get_user_model
+from django.test import SimpleTestCase, TestCase, override_settings
 
 import pandas as pd
 
 from . import services
+from .models import L3SpiderExclusionFilter
 
 
 class L3SpiderServiceTests(SimpleTestCase):
@@ -172,3 +174,95 @@ class L3SpiderServiceTests(SimpleTestCase):
         self.assertEqual(summary["edsStepPpids"], {"EDS_M|||S1": ["PPID_A"]})
         self.assertEqual(rows[0]["stepSeq"], "S1")
         self.assertEqual(rows[0]["ppid"], "PPID_A")
+
+
+class L3SpiderExclusionFilterOwnershipTests(TestCase):
+    """L3 Spider 제외 필터 소유자 분리 규칙을 검증합니다."""
+
+    def setUp(self) -> None:
+        """테스트용 사용자를 생성합니다."""
+
+        user_model = get_user_model()
+        self.owner = user_model.objects.create_user(
+            username="owner",
+            sabun="100001",
+            password="pw",
+        )
+        self.other = user_model.objects.create_user(
+            username="other",
+            sabun="100002",
+            password="pw",
+        )
+
+    def _create_filter(
+        self,
+        *,
+        user,
+        line_id: str = "L1",
+        memo: str = "",
+        is_active: bool = True,
+    ) -> L3SpiderExclusionFilter:
+        """테스트용 제외 필터를 생성합니다."""
+
+        return L3SpiderExclusionFilter.objects.create(
+            line_id=line_id,
+            process_id="*",
+            eds_step="*",
+            step_seq="*",
+            ppid="*",
+            eqpch="*",
+            bin_name="*",
+            memo=memo,
+            is_active=is_active,
+            created_by=user,
+        )
+
+    def test_list_exclusion_filters_returns_only_user_owned_rows(self) -> None:
+        """목록 조회는 요청 사용자 소유 필터만 반환해야 합니다."""
+
+        owner_filter = self._create_filter(user=self.owner, line_id="L1")
+        self._create_filter(user=self.other, line_id="L2")
+
+        rows = services.list_exclusion_filters(user=self.owner)
+
+        self.assertEqual([row["id"] for row in rows], [owner_filter.id])
+        self.assertEqual(rows[0]["lineId"], "L1")
+
+    def test_exclusion_rules_use_only_user_owned_active_rows(self) -> None:
+        """실제 제외 규칙도 사용자 소유 활성 필터만 사용해야 합니다."""
+
+        self._create_filter(user=self.owner, line_id="L1")
+        self._create_filter(user=self.owner, line_id="L2", is_active=False)
+        self._create_filter(user=self.other, line_id="L3")
+
+        rules = services._get_exclusion_rules(user=self.owner)
+
+        self.assertEqual(len(rules), 1)
+        self.assertEqual(rules[0]["line_id"], "L1")
+
+    def test_update_exclusion_filter_rejects_other_user_row(self) -> None:
+        """다른 사용자의 제외 필터는 수정할 수 없어야 합니다."""
+
+        other_filter = self._create_filter(user=self.other, memo="원본")
+
+        with self.assertRaises(services.L3SpiderServiceError) as context:
+            services.update_exclusion_filter(
+                other_filter.id,
+                {"memo": "변경"},
+                user=self.owner,
+            )
+
+        self.assertEqual(context.exception.status_code, 404)
+        other_filter.refresh_from_db()
+        self.assertEqual(other_filter.memo, "원본")
+
+    def test_delete_exclusion_filter_rejects_other_user_row(self) -> None:
+        """다른 사용자의 제외 필터는 삭제할 수 없어야 합니다."""
+
+        other_filter = self._create_filter(user=self.other)
+
+        with self.assertRaises(services.L3SpiderServiceError) as context:
+            services.delete_exclusion_filter(other_filter.id, user=self.owner)
+
+        self.assertEqual(context.exception.status_code, 404)
+        self.assertTrue(L3SpiderExclusionFilter.objects.filter(pk=other_filter.id).exists())
