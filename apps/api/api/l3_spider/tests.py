@@ -5,15 +5,24 @@
 # =============================================================================
 from __future__ import annotations
 
+from datetime import time as datetime_time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from django.test import SimpleTestCase, override_settings
+from django.contrib.auth import get_user_model
+from django.test import SimpleTestCase, TestCase, override_settings
+from django.urls import reverse
 
 import pandas as pd
 
 from . import services
+from .models import (
+    L3SpiderExclusionFilter,
+    L3SpiderMailDelivery,
+    L3SpiderMailRule,
+    L3SpiderMailRulePermission,
+)
 
 
 class L3SpiderServiceTests(SimpleTestCase):
@@ -172,3 +181,374 @@ class L3SpiderServiceTests(SimpleTestCase):
         self.assertEqual(summary["edsStepPpids"], {"EDS_M|||S1": ["PPID_A"]})
         self.assertEqual(rows[0]["stepSeq"], "S1")
         self.assertEqual(rows[0]["ppid"], "PPID_A")
+
+
+class L3SpiderExclusionFilterOwnershipTests(TestCase):
+    """L3 Spider 제외 필터 소유자 분리 규칙을 검증합니다."""
+
+    def setUp(self) -> None:
+        """테스트용 사용자를 생성합니다."""
+
+        user_model = get_user_model()
+        self.owner = user_model.objects.create_user(
+            username="owner",
+            sabun="100001",
+            password="pw",
+        )
+        self.other = user_model.objects.create_user(
+            username="other",
+            sabun="100002",
+            password="pw",
+        )
+
+    def _create_filter(
+        self,
+        *,
+        user,
+        line_id: str = "L1",
+        memo: str = "",
+        is_active: bool = True,
+    ) -> L3SpiderExclusionFilter:
+        """테스트용 제외 필터를 생성합니다."""
+
+        return L3SpiderExclusionFilter.objects.create(
+            line_id=line_id,
+            process_id="*",
+            eds_step="*",
+            step_seq="*",
+            ppid="*",
+            eqpch="*",
+            bin_name="*",
+            memo=memo,
+            is_active=is_active,
+            created_by=user,
+        )
+
+    def test_list_exclusion_filters_returns_only_user_owned_rows(self) -> None:
+        """목록 조회는 요청 사용자 소유 필터만 반환해야 합니다."""
+
+        owner_filter = self._create_filter(user=self.owner, line_id="L1")
+        self._create_filter(user=self.other, line_id="L2")
+
+        rows = services.list_exclusion_filters(user=self.owner)
+
+        self.assertEqual([row["id"] for row in rows], [owner_filter.id])
+        self.assertEqual(rows[0]["lineId"], "L1")
+
+    def test_exclusion_rules_use_only_user_owned_active_rows(self) -> None:
+        """실제 제외 규칙도 사용자 소유 활성 필터만 사용해야 합니다."""
+
+        self._create_filter(user=self.owner, line_id="L1")
+        self._create_filter(user=self.owner, line_id="L2", is_active=False)
+        self._create_filter(user=self.other, line_id="L3")
+
+        rules = services._get_exclusion_rules(user=self.owner)
+
+        self.assertEqual(len(rules), 1)
+        self.assertEqual(rules[0]["line_id"], "L1")
+
+    def test_update_exclusion_filter_rejects_other_user_row(self) -> None:
+        """다른 사용자의 제외 필터는 수정할 수 없어야 합니다."""
+
+        other_filter = self._create_filter(user=self.other, memo="원본")
+
+        with self.assertRaises(services.L3SpiderServiceError) as context:
+            services.update_exclusion_filter(
+                other_filter.id,
+                {"memo": "변경"},
+                user=self.owner,
+            )
+
+        self.assertEqual(context.exception.status_code, 404)
+        other_filter.refresh_from_db()
+        self.assertEqual(other_filter.memo, "원본")
+
+    def test_delete_exclusion_filter_rejects_other_user_row(self) -> None:
+        """다른 사용자의 제외 필터는 삭제할 수 없어야 합니다."""
+
+        other_filter = self._create_filter(user=self.other)
+
+        with self.assertRaises(services.L3SpiderServiceError) as context:
+            services.delete_exclusion_filter(other_filter.id, user=self.owner)
+
+        self.assertEqual(context.exception.status_code, 404)
+        self.assertTrue(L3SpiderExclusionFilter.objects.filter(pk=other_filter.id).exists())
+
+
+class L3SpiderMailRuleTests(TestCase):
+    """L3 Spider 메일 rule 소유권과 발송 처리를 검증합니다."""
+
+    def setUp(self) -> None:
+        """테스트용 사용자를 생성합니다."""
+
+        user_model = get_user_model()
+        self.owner = user_model.objects.create_user(
+            username="mail-owner",
+            sabun="200001",
+            email="mail-owner@example.com",
+            password="pw",
+        )
+        self.other = user_model.objects.create_user(
+            username="mail-other",
+            sabun="200002",
+            email="mail-other@example.com",
+            password="pw",
+        )
+        self.reader = user_model.objects.create_user(
+            username="mail-reader",
+            sabun="200003",
+            email="mail-reader@example.com",
+            password="pw",
+        )
+        self.writer = user_model.objects.create_user(
+            username="mail-writer",
+            sabun="200004",
+            email="mail-writer@example.com",
+            password="pw",
+        )
+
+    def _create_rule(
+        self,
+        *,
+        user,
+        name: str = "알림",
+        severity_mode: str = L3SpiderMailRule.SeverityModes.HIGH_RISK,
+        eqpch: str = "*",
+        is_active: bool = True,
+    ) -> L3SpiderMailRule:
+        """테스트용 메일 rule을 생성합니다."""
+
+        return L3SpiderMailRule.objects.create(
+            name=name,
+            line_id="*",
+            process_id="*",
+            eds_step="*",
+            step_seq="*",
+            ppid="*",
+            eqpch=eqpch,
+            bin_name="*",
+            severity_mode=severity_mode,
+            receiver_emails=["owner@example.com"],
+            schedule_type=L3SpiderMailRule.ScheduleTypes.DAILY,
+            send_time=datetime_time(0, 0),
+            timezone="Asia/Seoul",
+            is_active=is_active,
+            created_by=user,
+        )
+
+    def _write_mail_sample(self, root: Path) -> None:
+        """메일 발송 후보 이벤트용 Parquet 파일을 생성합니다."""
+
+        target = root / "2025-01-15" / "L1" / "P1" / "EDS_M"
+        target.mkdir(parents=True)
+        frame = pd.DataFrame(
+            [
+                {
+                    "tkin_time": pd.Timestamp("2025-01-15 00:00:00"),
+                    "step_seq": "S1",
+                    "ppid": "PPID_A",
+                    "eqc": "EQC_A",
+                    "bin_name": "BIN_A",
+                    "display_status": "High Risk Chamber",
+                },
+                {
+                    "tkin_time": pd.Timestamp("2025-01-15 01:00:00"),
+                    "step_seq": "S1",
+                    "ppid": "PPID_A",
+                    "eqc": "EQC_B",
+                    "bin_name": "BIN_A",
+                    "display_status": "Warning",
+                },
+            ]
+        )
+        frame.to_parquet(target / "S1#PPID_A#0.parquet", engine="pyarrow")
+
+    def test_list_mail_rules_returns_owned_and_shared_rows(self) -> None:
+        """메일 rule 목록은 소유 row와 공유받은 row만 반환해야 합니다."""
+
+        owner_rule = self._create_rule(user=self.owner, name="내 rule")
+        shared_rule = self._create_rule(user=self.other, name="공유 rule")
+        hidden_rule = self._create_rule(user=self.other, name="숨김 rule")
+        L3SpiderMailRulePermission.objects.create(
+            rule=shared_rule,
+            user=self.owner,
+            access_level=L3SpiderMailRulePermission.AccessLevels.READ,
+            granted_by=self.other,
+        )
+
+        rows = services.list_mail_rules(user=self.owner)
+
+        self.assertEqual({row["id"] for row in rows}, {owner_rule.id, shared_rule.id})
+        self.assertNotIn(hidden_rule.id, {row["id"] for row in rows})
+        owner_row = next(row for row in rows if row["id"] == owner_rule.id)
+        shared_row = next(row for row in rows if row["id"] == shared_rule.id)
+        self.assertTrue(owner_row["canManage"])
+        self.assertEqual(shared_row["accessLevel"], "read")
+        self.assertFalse(shared_row["canWrite"])
+
+    def test_update_mail_rule_rejects_other_user_row(self) -> None:
+        """다른 사용자의 메일 rule은 수정할 수 없어야 합니다."""
+
+        other_rule = self._create_rule(user=self.other, name="원본")
+
+        with self.assertRaises(services.L3SpiderServiceError) as context:
+            services.update_mail_rule(
+                other_rule.id,
+                {"name": "변경"},
+                user=self.owner,
+            )
+
+        self.assertEqual(context.exception.status_code, 404)
+        other_rule.refresh_from_db()
+        self.assertEqual(other_rule.name, "원본")
+
+    def test_read_permission_cannot_update_mail_rule(self) -> None:
+        """read 권한자는 메일 rule을 수정할 수 없어야 합니다."""
+
+        rule = self._create_rule(user=self.owner, name="원본")
+        L3SpiderMailRulePermission.objects.create(
+            rule=rule,
+            user=self.reader,
+            access_level=L3SpiderMailRulePermission.AccessLevels.READ,
+            granted_by=self.owner,
+        )
+
+        with self.assertRaises(services.L3SpiderServiceError) as context:
+            services.update_mail_rule(rule.id, {"name": "변경"}, user=self.reader)
+
+        self.assertEqual(context.exception.status_code, 403)
+        rule.refresh_from_db()
+        self.assertEqual(rule.name, "원본")
+
+    def test_write_permission_can_update_mail_rule_body(self) -> None:
+        """write 권한자는 메일 rule 본문 설정을 수정할 수 있어야 합니다."""
+
+        rule = self._create_rule(user=self.owner, name="원본")
+        L3SpiderMailRulePermission.objects.create(
+            rule=rule,
+            user=self.writer,
+            access_level=L3SpiderMailRulePermission.AccessLevels.WRITE,
+            granted_by=self.owner,
+        )
+
+        services.update_mail_rule(rule.id, {"name": "변경"}, user=self.writer)
+
+        rule.refresh_from_db()
+        self.assertEqual(rule.name, "변경")
+
+    def test_owner_replaces_mail_rule_permissions_by_existing_users(self) -> None:
+        """owner는 기존 사용자 식별자로 read/write 권한을 교체할 수 있어야 합니다."""
+
+        rule = self._create_rule(user=self.owner)
+
+        result = services.replace_mail_rule_permissions(
+            rule.id,
+            [
+                {"user": "mail-reader@example.com", "access_level": "read"},
+                {"user": "mail-writer", "access_level": "write"},
+            ],
+            user=self.owner,
+        )
+
+        self.assertEqual(len(result["permissions"]), 2)
+        self.assertTrue(
+            L3SpiderMailRulePermission.objects.filter(
+                rule=rule,
+                user=self.reader,
+                access_level=L3SpiderMailRulePermission.AccessLevels.READ,
+            ).exists()
+        )
+        self.assertTrue(
+            L3SpiderMailRulePermission.objects.filter(
+                rule=rule,
+                user=self.writer,
+                access_level=L3SpiderMailRulePermission.AccessLevels.WRITE,
+            ).exists()
+        )
+
+    def test_non_owner_cannot_replace_mail_rule_permissions(self) -> None:
+        """공유받은 write 권한자도 권한 목록은 변경할 수 없어야 합니다."""
+
+        rule = self._create_rule(user=self.owner)
+        L3SpiderMailRulePermission.objects.create(
+            rule=rule,
+            user=self.writer,
+            access_level=L3SpiderMailRulePermission.AccessLevels.WRITE,
+            granted_by=self.owner,
+        )
+
+        with self.assertRaises(services.L3SpiderServiceError) as context:
+            services.replace_mail_rule_permissions(
+                rule.id,
+                [{"user": "mail-reader@example.com", "access_level": "read"}],
+                user=self.writer,
+            )
+
+        self.assertEqual(context.exception.status_code, 404)
+
+    def test_trigger_due_mail_rules_sends_high_risk_once(self) -> None:
+        """due rule은 High Risk 이벤트를 한 번만 발송 이력으로 남겨야 합니다."""
+
+        rule = self._create_rule(user=self.owner, eqpch="EQC_A")
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_mail_sample(root)
+
+            with override_settings(
+                L3_SPIDER_DATA_ROOT=str(root),
+                L3_SPIDER_MAIL_SENDER="sender@example.com",
+                FRONTEND_BASE_URL="http://frontend.example.com",
+            ), patch(
+                "api.l3_spider.services.send_knox_mail_api",
+                return_value={"ok": True},
+            ) as mock_send:
+                first = services.trigger_due_mail_rules(limit=10)
+                second = services.trigger_due_mail_rules(limit=10)
+
+        self.assertEqual(first["sent"], 1)
+        self.assertEqual(second["sent"], 0)
+        mock_send.assert_called_once()
+        self.assertIn(
+            "http://frontend.example.com/l3_spider",
+            mock_send.call_args.kwargs["html_content"],
+        )
+        html_content = mock_send.call_args.kwargs["html_content"]
+        self.assertIn("date=2025-01-15", html_content)
+        self.assertIn("lineId=L1", html_content)
+        self.assertIn("processId=P1", html_content)
+        self.assertIn("edsStep=EDS_M", html_content)
+        self.assertIn("stepSeq=S1", html_content)
+        self.assertIn("ppid=PPID_A", html_content)
+        self.assertIn("eqpch=EQC_A", html_content)
+        self.assertIn("binName=BIN_A", html_content)
+        self.assertIn(">열기</a>", html_content)
+        self.assertEqual(
+            L3SpiderMailDelivery.objects.filter(
+                rule=rule,
+                status=L3SpiderMailDelivery.Statuses.SENT,
+            ).count(),
+            1,
+        )
+        rule.refresh_from_db()
+        self.assertIsNotNone(rule.last_sent_at)
+        self.assertIsNotNone(rule.last_checked_at)
+
+    @override_settings(AIRFLOW_TRIGGER_TOKEN="expected-token")
+    @patch("api.l3_spider.services.trigger_due_mail_rules")
+    def test_mail_trigger_endpoint_requires_bearer_token(self, mock_trigger) -> None:
+        """Airflow trigger endpoint는 Bearer token을 요구해야 합니다."""
+
+        mock_trigger.return_value = {"processed": 0, "sent": 0, "claimed": 0, "results": []}
+        url = reverse("l3-spider-mail-rule-trigger")
+
+        denied = self.client.post(url, data='{"limit": 5}', content_type="application/json")
+        allowed = self.client.post(
+            url,
+            data='{"limit": 5}',
+            content_type="application/json",
+            HTTP_AUTHORIZATION="Bearer expected-token",
+        )
+
+        self.assertEqual(denied.status_code, 401)
+        self.assertEqual(allowed.status_code, 200)
+        mock_trigger.assert_called_once_with(limit=5)

@@ -274,7 +274,7 @@ export function L3SpiderExclusionSheet() {
         </SheetTrigger>
 
         <SheetContent side="right" className="flex w-full max-w-[98vw] flex-col gap-0 p-0 sm:max-w-[1400px]">
-          <SheetHeader className="border-b px-6 py-4">
+          <SheetHeader className="border-b pl-6 pr-16 py-4">
             <div className="flex items-center justify-between">
               <div>
                 <SheetTitle className="text-base">제외 필터 관리</SheetTitle>

@@ -1,7 +1,7 @@
 # =============================================================================
-# 모듈: L3 Spider 파일 셀렉터
-# 주요 함수: get_data_root, iter_data_files, read_parquet_columns
-# 주요 가정: 파일시스템 조회만 수행하며 쓰기 작업은 하지 않습니다.
+# 모듈: L3 Spider 셀렉터
+# 주요 함수: get_data_root, iter_data_files, read_parquet_columns, list_mail_rules_for_user
+# 주요 가정: 파일시스템/DB 조회만 수행하며 쓰기 작업은 하지 않습니다.
 # =============================================================================
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Iterable, Sequence
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.db.models import Q
 
 import pandas as pd
 
@@ -100,3 +102,102 @@ def read_parquet_columns(path: Path, columns: Sequence[str]) -> pd.DataFrame:
             frame = frame.rename(columns={"display status": "display_status"})
         available_columns = [column for column in columns if column in frame.columns]
         return frame[available_columns]
+
+
+def list_mail_rules_for_user(user_id: int):
+    """사용자가 읽을 수 있는 L3 Spider 메일 rule 목록을 조회합니다."""
+
+    from .models import L3SpiderMailRule
+
+    return (
+        L3SpiderMailRule.objects.select_related("created_by")
+        .prefetch_related("permissions__user")
+        .filter(Q(created_by_id=user_id) | Q(permissions__user_id=user_id))
+        .distinct()
+    )
+
+
+def get_mail_rule_for_user(*, rule_id: int, user_id: int):
+    """사용자가 읽을 수 있는 L3 Spider 메일 rule 단건을 조회합니다."""
+
+    from .models import L3SpiderMailRule
+
+    return (
+        L3SpiderMailRule.objects.select_related("created_by")
+        .prefetch_related("permissions__user")
+        .filter(Q(created_by_id=user_id) | Q(permissions__user_id=user_id))
+        .distinct()
+        .get(pk=rule_id)
+    )
+
+
+def get_writable_mail_rule_for_user(*, rule_id: int, user_id: int):
+    """사용자가 수정할 수 있는 L3 Spider 메일 rule 단건을 조회합니다."""
+
+    from .models import L3SpiderMailRule, L3SpiderMailRulePermission
+
+    return (
+        L3SpiderMailRule.objects.select_related("created_by")
+        .prefetch_related("permissions__user")
+        .filter(
+            Q(created_by_id=user_id)
+            | Q(
+                permissions__user_id=user_id,
+                permissions__access_level=L3SpiderMailRulePermission.AccessLevels.WRITE,
+            )
+        )
+        .distinct()
+        .get(pk=rule_id)
+    )
+
+
+def get_owned_mail_rule_for_user(*, rule_id: int, user_id: int):
+    """사용자가 owner인 L3 Spider 메일 rule 단건을 조회합니다."""
+
+    from .models import L3SpiderMailRule
+
+    return (
+        L3SpiderMailRule.objects.select_related("created_by")
+        .prefetch_related("permissions__user")
+        .get(pk=rule_id, created_by_id=user_id)
+    )
+
+
+def list_mail_rule_permissions(*, rule_id: int):
+    """메일 rule의 공유 권한 목록을 조회합니다."""
+
+    from .models import L3SpiderMailRulePermission
+
+    return (
+        L3SpiderMailRulePermission.objects.select_related("user", "granted_by")
+        .filter(rule_id=rule_id)
+        .order_by("user__username", "user__sabun", "id")
+    )
+
+
+def find_user_for_mail_rule_permission(identifier: str):
+    """메일 rule 권한 부여 대상 사용자를 식별자로 조회합니다."""
+
+    user_model = get_user_model()
+    value = str(identifier or "").strip()
+    if not value:
+        return None
+
+    query = Q(sabun=value)
+    lowered = value.lower()
+    query |= Q(email__iexact=lowered)
+    query |= Q(username__iexact=value)
+    query |= Q(knox_id__iexact=value)
+    return user_model.objects.filter(query).order_by("id").first()
+
+
+def list_active_mail_rules_for_trigger(*, limit: int):
+    """Airflow trigger가 처리할 활성 메일 rule 목록을 조회합니다."""
+
+    from .models import L3SpiderMailRule
+
+    return (
+        L3SpiderMailRule.objects.select_related("created_by")
+        .filter(is_active=True)
+        .order_by("send_time", "id")[:limit]
+    )

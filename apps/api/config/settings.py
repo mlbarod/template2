@@ -209,6 +209,8 @@ RACB_REPORT_BASE_URL = env(
 # 원격 서버 데이터는 NFS/SMB 등으로 이 경로에 read-only mount해서 사용합니다.
 L3_SPIDER_DATA_ROOT = env("L3_SPIDER_DATA_ROOT", "/data/l3_spider/daily_anomaly")
 L3_SPIDER_MAX_CHART_POINTS_PER_PANEL = env_int("L3_SPIDER_MAX_CHART_POINTS_PER_PANEL", 2000) or 2000
+L3_SPIDER_MAIL_SENDER = env("L3_SPIDER_MAIL_SENDER", env("DRONE_MAIL_SENDER", ""))
+L3_SPIDER_MAIL_TARGET_URL = env("L3_SPIDER_MAIL_TARGET_URL", "")
 
 # FDC Hard Limit 추천 데이터 경로.
 # hardspec.py 원본 경로를 기본값으로 사용하고, 오프사이트 환경에서는 mount 경로를 env로 교체합니다.

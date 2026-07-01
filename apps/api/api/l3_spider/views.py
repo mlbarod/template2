@@ -5,6 +5,11 @@
 # =============================================================================
 from __future__ import annotations
 
+from django.http import JsonResponse
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
+from api.common.services import ensure_airflow_token, parse_json_body_or_error_when_present
+
 try:
     import orjson
 
@@ -30,6 +35,9 @@ from .serializers import (
     L3SpiderDataRequestSerializer,
     L3SpiderExclusionFilterSerializer,
     L3SpiderFilterCandidatesSerializer,
+    L3SpiderMailRulePermissionUpdateSerializer,
+    L3SpiderMailRuleSerializer,
+    L3SpiderMailTriggerSerializer,
 )
 
 
@@ -43,7 +51,7 @@ class L3SpiderMetaView(APIView):
 
     def get(self, request, *args, **kwargs) -> Response:
         try:
-            return Response(services.get_meta())
+            return Response(services.get_meta(user=request.user))
         except services.L3SpiderServiceError as error:
             return _error_response(error)
 
@@ -57,7 +65,9 @@ class L3SpiderStructureView(APIView):
         serializer = L3SpiderDataRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            return Response(services.get_structure(serializer.validated_data))
+            return Response(
+                services.get_structure(serializer.validated_data, user=request.user)
+            )
         except services.L3SpiderServiceError as error:
             return _error_response(error)
 
@@ -71,7 +81,9 @@ class L3SpiderStatsView(APIView):
         serializer = L3SpiderDataRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            return _fast_response(services.get_stats(serializer.validated_data))
+            return _fast_response(
+                services.get_stats(serializer.validated_data, user=request.user)
+            )
         except services.L3SpiderServiceError as error:
             return _error_response(error)
 
@@ -83,7 +95,9 @@ class L3SpiderSummaryView(APIView):
         serializer = L3SpiderDataRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            return Response(services.get_summary(serializer.validated_data))
+            return Response(
+                services.get_summary(serializer.validated_data, user=request.user)
+            )
         except services.L3SpiderServiceError as error:
             return _error_response(error)
 
@@ -97,7 +111,9 @@ class L3SpiderDataView(APIView):
         serializer = L3SpiderDataRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            return _fast_response(services.get_data(serializer.validated_data))
+            return _fast_response(
+                services.get_data(serializer.validated_data, user=request.user)
+            )
         except services.L3SpiderServiceError as error:
             return _error_response(error)
 
@@ -108,7 +124,7 @@ class L3SpiderExclusionFilterListCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs) -> Response:
-        return Response(services.list_exclusion_filters())
+        return Response(services.list_exclusion_filters(user=request.user))
 
     def post(self, request, *args, **kwargs) -> Response:
         serializer = L3SpiderExclusionFilterSerializer(data=request.data)
@@ -126,16 +142,128 @@ class L3SpiderExclusionFilterDetailView(APIView):
         serializer = L3SpiderExclusionFilterSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         try:
-            return Response(services.update_exclusion_filter(pk, serializer.validated_data))
+            return Response(
+                services.update_exclusion_filter(
+                    pk,
+                    serializer.validated_data,
+                    user=request.user,
+                )
+            )
         except services.L3SpiderServiceError as error:
             return _error_response(error)
 
     def delete(self, request, pk: int, *args, **kwargs) -> Response:
         try:
-            services.delete_exclusion_filter(pk)
+            services.delete_exclusion_filter(pk, user=request.user)
         except services.L3SpiderServiceError as error:
             return _error_response(error)
         return Response(status=204)
+
+
+class L3SpiderMailRuleListCreateView(APIView):
+    """메일 알림 rule 목록 조회 및 생성."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs) -> Response:
+        try:
+            return Response(services.list_mail_rules(user=request.user))
+        except services.L3SpiderServiceError as error:
+            return _error_response(error)
+
+    def post(self, request, *args, **kwargs) -> Response:
+        serializer = L3SpiderMailRuleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            data = services.create_mail_rule(serializer.validated_data, user=request.user)
+        except services.L3SpiderServiceError as error:
+            return _error_response(error)
+        return Response(data, status=201)
+
+
+class L3SpiderMailRuleDetailView(APIView):
+    """메일 알림 rule 단건 수정/삭제."""
+
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk: int, *args, **kwargs) -> Response:
+        serializer = L3SpiderMailRuleSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        try:
+            return Response(
+                services.update_mail_rule(
+                    pk,
+                    serializer.validated_data,
+                    user=request.user,
+                )
+            )
+        except services.L3SpiderServiceError as error:
+            return _error_response(error)
+
+    def delete(self, request, pk: int, *args, **kwargs) -> Response:
+        try:
+            services.delete_mail_rule(pk, user=request.user)
+        except services.L3SpiderServiceError as error:
+            return _error_response(error)
+        return Response(status=204)
+
+
+class L3SpiderMailRulePermissionView(APIView):
+    """메일 알림 rule 공유 권한 조회/교체."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk: int, *args, **kwargs) -> Response:
+        try:
+            return Response(
+                {"permissions": services.list_mail_rule_permissions(pk, user=request.user)}
+            )
+        except services.L3SpiderServiceError as error:
+            return _error_response(error)
+
+    def put(self, request, pk: int, *args, **kwargs) -> Response:
+        serializer = L3SpiderMailRulePermissionUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            return Response(
+                services.replace_mail_rule_permissions(
+                    pk,
+                    serializer.validated_data["permissions"],
+                    user=request.user,
+                )
+            )
+        except services.L3SpiderServiceError as error:
+            return _error_response(error)
+
+    def patch(self, request, pk: int, *args, **kwargs) -> Response:
+        return self.put(request, pk, *args, **kwargs)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class L3SpiderMailTriggerView(APIView):
+    """Airflow에서 due 메일 rule 처리를 호출하는 endpoint."""
+
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request, *args, **kwargs) -> JsonResponse:
+        auth_response = ensure_airflow_token(request, require_bearer=True)
+        if auth_response is not None:
+            return auth_response
+
+        payload, payload_error = parse_json_body_or_error_when_present(request)
+        if payload_error is not None:
+            return payload_error
+
+        serializer = L3SpiderMailTriggerSerializer(data=payload or {})
+        serializer.is_valid(raise_exception=True)
+        try:
+            result = services.trigger_due_mail_rules(
+                limit=serializer.validated_data["limit"],
+            )
+        except services.L3SpiderServiceError as error:
+            return JsonResponse({"error": str(error)}, status=error.status_code)
+        return JsonResponse(result)
 
 
 class L3SpiderFilterCandidatesView(APIView):
@@ -145,6 +273,11 @@ class L3SpiderFilterCandidatesView(APIView):
         serializer = L3SpiderFilterCandidatesSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            return Response(services.get_filter_candidates(serializer.validated_data))
+            return Response(
+                services.get_filter_candidates(
+                    serializer.validated_data,
+                    user=request.user,
+                )
+            )
         except services.L3SpiderServiceError as error:
             return _error_response(error)

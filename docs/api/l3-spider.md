@@ -9,8 +9,8 @@ L3 Spider API는 read-only mount된 `daily_anomaly` Parquet 파일을 조회해 
 | Prefix | `/api/v1/l3_spider/` |
 | Auth | Django session 로그인 필요 |
 | Data root | `L3_SPIDER_DATA_ROOT` |
-| Request/Response | camelCase |
-| Side effect | 없음. 파일 read-only 조회만 수행 |
+| Request/Response | 조회 API는 camelCase. 설정 CRUD 입력은 snake_case, 응답은 camelCase |
+| Side effect | 조회 endpoint는 없음. `mail-rules/trigger`만 메일 발송 이력을 쓰고 Mail API를 호출 |
 
 ## Data Layout
 
@@ -35,6 +35,13 @@ L3 Spider API는 read-only mount된 `daily_anomaly` Parquet 파일을 조회해 
 | `GET` | `meta` | 선택 가능한 날짜, Line, Process, EDS Step과 availability를 반환 |
 | `POST` | `summary` | 선택 조건 기준 통계, step/PPID, bin, High Risk 목록을 반환 |
 | `POST` | `data` | 선택 조건과 차트 필터 기준 Plotly 표시용 row 목록을 반환 |
+| `GET` | `mail-rules` | 로그인 사용자 소유 메일 발송 rule 목록을 반환 |
+| `POST` | `mail-rules` | 로그인 사용자 소유 메일 발송 rule 생성 |
+| `PATCH` | `mail-rules/{id}` | 로그인 사용자 소유 메일 발송 rule 수정 |
+| `DELETE` | `mail-rules/{id}` | 로그인 사용자 소유 메일 발송 rule 삭제 |
+| `GET` | `mail-rules/{id}/permissions` | owner가 메일 rule 공유 권한 목록 조회 |
+| `PUT` | `mail-rules/{id}/permissions` | owner가 메일 rule 공유 권한 전체 교체 |
+| `POST` | `mail-rules/trigger` | Airflow token으로 due rule을 처리하고 Mail API 호출 |
 
 ## Summary Response 주요 필드
 
@@ -71,10 +78,49 @@ L3 Spider API는 read-only mount된 `daily_anomaly` Parquet 파일을 조회해 
 }
 ```
 
+메일 rule 생성/수정은 제외 필터와 같은 문자열 패턴을 사용합니다.
+
+```json
+{
+  "name": "L3 Spider 알림",
+  "severity_mode": "high_risk",
+  "receiver_emails": ["name@samsung.com"],
+  "schedule_type": "daily",
+  "send_time": "09:00",
+  "timezone": "Asia/Seoul",
+  "line_id": "*",
+  "process_id": "*",
+  "eds_step": "*",
+  "step_seq": "*",
+  "ppid": "*",
+  "eqpch": "EQC_A",
+  "bin_name": "*",
+  "date_from": null,
+  "date_to": null,
+  "is_active": true,
+  "memo": ""
+}
+```
+
+`severity_mode`는 `high_risk` 또는 `warning_or_high_risk`를 지원합니다. Airflow trigger는 `Authorization: Bearer <AIRFLOW_TRIGGER_TOKEN>` 헤더가 필요하며, body의 `limit`으로 한 번에 처리할 최대 rule 수를 제한할 수 있습니다.
+
+메일 rule은 owner 외 사용자에게 `read` 또는 `write` 권한을 공유할 수 있습니다.
+
+```json
+{
+  "permissions": [
+    { "user": "name@samsung.com", "access_level": "read" },
+    { "user": "engineer.username", "access_level": "write" }
+  ]
+}
+```
+
+`read` 권한자는 rule 전체 설정을 볼 수 있고, `write` 권한자는 rule 조건/수신자/발송 시각/활성 여부를 수정할 수 있습니다. 권한 관리와 삭제는 owner만 가능합니다. 메일 본문에는 `L3_SPIDER_MAIL_TARGET_URL` 또는 `FRONTEND_BASE_URL + /l3_spider` 기준의 L3 Spider 이동 링크가 포함됩니다. 이벤트별 링크에는 `date`, `lineId`, `processId`, `edsStep`, `stepSeq`, `ppid`, `eqpch`, `binName` query param이 붙으며, Web 화면은 해당 값을 읽어 조건을 자동 선택합니다.
+
 ## 오류
 
 | Status | 조건 |
 | --- | --- |
 | 400 | 안전하지 않은 경로 segment 또는 폴더가 아닌 데이터 root |
-| 401 | 로그인하지 않은 사용자 |
+| 401 | 로그인하지 않은 사용자 또는 Airflow trigger token 불일치 |
 | 404 | `L3_SPIDER_DATA_ROOT` 경로 없음 |

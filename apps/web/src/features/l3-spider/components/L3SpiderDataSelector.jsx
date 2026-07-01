@@ -1,10 +1,11 @@
-import { Activity, AlertTriangle, Check, Gauge, RefreshCw } from "lucide-react"
+import { Activity, AlertTriangle, Check, CircleHelp, Gauge, RefreshCw } from "lucide-react"
 import { useMemo, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
 import { EMPTY_SELECTION, sortedValues, toggleSetValue } from "../utils/selection"
@@ -309,6 +310,26 @@ export function L3SpiderDataSelector({
             <RefreshCw className={cn("size-4", isLoading && "animate-spin")} />
             새로고침
           </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                asChild
+              >
+                <a
+                  href="/l3-spider/user_guide.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="L3 Spider 알고리즘 설명서 열기"
+                  title="알고리즘 설명서"
+                >
+                  <CircleHelp className="size-4" aria-hidden="true" />
+                </a>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>알고리즘 설명서</TooltipContent>
+          </Tooltip>
         </div>
       </div>
       {rightContent ? (
