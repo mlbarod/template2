@@ -107,6 +107,10 @@ export function updateMailRulePermissions(id, permissions) {
   })
 }
 
+export function testSendMailRule(id) {
+  return postJson(`/mail-rules/${id}/test-send`, {})
+}
+
 export async function deleteExclusionFilter(id) {
   const response = await fetch(buildBackendUrl(`${BASE_PATH}/exclusion-filters/${id}`), {
     method: "DELETE",

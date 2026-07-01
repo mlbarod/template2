@@ -35,6 +35,7 @@
 - 메일 본문 링크는 `L3_SPIDER_MAIL_TARGET_URL`이 있으면 해당 값을 사용하고, 없으면 `FRONTEND_BASE_URL + /l3_spider`를 사용한다.
 - 메일 이벤트 row 링크는 `date`, `lineId`, `processId`, `edsStep`, `stepSeq`, `ppid`, `eqpch`, `binName` query param을 붙여 특정 이벤트 조건으로 화면을 연다.
 - L3 Spider 화면은 query param을 한 번만 읽어 selector/leaf filter 상태를 초기화하고, 이후 사용자의 수동 선택 변경을 보존한다.
+- 메일 rule 테스트 발송은 로그인 사용자의 write 권한을 요구하며, 스케줄 due 여부와 `L3SpiderMailDelivery` 중복 이력을 갱신하지 않고 즉시 Mail API만 호출한다.
 
 ## 실행 단계
 - [x] 모델/serializer/service/view/url 추가
@@ -46,6 +47,8 @@
 - [x] 메일 이벤트별 deep link 생성 추가
 - [x] L3 Spider URL query 초기 선택 적용 추가
 - [x] deep link 검증 테스트/audit 실행
+- [x] 메일 rule 단발성 테스트 발송 endpoint/UI 추가
+- [x] 테스트 발송 검증 테스트/audit 실행
 
 ## 검증
 - PASS: `docker compose -f docker-compose.dev.yml exec -T api python manage.py check`
@@ -66,6 +69,13 @@
 - PASS: `npm run agent:audit:web-boundary`
 - PASS: `npm run agent:audit:docs`
 - PASS: `python /tmp/backend_audit_repo/scripts/agent/check_backend_boundaries.py` inside `api` container with temporary source copy.
+- PASS: `docker compose -f docker-compose.dev.yml exec -T api python manage.py test api.l3_spider --keepdb` (테스트 발송 추가 후 16 tests)
+- PASS: `docker compose -f docker-compose.dev.yml exec -T web npm run lint`
+- PASS: `docker compose -f docker-compose.dev.yml exec -T web npm run build`
+- PASS: `npm run agent:audit:ui`
+- PASS: `npm run agent:audit:web-boundary`
+- PASS: `npm run agent:audit:docs`
+- PASS: `python /tmp/backend_audit_repo/scripts/agent/check_backend_boundaries.py` inside `api` container with temporary source copy.
 
 ## 위험과 대응
 - 위험: 화면 조회 시 메일이 중복 발송될 수 있음.
@@ -76,6 +86,8 @@
 - 대응: 고정 주기 DAG가 backend trigger를 호출하고 backend가 due rule만 처리한다.
 - 위험: query param이 실제 데이터 후보에 없으면 화면이 빈 차트 상태로 진입할 수 있음.
 - 대응: URL 초기값은 기존 API 조회 경로를 그대로 사용하며, 후보가 없는 경우 기존 empty/error UI를 표시한다.
+- 위험: 테스트 발송이 정기 발송 이력을 소모하면 실제 알림이 누락될 수 있음.
+- 대응: 테스트 발송은 delivery row와 lastSentAt/lastCheckedAt을 갱신하지 않고, 실제 Mail API 호출 결과만 반환한다.
 
 ## 진행 기록
 - 2026-07-01: 이전 대화 요구사항을 반영해 사용자별 rule, severity 선택, 패턴 필터, 수신자 email 목록, daily send_time, 별도 trigger 구조로 계획을 작성했다.
@@ -83,3 +95,5 @@
 - 2026-07-01: 메일 rule 공유 권한(read/write)과 메일 본문 L3 Spider 이동 링크를 추가하고 검증을 다시 통과했다.
 - 2026-07-01: 메일 이벤트 row별 deep link와 프론트 URL query 초기 선택 적용을 추가하기로 결정했다.
 - 2026-07-01: 메일 deep link, Web query 초기화, 샘플/문서를 반영하고 backend/frontend/docs/audit 검증을 통과했다.
+- 2026-07-01: 사용자가 rule별 단발성 테스트 발송 버튼을 요청해, 정기 발송 이력과 분리된 즉시 발송 endpoint/UI를 추가하기로 결정했다.
+- 2026-07-01: `mail-rules/<pk>/test-send` endpoint와 Web `Test` 버튼을 추가하고 backend/frontend/docs/audit 검증을 통과했다.

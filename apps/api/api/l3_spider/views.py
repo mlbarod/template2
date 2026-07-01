@@ -239,6 +239,18 @@ class L3SpiderMailRulePermissionView(APIView):
         return self.put(request, pk, *args, **kwargs)
 
 
+class L3SpiderMailRuleTestSendView(APIView):
+    """메일 알림 rule을 단발성으로 테스트 발송."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk: int, *args, **kwargs) -> Response:
+        try:
+            return Response(services.send_mail_rule_test(pk, user=request.user))
+        except services.L3SpiderServiceError as error:
+            return _error_response(error)
+
+
 @method_decorator(csrf_exempt, name="dispatch")
 class L3SpiderMailTriggerView(APIView):
     """Airflow에서 due 메일 rule 처리를 호출하는 endpoint."""
