@@ -14,6 +14,8 @@ from django.contrib.auth import get_user_model
 from django.db.models import Q
 
 import pandas as pd
+import pyarrow as pa
+import pyarrow.dataset as pa_ds
 
 
 def get_data_root() -> Path:
@@ -228,6 +230,47 @@ def iter_date_files(date: str) -> list[Path]:
     if found:
         return found
     return iter_date_files_legacy(date)
+
+
+# {date}/{line_id}/{process_id}/{eds_step}/{file} — 디렉토리 3단계를 파티션 컬럼으로 매핑
+_DATE_PARTITIONING = pa_ds.DirectoryPartitioning(
+    pa.schema([("line_id", pa.string()), ("process_id", pa.string()), ("eds_step", pa.string())])
+)
+
+
+def read_date_dataset(date: str, columns: Sequence[str]) -> pd.DataFrame:
+    """특정 날짜 디렉토리를 pyarrow.dataset 단일 스캔으로 읽습니다.
+
+    파일별 개별 read_parquet(수백~수천 개) 대신 한 번의 스캔으로 필요한 컬럼만 로드하고,
+    line/process/eds는 디렉토리 경로에서 파티션 컬럼으로 자동 매핑합니다. 작은 파일이 많을수록 큰 이점.
+    step_seq/ppid는 파일명에만 있어 포함되지 않습니다(호출부에서 필요 시 파일별 경로 사용).
+    주의: 쓰는 중인 부분 파일을 만나면 예외가 날 수 있음 → 호출부에서 파일별 읽기로 폴백하세요.
+    """
+    ensure_data_root()
+    root = get_data_root()
+    root_resolved = root.resolve()
+    date_dir = root / date
+    try:
+        date_dir.resolve().relative_to(root_resolved)
+    except ValueError as exc:
+        raise ValueError("데이터 경로가 루트 밖으로 벗어났습니다.") from exc
+    if not date_dir.exists() or not date_dir.is_dir():
+        return pd.DataFrame()
+
+    dataset = pa_ds.dataset(str(date_dir), format="parquet", partitioning=_DATE_PARTITIONING)
+    available = set(dataset.schema.names)
+    want: list[str] = []
+    for col in columns:
+        if col in available:
+            want.append(col)
+        elif col == "display_status" and "display status" in available:
+            want.append("display status")  # 공백 변형 컬럼도 수용 (호출부에서 정규화)
+    for part_col in ("line_id", "process_id", "eds_step"):
+        if part_col in available and part_col not in want:
+            want.append(part_col)
+    if not want:
+        return pd.DataFrame()
+    return dataset.to_table(columns=want).to_pandas()
 
 
 def iter_filter_candidate_files(

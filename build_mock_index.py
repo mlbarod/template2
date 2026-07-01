@@ -155,6 +155,7 @@ def build_index(root: Path, db_path: Path) -> None:
 
     ok, fail = 0, 0
     with conn:
+        conn.execute("DELETE FROM file_index")
         for key, group_files in groups.items():
             meta = metas[key]
             try:

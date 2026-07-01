@@ -37,6 +37,7 @@ export const EMPTY_SUMMARY = {
 export function createEmptySelection() {
   return {
     date: "",
+    lineNames: new Set(),
     lineIds: new Set(),
     processIds: new Set(),
     edsSteps: new Set(),

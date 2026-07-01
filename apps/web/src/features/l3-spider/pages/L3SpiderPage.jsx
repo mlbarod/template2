@@ -184,12 +184,14 @@ export function L3SpiderPage() {
         showStats={isSelectionReady && activeTab === "chart"}
         showBody={activeTab === "chart"}
         tabsSlot={(
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList>
-              <TabsTrigger value="summary">Summary</TabsTrigger>
-              <TabsTrigger value="chart">Chart</TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+              <TabsList>
+                <TabsTrigger value="summary">Summary</TabsTrigger>
+                <TabsTrigger value="chart">Chart</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
         )}
         headerExtra={(
           <>

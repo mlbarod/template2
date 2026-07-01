@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import fnmatch
+import logging
 import functools
 import hashlib
 import html
@@ -485,7 +486,9 @@ def _build_line_groups_impl() -> list[dict]:
 
     # 4. (line_id_path, process_id) × eqc → LINE_NAME 결정
     #    line_name → {line_id_path → set(process_ids)}
+    #    line_name → {line_id_path → set(eqcs)}  ← 경고 로그용
     result: dict[str, dict[str, set[str]]] = {}
+    result_eqcs: dict[str, dict[str, set[str]]] = {}
     for (line_id, process_id), eqcs in combo_eqcs.items():
         for eqc in eqcs:
             sdwt = eqc_to_sdwt.get(eqc.upper())
@@ -495,6 +498,21 @@ def _build_line_groups_impl() -> list[dict]:
             if not ln:
                 continue
             result.setdefault(ln, {}).setdefault(line_id, set()).add(process_id)
+            result_eqcs.setdefault(ln, {}).setdefault(line_id, set()).add(eqc)
+
+    # 5. 검증: 동일 LINE_NAME이 여러 lineId에 매핑되면 데이터 혼재 위험 → 경고 로그
+    logger = logging.getLogger(__name__)
+    for ln, line_id_map in result.items():
+        if len(line_id_map) > 1:
+            detail = {
+                lid: sorted(result_eqcs.get(ln, {}).get(lid, []))
+                for lid in sorted(line_id_map)
+            }
+            logger.warning(
+                "L3Spider LINE_NAME 충돌: 동일 LINE_NAME '%s'이 여러 lineId에 매핑됨 — "
+                "서로 다른 폴더 데이터가 합쳐질 수 있습니다. lineId별 원인 eqp: %s",
+                ln, detail,
+            )
 
     return [
         {"lineName": ln, "lineId": lid, "processIds": sorted(pids)}
@@ -1890,14 +1908,43 @@ def get_daily_summary(selection: dict[str, object], *, user: Any | None = None) 
     if cached is not None:
         return cached
 
-    files: list[Path] = []
-    try:
+    # step_seq/ppid 기준 제외필터가 있으면 파일명 파싱이 필요 → 파일별 읽기(정확도 우선).
+    # 없으면 pyarrow.dataset 단일 스캔(속도 우선) — 작은 파일 수백~수천 개에서 수 배 빠름.
+    needs_filename_fields = any(
+        (rule.get("step_seq") or "*") != "*" or (rule.get("ppid") or "*") != "*"
+        for rule in rules
+    )
+
+    def _read_perfile() -> list[pd.DataFrame]:
+        paths: list[Path] = []
         for date in dates:
-            files.extend(selectors.iter_date_files(date))
+            paths.extend(selectors.iter_date_files(date))
+        return _parallel_read(paths, _read_daily_summary_file)
+
+    def _read_dataset() -> list[pd.DataFrame]:
+        out: list[pd.DataFrame] = []
+        for date in dates:
+            frame = selectors.read_date_dataset(date, _DAILY_SUMMARY_COLUMNS_SLIM)
+            if not frame.empty:
+                out.append(frame)
+        return out
+
+    frames: list[pd.DataFrame] = []
+    try:
+        if needs_filename_fields:
+            frames = _read_perfile()
+        else:
+            try:
+                frames = _read_dataset()
+            except Exception as exc:
+                # 부분 파일(쓰는 중)/스키마 편차 등으로 dataset 스캔 실패 시
+                # 파일별 읽기(인덱스 기반·파일별 try/except)로 안전 폴백.
+                # 루트 자체가 없으면 폴백도 FileNotFoundError를 던져 바깥에서 404 처리됨.
+                print(f"[WARN] L3 Spider daily summary dataset 스캔 실패 → 파일별 폴백: {exc}")
+                frames = _read_perfile()
     except (FileNotFoundError, NotADirectoryError) as exc:
         raise L3SpiderServiceError(str(exc), status_code=404) from exc
 
-    frames = _parallel_read(files, _read_daily_summary_file)
     if not frames:
         result = {**_empty_daily_summary(), "dates": sorted(dates)}
         _daily_summary_cache.set(cache_key, result)

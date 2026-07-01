@@ -171,7 +171,7 @@ export function L3SpiderDataSelector({
 
   // Selected items in Line column panel (LINE_NAMEs or LINE_IDs depending on mode)
   const selectedLineItemsForPanel = hasLineGroups
-    ? new Set(lineGroupsForDate.filter((g) => selection.lineIds.has(g.lineId)).map((g) => g.lineName))
+    ? (selection.lineNames ?? new Set())
     : selection.lineIds
 
   // Needed for edsStep computation below (always LINE_IDs)
@@ -184,7 +184,7 @@ export function L3SpiderDataSelector({
     hasLineGroups
       ? new Set(
           lineGroupsForDate
-            .filter((g) => selection.lineIds.has(g.lineId))
+            .filter((g) => (selection.lineNames ?? new Set()).has(g.lineName))
             .flatMap((g) => g.processIds.filter((pid) => availabilityForDate[g.lineId]?.[pid] != null)),
         )
       : new Set(
@@ -217,9 +217,10 @@ export function L3SpiderDataSelector({
   }
 
   const changeLines = (selectedLineItems) => {
-    let lineIds, allowedProcessIds
+    let lineNames, lineIds, allowedProcessIds
     if (hasLineGroups) {
-      const selectedGroups = lineGroupsForDate.filter((g) => selectedLineItems.has(g.lineName))
+      lineNames = selectedLineItems
+      const selectedGroups = lineGroupsForDate.filter((g) => lineNames.has(g.lineName))
       lineIds = new Set(selectedGroups.map((g) => g.lineId))
       allowedProcessIds = new Set(
         selectedGroups.flatMap((g) =>
@@ -227,6 +228,7 @@ export function L3SpiderDataSelector({
         ),
       )
     } else {
+      lineNames = new Set()
       lineIds = selectedLineItems
       allowedProcessIds = new Set(
         sortedValues(lineIds).flatMap((lineId) => Object.keys(availabilityForDate[lineId] ?? {})),
@@ -244,7 +246,7 @@ export function L3SpiderDataSelector({
           .includes(edsStep),
       ),
     )
-    onSelectionChange({ ...selection, lineIds, processIds: nextProcessIds, edsSteps: nextEdsSteps })
+    onSelectionChange({ ...selection, lineNames, lineIds, processIds: nextProcessIds, edsSteps: nextEdsSteps })
   }
 
   const changeProcesses = (processIdsNext) => {
