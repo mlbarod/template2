@@ -34,6 +34,9 @@ SUMMARY_COLUMNS = ["step_seq", "ppid", "eqp_id", "eqc", "bin_name", "display_sta
 # 파일명에서 step_seq/ppid 파싱 성공 시 파일에서 읽을 컬럼 (절반으로 감소)
 _SUMMARY_COLUMNS_SLIM = ["eqc", "bin_name", "display_status"]
 _SUMMARY_DEDUP_KEYS = ["step_seq", "ppid", "eqc", "bin_name", "display_status"]
+# daily summary: 카운트 집계용 — dedup 없이 전체 행을 읽습니다.
+_DAILY_SUMMARY_COLUMNS = ["step_seq", "ppid", "eqc", "bin_name", "display_status", "lot_id"]
+_DAILY_SUMMARY_COLUMNS_SLIM = ["eqc", "bin_name", "display_status", "lot_id"]
 _STATS_COLUMNS = ["eqc", "bin_name", "display_status", "tkin_time"]
 MAIL_EVENT_COLUMNS = ["step_seq", "ppid", "eqc", "bin_name", "display_status", "tkin_time"]
 CHART_COLUMNS = [
@@ -101,10 +104,13 @@ class _SimpleCache:
 _meta_cache = _SimpleCache(ttl=600.0)
 _structure_cache = _SimpleCache(ttl=600.0)
 _stats_cache = _SimpleCache(ttl=600.0)
+_daily_summary_cache = _SimpleCache(ttl=300.0)
 # 파일시스템 스캔 결과만 따로 캐싱: 사용자별 exclusion 규칙과 분리해
 # 여러 사용자/워커 간에 스캔 비용을 공유합니다.
 _raw_file_rows_cache = _SimpleCache(ttl=600.0)
 _RAW_FILE_ROWS_KEY = "raw"
+_line_groups_cache = _SimpleCache(ttl=600.0)
+_LINE_GROUPS_KEY = "groups"
 
 
 class L3SpiderServiceError(Exception):
@@ -224,6 +230,20 @@ def _read_summary_file(path: Path) -> pd.DataFrame | None:
         return frame.drop_duplicates(subset=available_dedup) if not frame.empty else None
     except Exception as exc:
         print(f"[WARN] L3 Spider summary read failed: {path}: {exc}")
+        return None
+
+
+def _read_daily_summary_file(path: Path) -> pd.DataFrame | None:
+    """daily summary 읽기: 카운트 집계용으로 dedup 없이 전체 행을 반환합니다."""
+    try:
+        parsed = _parse_filename_key(path)
+        cols = _DAILY_SUMMARY_COLUMNS_SLIM if parsed else _DAILY_SUMMARY_COLUMNS
+        frame = selectors.read_parquet_columns(path, cols)
+        frame = _normalize_display_status(frame)
+        frame = _add_path_context(frame, path, override_filename_keys=bool(parsed))
+        return frame if not frame.empty else None
+    except Exception as exc:
+        print(f"[WARN] L3 Spider daily summary read failed: {path}: {exc}")
         return None
 
 
@@ -411,6 +431,78 @@ def _get_raw_file_rows() -> list[dict[str, str]]:
     return rows
 
 
+def _build_line_groups_from_index() -> list[dict]:
+    """eqp_index + station_master + drone_sop_target 조인으로 lineGroups를 동적 생성합니다.
+
+    결과는 TTL 캐시에 보관합니다. station_master/drone_sop_target가 비어있으면
+    빈 리스트를 반환하며, 프론트엔드는 LINE_ID 표시로 자동 fallback합니다.
+    """
+    cached = _line_groups_cache.get(_LINE_GROUPS_KEY)
+    if cached is not None:
+        return cached
+
+    try:
+        groups = _build_line_groups_impl()
+    except Exception:
+        groups = []
+
+    _line_groups_cache.set(_LINE_GROUPS_KEY, groups)
+    return groups
+
+
+def _build_line_groups_impl() -> list[dict]:
+    from api.data_movement.station_master.models import StationMaster
+    from api.drone.models import DroneSopTarget
+
+    # 1. eqp_index → 모든 (line_id, process_id) × eqc 목록 (SQLite 한 번)
+    combo_eqcs = selectors.query_all_eqcs_by_combo()
+    if not combo_eqcs:
+        return []
+
+    all_eqcs = {eqc.upper() for eqcs in combo_eqcs.values() for eqc in eqcs}
+
+    # 2. station_master: station_lookup(대문자) → sdwt_prod_lookup
+    eqc_to_sdwt: dict[str, str] = dict(
+        StationMaster.objects
+        .filter(station_lookup__in=all_eqcs)
+        .exclude(sdwt_prod_lookup=None)
+        .values_list("station_lookup", "sdwt_prod_lookup")
+    )
+
+    all_sdwt = {v for v in eqc_to_sdwt.values() if v}
+    if not all_sdwt:
+        return []
+
+    # 3. drone_sop_target: target_user_sdwt_prod → line_id (=LINE_NAME)
+    #    대소문자 혼용 가능 → 대문자로 정규화해 매핑
+    sdwt_to_line_name: dict[str, str] = {
+        t["target_user_sdwt_prod"].upper(): t["line_id"]
+        for t in DroneSopTarget.objects
+        .exclude(line_id="")
+        .exclude(line_id=None)
+        .values("target_user_sdwt_prod", "line_id")
+    }
+
+    # 4. (line_id_path, process_id) × eqc → LINE_NAME 결정
+    #    line_name → {line_id_path → set(process_ids)}
+    result: dict[str, dict[str, set[str]]] = {}
+    for (line_id, process_id), eqcs in combo_eqcs.items():
+        for eqc in eqcs:
+            sdwt = eqc_to_sdwt.get(eqc.upper())
+            if not sdwt:
+                continue
+            ln = sdwt_to_line_name.get(sdwt.upper())
+            if not ln:
+                continue
+            result.setdefault(ln, {}).setdefault(line_id, set()).add(process_id)
+
+    return [
+        {"lineName": ln, "lineId": lid, "processIds": sorted(pids)}
+        for ln in sorted(result)
+        for lid, pids in sorted(result[ln].items())
+    ]
+
+
 def get_meta(*, user: Any | None = None) -> dict[str, object]:
     """사용 가능한 날짜/라인/프로세스/EDS step 메타데이터를 반환합니다.
 
@@ -461,6 +553,7 @@ def get_meta(*, user: Any | None = None) -> dict[str, object]:
             }
             for date, lines in sorted(availability.items())
         },
+        "lineGroups": _build_line_groups_from_index(),
     }
     _meta_cache.set(rules_hash, result)
     return result
@@ -1005,11 +1098,51 @@ def _build_mail_event_key(event: dict[str, object]) -> str:
     return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
 
 
+def _resolve_mail_rule_files(rule) -> list[Path]:
+    """rule의 date/scope 필드를 인덱스 쿼리에 내려보내 읽을 파일 수를 줄입니다.
+
+    - date_from/date_to가 있으면 query_indexed_files_by_range로 날짜 범위 pre-filter.
+    - line_id/process_id/eds_step이 정확한 값(와일드카드 없음)이면 추가 filter.
+    - eqpch는 인덱스 컬럼(eqp_ids/chamber_ids)과 구조가 달라 인덱스로 내리지 않음.
+    - 인덱스 없거나 결과가 비면 iter_all_data_files_legacy()로 폴백.
+    """
+    def _is_exact(val: Any) -> bool:
+        s = str(val) if val is not None else ""
+        return bool(s) and s != "*" and "*" not in s and "?" not in s
+
+    kwargs: dict[str, str] = {}
+    if _is_exact(rule.line_id):
+        kwargs["line_id"] = rule.line_id
+    if _is_exact(rule.process_id):
+        kwargs["process_id"] = rule.process_id
+    if _is_exact(rule.eds_step):
+        kwargs["eds_step"] = rule.eds_step
+
+    date_from = rule.date_from
+    date_to = rule.date_to
+
+    if date_from or date_to:
+        date_from_str = date_from.isoformat() if date_from else "0000-00-00"
+        date_to_str = date_to.isoformat() if date_to else "9999-99-99"
+        files = selectors.query_indexed_files_by_range(
+            date_from=date_from_str,
+            date_to=date_to_str,
+            **kwargs,
+        )
+        # 인덱스 파일 없으면 빈 리스트 → 전체 스캔 폴백
+        if not files:
+            files = selectors.iter_all_data_files_legacy()
+        return files
+
+    # 날짜 필터 없음 — 기존 iter_all_data_files (인덱스 전체 → legacy 폴백)
+    return selectors.iter_all_data_files()
+
+
 def _collect_mail_rule_events(rule) -> list[dict[str, object]]:
     """메일 알림 rule에 매칭되는 이상감지 이벤트 목록을 수집합니다."""
 
     try:
-        files = list(selectors.iter_all_data_files())
+        files = _resolve_mail_rule_files(rule)
     except FileNotFoundError as exc:
         raise L3SpiderServiceError(str(exc), status_code=404) from exc
     except NotADirectoryError as exc:
@@ -1726,6 +1859,125 @@ def get_summary(selection: dict[str, object], *, user: Any | None = None) -> dic
         "bins": bins,
         "anomalies": anomalies,
     }
+
+
+def _empty_daily_summary() -> dict[str, object]:
+    return {
+        "dates": [],
+        "headline": {
+            "groups": 0, "binNames": 0, "stepSeqs": 0, "lines": 0, "processes": 0,
+            "edsSteps": 0, "ppids": 0, "lots": 0, "totalRows": 0,
+            "anomalies": 0, "highRisk": 0, "warning": 0, "anomalyGroups": 0,
+            "anomalyEqpchs": 0, "highRiskEqpchs": 0, "warningEqpchs": 0,
+        },
+        "matrix": {"lines": [], "processes": [], "edsSteps": [], "cells": []},
+    }
+
+
+def get_daily_summary(selection: dict[str, object], *, user: Any | None = None) -> dict[str, object]:
+    """선택한 날짜 전체의 line×process×eds_step×step_seq 기준 이상감지 요약을 반환합니다.
+
+    Chart 조회와 달리 line/process/eds 선택과 무관하게 해당 날짜의 모든 그룹을 집계합니다.
+    """
+    dates = [str(d) for d in (selection.get("dates") or []) if d]
+    if not dates:
+        return _empty_daily_summary()
+
+    rules = _get_exclusion_rules(user=user)
+    rules_hash = str(hash(tuple(sorted(str(r) for r in rules))))
+    cache_key = f"{rules_hash}:{json.dumps(sorted(dates))}"
+    cached = _daily_summary_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    files: list[Path] = []
+    try:
+        for date in dates:
+            files.extend(selectors.iter_date_files(date))
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        raise L3SpiderServiceError(str(exc), status_code=404) from exc
+
+    frames = _parallel_read(files, _read_daily_summary_file)
+    if not frames:
+        result = {**_empty_daily_summary(), "dates": sorted(dates)}
+        _daily_summary_cache.set(cache_key, result)
+        return result
+
+    merged = pd.concat(frames, ignore_index=True)
+    merged = _normalize_display_status(merged)
+    merged = _apply_exclusion_filters_with_rules(merged, rules)
+    if merged.empty or "display_status" not in merged.columns:
+        result = {**_empty_daily_summary(), "dates": sorted(dates)}
+        _daily_summary_cache.set(cache_key, result)
+        return result
+
+    # 차원 컬럼 보정 (누락 시 빈 문자열)
+    for col in ("line_id", "process_id", "eds_step", "bin_name", "eqc", "step_seq", "ppid", "lot_id"):
+        if col not in merged.columns:
+            merged[col] = ""
+        merged[col] = merged[col].fillna("").astype(str)
+
+    status = merged["display_status"].astype(str)
+    is_hr = status == "High Risk Chamber"
+    is_wn = status == "Warning"
+    is_anom = status.isin(ANOMALY_STATUSES)
+    merged["_hr"] = is_hr.astype(int)
+    merged["_wn"] = is_wn.astype(int)
+
+    # 모니터링 그룹 = line × process × eds_step × bin_name 조합수
+    group_cols = ["line_id", "process_id", "eds_step", "bin_name"]
+    group_keys = merged[group_cols].drop_duplicates()
+    anomaly_group_keys = merged.loc[is_anom, group_cols].drop_duplicates()
+
+    headline = {
+        "groups": int(len(group_keys)),
+        "binNames": int(merged["bin_name"].nunique()),
+        "stepSeqs": int(merged["step_seq"].nunique()),
+        "lines": int(merged["line_id"].nunique()),
+        "processes": int(merged["process_id"].nunique()),
+        "edsSteps": int(merged["eds_step"].nunique()),
+        "ppids": int(merged["ppid"].nunique()),
+        "lots": int(merged.loc[merged["lot_id"] != "", "lot_id"].nunique()),
+        "totalRows": int(len(merged)),
+        "anomalies": int(is_anom.sum()),
+        "highRisk": int(is_hr.sum()),
+        "warning": int(is_wn.sum()),
+        "anomalyGroups": int(len(anomaly_group_keys)),
+        "anomalyEqpchs": int(merged.loc[is_anom, "eqc"].nunique()),
+        "highRiskEqpchs": int(merged.loc[is_hr, "eqc"].nunique()),
+        "warningEqpchs": int(merged.loc[is_wn, "eqc"].nunique()),
+    }
+
+    # ── 매트릭스: line × process × eds_step (모니터링된 조합 = 이상 0도 포함) ──
+    cells: list[dict[str, object]] = []
+    for (line_id, process_id, eds_step), group in merged.groupby(
+        ["line_id", "process_id", "eds_step"], sort=True
+    ):
+        hr_c = int(group["_hr"].sum())
+        wn_c = int(group["_wn"].sum())
+        cells.append({
+            "line": line_id,
+            "process": process_id,
+            "edsStep": eds_step,
+            "highRisk": hr_c,
+            "warning": wn_c,
+            "total": hr_c + wn_c,
+            "bins": int(group["bin_name"].nunique()),
+        })
+    matrix = {
+        "lines": sorted(merged["line_id"].unique().tolist()),
+        "processes": sorted(merged["process_id"].unique().tolist()),
+        "edsSteps": sorted(merged["eds_step"].unique().tolist()),
+        "cells": cells,
+    }
+
+    result = {
+        "dates": sorted(dates),
+        "headline": headline,
+        "matrix": matrix,
+    }
+    _daily_summary_cache.set(cache_key, result)
+    return result
 
 
 def get_data(selection: dict[str, object], *, user: Any | None = None) -> dict[str, object]:

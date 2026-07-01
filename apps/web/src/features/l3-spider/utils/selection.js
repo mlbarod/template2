@@ -7,6 +7,7 @@ export const EMPTY_META = {
   processIds: [],
   edsSteps: [],
   availability: {},
+  lineGroups: [],
 }
 
 export const EMPTY_STATS = {

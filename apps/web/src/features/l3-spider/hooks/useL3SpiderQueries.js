@@ -2,6 +2,7 @@
 import { useQuery } from "@tanstack/react-query"
 
 import {
+  fetchL3SpiderDailySummary,
   fetchL3SpiderData,
   fetchL3SpiderFilterCandidates,
   fetchL3SpiderMeta,
@@ -54,6 +55,23 @@ export function useL3SpiderSummary(selection) {
     queryKey: l3SpiderQueryKeys.summary(selectionKey),
     queryFn: () => fetchL3SpiderSummary(buildSelectionPayload(selection)),
     enabled: hasCompleteSelection(selection),
+  })
+}
+
+// 선택한 날짜 전체(line/process/eds 무관)의 이상감지 요약
+export function useL3SpiderDailySummary(date) {
+  return useQuery({
+    queryKey: l3SpiderQueryKeys.dailySummary(date || ""),
+    queryFn: () =>
+      fetchL3SpiderDailySummary({
+        dates: date ? [date] : [],
+        lineIds: [],
+        processIds: [],
+        edsSteps: [],
+      }),
+    enabled: Boolean(date),
+    staleTime: 3 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
   })
 }
 

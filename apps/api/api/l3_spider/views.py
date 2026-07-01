@@ -102,6 +102,22 @@ class L3SpiderSummaryView(APIView):
             return _error_response(error)
 
 
+class L3SpiderDailySummaryView(APIView):
+    """선택한 날짜 전체의 이상감지 요약(헤드라인/매트릭스/TopEDS/드릴다운)."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        serializer = L3SpiderDataRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            return _fast_response(
+                services.get_daily_summary(serializer.validated_data, user=request.user)
+            )
+        except services.L3SpiderServiceError as error:
+            return _error_response(error)
+
+
 class L3SpiderDataView(APIView):
     """차트 행 데이터: orjson + 컬럼 포맷으로 빠르게 반환합니다."""
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 from django.urls import path
 
 from .views import (
+    L3SpiderDailySummaryView,
     L3SpiderDataView,
     L3SpiderExclusionFilterDetailView,
     L3SpiderExclusionFilterListCreateView,
@@ -28,6 +29,7 @@ urlpatterns = [
     path("structure", L3SpiderStructureView.as_view(), name="l3-spider-structure"),
     path("stats", L3SpiderStatsView.as_view(), name="l3-spider-stats"),
     path("summary", L3SpiderSummaryView.as_view(), name="l3-spider-summary"),
+    path("daily-summary", L3SpiderDailySummaryView.as_view(), name="l3-spider-daily-summary"),
     path("data", L3SpiderDataView.as_view(), name="l3-spider-data"),
     path("filter-candidates", L3SpiderFilterCandidatesView.as_view(), name="l3-spider-filter-candidates"),
     path("exclusion-filters", L3SpiderExclusionFilterListCreateView.as_view(), name="l3-spider-exclusion-filters"),
