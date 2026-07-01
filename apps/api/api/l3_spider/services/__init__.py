@@ -101,6 +101,10 @@ class _SimpleCache:
 _meta_cache = _SimpleCache(ttl=600.0)
 _structure_cache = _SimpleCache(ttl=600.0)
 _stats_cache = _SimpleCache(ttl=600.0)
+# 파일시스템 스캔 결과만 따로 캐싱: 사용자별 exclusion 규칙과 분리해
+# 여러 사용자/워커 간에 스캔 비용을 공유합니다.
+_raw_file_rows_cache = _SimpleCache(ttl=600.0)
+_RAW_FILE_ROWS_KEY = "raw"
 
 
 class L3SpiderServiceError(Exception):
@@ -372,6 +376,41 @@ def _dataframe_to_columnar(merged: pd.DataFrame) -> dict[str, object]:
 
 # ─── 서비스 함수 ─────────────────────────────────────────────────────────────
 
+def _get_raw_file_rows() -> list[dict[str, str]]:
+    """전체 파일 트리를 스캔하여 (date, line_id, process_id, eds_step) 행 목록을 반환합니다.
+
+    결과를 별도 캐시에 저장하여 사용자별 exclusion 규칙 계산과 분리합니다.
+    같은 워커 내 여러 사용자가 스캔 비용을 공유하고, 필터 변경 시에도 재스캔하지 않습니다.
+    """
+    cached = _raw_file_rows_cache.get(_RAW_FILE_ROWS_KEY)
+    if cached is not None:
+        return cached
+
+    try:
+        files = list(selectors.iter_all_data_files())
+    except FileNotFoundError as exc:
+        raise L3SpiderServiceError(str(exc), status_code=404) from exc
+    except NotADirectoryError as exc:
+        raise L3SpiderServiceError(str(exc), status_code=400) from exc
+
+    root = selectors.get_data_root()
+    rows: list[dict[str, str]] = []
+    for path in files:
+        parts = path.relative_to(root).parts
+        if len(parts) != 5:
+            continue
+        date, line_id, process_id, eds_step = parts[:4]
+        rows.append({
+            "date": date,
+            "line_id": line_id,
+            "process_id": process_id,
+            "eds_step": eds_step,
+        })
+
+    _raw_file_rows_cache.set(_RAW_FILE_ROWS_KEY, rows)
+    return rows
+
+
 def get_meta(*, user: Any | None = None) -> dict[str, object]:
     """사용 가능한 날짜/라인/프로세스/EDS step 메타데이터를 반환합니다.
 
@@ -384,26 +423,8 @@ def get_meta(*, user: Any | None = None) -> dict[str, object]:
     if cached is not None:
         return cached
 
-    try:
-        files = list(selectors.iter_all_data_files())
-    except FileNotFoundError as exc:
-        raise L3SpiderServiceError(str(exc), status_code=404) from exc
-    except NotADirectoryError as exc:
-        raise L3SpiderServiceError(str(exc), status_code=400) from exc
-
-    root = selectors.get_data_root()
-    file_rows: list[dict[str, str]] = []
-    for path in files:
-        parts = path.relative_to(root).parts
-        if len(parts) != 5:
-            continue
-        date, line_id, process_id, eds_step = parts[:4]
-        file_rows.append({
-            "date": date,
-            "line_id": line_id,
-            "process_id": process_id,
-            "eds_step": eds_step,
-        })
+    # 파일 스캔 결과는 공유 캐시에서 가져옴 (exclusion 규칙과 독립적)
+    file_rows = _get_raw_file_rows()
 
     if file_rows:
         df = pd.DataFrame(file_rows).drop_duplicates()
@@ -1293,6 +1314,54 @@ def _process_mail_rule(rule, *, now: dt_datetime) -> dict[str, object]:
         "status": "sent",
         "claimed": len(claimed_events),
         "sent": len(claimed_events),
+    }
+
+
+def send_mail_rule_test(rule_id: int, *, user: Any) -> dict[str, object]:
+    """메일 rule을 정기 발송 이력과 분리해 단발성으로 테스트 발송합니다."""
+
+    from ..models import L3SpiderMailRule
+
+    user_id = _require_user_id(user)
+    try:
+        rule = selectors.get_mail_rule_for_user(rule_id=rule_id, user_id=user_id)
+    except L3SpiderMailRule.DoesNotExist as exc:
+        raise L3SpiderServiceError("Not found", status_code=404) from exc
+    if not _mail_rule_access(rule, user_id=user_id)["canWrite"]:
+        raise L3SpiderServiceError("Write permission required", status_code=403)
+    if not rule.receiver_emails:
+        raise L3SpiderServiceError("수신자가 없습니다.", status_code=400)
+
+    events = _collect_mail_rule_events(rule)
+    if not events:
+        return {
+            "ruleId": rule.id,
+            "status": "no_events",
+            "sent": 0,
+            "eventCount": 0,
+            "receiverCount": len(rule.receiver_emails),
+        }
+
+    sender = _resolve_l3_mail_sender()
+    if not sender:
+        raise L3SpiderServiceError("L3_SPIDER_MAIL_SENDER 미설정", status_code=400)
+
+    try:
+        send_knox_mail_api(
+            sender_email=sender,
+            receiver_emails=rule.receiver_emails,
+            subject=f"[TEST] {_build_l3_mail_subject(rule, events)}"[:255],
+            html_content=_build_l3_mail_body(rule, events),
+        )
+    except Exception as exc:
+        raise L3SpiderServiceError(f"테스트 메일 발송 실패: {exc}", status_code=502) from exc
+
+    return {
+        "ruleId": rule.id,
+        "status": "sent",
+        "sent": len(events),
+        "eventCount": len(events),
+        "receiverCount": len(rule.receiver_emails),
     }
 
 

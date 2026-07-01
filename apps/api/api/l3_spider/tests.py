@@ -486,6 +486,51 @@ class L3SpiderMailRuleTests(TestCase):
 
         self.assertEqual(context.exception.status_code, 404)
 
+    def test_test_send_mail_rule_sends_without_delivery_history(self) -> None:
+        """테스트 발송은 정기 발송 이력을 소모하지 않고 메일만 전송해야 합니다."""
+
+        rule = self._create_rule(user=self.owner, eqpch="EQC_A")
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_mail_sample(root)
+
+            with override_settings(
+                L3_SPIDER_DATA_ROOT=str(root),
+                L3_SPIDER_MAIL_SENDER="sender@example.com",
+                FRONTEND_BASE_URL="http://frontend.example.com",
+            ), patch(
+                "api.l3_spider.services.send_knox_mail_api",
+                return_value={"ok": True},
+            ) as mock_send:
+                result = services.send_mail_rule_test(rule.id, user=self.owner)
+
+        self.assertEqual(result["status"], "sent")
+        self.assertEqual(result["sent"], 1)
+        mock_send.assert_called_once()
+        self.assertTrue(mock_send.call_args.kwargs["subject"].startswith("[TEST] "))
+        self.assertEqual(L3SpiderMailDelivery.objects.filter(rule=rule).count(), 0)
+        rule.refresh_from_db()
+        self.assertIsNone(rule.last_sent_at)
+        self.assertIsNone(rule.last_checked_at)
+
+    def test_read_permission_cannot_test_send_mail_rule(self) -> None:
+        """read 권한자는 테스트 발송을 실행할 수 없어야 합니다."""
+
+        rule = self._create_rule(user=self.owner)
+        L3SpiderMailRulePermission.objects.create(
+            rule=rule,
+            user=self.reader,
+            access_level=L3SpiderMailRulePermission.AccessLevels.READ,
+            granted_by=self.owner,
+        )
+
+        with patch("api.l3_spider.services.send_knox_mail_api") as mock_send:
+            with self.assertRaises(services.L3SpiderServiceError) as context:
+                services.send_mail_rule_test(rule.id, user=self.reader)
+
+        self.assertEqual(context.exception.status_code, 403)
+        mock_send.assert_not_called()
+
     def test_trigger_due_mail_rules_sends_high_risk_once(self) -> None:
         """due rule은 High Risk 이벤트를 한 번만 발송 이력으로 남겨야 합니다."""
 

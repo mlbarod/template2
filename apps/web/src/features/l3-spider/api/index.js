@@ -13,6 +13,7 @@ export {
   fetchL3SpiderStructure,
   fetchL3SpiderSummary,
   fetchMailRules,
+  testSendMailRule,
   updateExclusionFilter,
   updateMailRule,
   updateMailRulePermissions,

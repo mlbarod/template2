@@ -5,6 +5,7 @@ import {
   deleteMailRule,
   fetchMailRules,
   l3SpiderQueryKeys,
+  testSendMailRule,
   updateMailRule,
   updateMailRulePermissions,
 } from "../api"
@@ -52,5 +53,11 @@ export function useUpdateMailRulePermissions() {
   return useMutation({
     mutationFn: ({ id, permissions }) => updateMailRulePermissions(id, permissions),
     onSuccess: invalidate,
+  })
+}
+
+export function useTestSendMailRule() {
+  return useMutation({
+    mutationFn: ({ id }) => testSendMailRule(id),
   })
 }

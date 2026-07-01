@@ -15,6 +15,7 @@ from .views import (
     L3SpiderMailRuleDetailView,
     L3SpiderMailRuleListCreateView,
     L3SpiderMailRulePermissionView,
+    L3SpiderMailRuleTestSendView,
     L3SpiderMailTriggerView,
     L3SpiderMetaView,
     L3SpiderStatsView,
@@ -34,5 +35,6 @@ urlpatterns = [
     path("mail-rules", L3SpiderMailRuleListCreateView.as_view(), name="l3-spider-mail-rules"),
     path("mail-rules/trigger", L3SpiderMailTriggerView.as_view(), name="l3-spider-mail-rule-trigger"),
     path("mail-rules/<int:pk>/permissions", L3SpiderMailRulePermissionView.as_view(), name="l3-spider-mail-rule-permissions"),
+    path("mail-rules/<int:pk>/test-send", L3SpiderMailRuleTestSendView.as_view(), name="l3-spider-mail-rule-test-send"),
     path("mail-rules/<int:pk>", L3SpiderMailRuleDetailView.as_view(), name="l3-spider-mail-rule-detail"),
 ]

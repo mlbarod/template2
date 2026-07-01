@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react"
-import { Clock3, Mail, Pencil, Plus, Save, Trash2, Users, X } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import { Clock3, Mail, Pencil, Plus, Save, Send, Trash2, Users, X } from "lucide-react"
+import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -17,6 +18,7 @@ import {
   useCreateMailRule,
   useDeleteMailRule,
   useMailRules,
+  useTestSendMailRule,
   useUpdateMailRule,
   useUpdateMailRulePermissions,
 } from "../hooks/useL3SpiderMailRules"
@@ -315,10 +317,14 @@ function RuleFormDialog({ editTarget, isSaving, error, onClose, onSave }) {
 
 function PermissionDialog({ target, isSaving, error, onClose, onSave }) {
   const [rows, setRows] = useState([])
+  const nextRowId = useRef(0)
   const open = Boolean(target)
 
   useEffect(() => {
-    setRows(permissionsToEdit(target?.row))
+    setRows(permissionsToEdit(target?.row).map((row) => ({
+      ...row,
+      rowId: `permission-${nextRowId.current++}`,
+    })))
   }, [target])
 
   const set = (index, key, value) => {
@@ -328,7 +334,10 @@ function PermissionDialog({ target, isSaving, error, onClose, onSave }) {
   }
 
   const addRow = () => {
-    setRows((prev) => [...prev, { user: "", accessLevel: "read" }])
+    setRows((prev) => [
+      ...prev,
+      { rowId: `permission-${nextRowId.current++}`, user: "", accessLevel: "read" },
+    ])
   }
 
   const removeRow = (index) => {
@@ -363,7 +372,7 @@ function PermissionDialog({ target, isSaving, error, onClose, onSave }) {
                   공유 권한이 없습니다.
                 </div>
               ) : rows.map((row, index) => (
-                <div key={`${row.user}-${index}`} className="grid grid-cols-[1fr_140px_44px] gap-2">
+                <div key={row.rowId} className="grid grid-cols-[1fr_140px_44px] gap-2">
                   <Input
                     value={row.user}
                     onChange={(event) => set(index, "user", event.target.value)}
@@ -422,7 +431,7 @@ function PermissionDialog({ target, isSaving, error, onClose, onSave }) {
   )
 }
 
-function MailRuleRow({ row, isUpdating, onEdit, onDelete, onToggle, onPermissions }) {
+function MailRuleRow({ row, isUpdating, isTesting, onEdit, onDelete, onToggle, onPermissions, onTestSend }) {
   const receiverCount = row.receiverEmails?.length ?? 0
   const canWrite = Boolean(row.canWrite)
   const canManage = Boolean(row.canManage)
@@ -471,8 +480,20 @@ function MailRuleRow({ row, isUpdating, onEdit, onDelete, onToggle, onPermission
       <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
         {row.lastCheckedAt || "-"}
       </TableCell>
-      <TableCell className="w-20 text-right">
+      <TableCell className="w-32 text-right">
         <div className="flex items-center justify-end gap-1">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1 px-2 text-xs"
+            onClick={onTestSend}
+            disabled={isUpdating || isTesting || !canWrite}
+            aria-label={`${row.name} 테스트 발송`}
+          >
+            <Send className="size-3.5" />
+            Test
+          </Button>
           <Button
             type="button"
             variant="ghost"
@@ -520,6 +541,7 @@ export function L3SpiderMailRuleSheet() {
   const updateMutation = useUpdateMailRule()
   const deleteMutation = useDeleteMailRule()
   const permissionMutation = useUpdateMailRulePermissions()
+  const testSendMutation = useTestSendMailRule()
 
   const [editTarget, setEditTarget] = useState(null)
   const [permissionTarget, setPermissionTarget] = useState(null)
@@ -559,6 +581,21 @@ export function L3SpiderMailRuleSheet() {
   const handleConfirmDelete = () => {
     deleteMutation.mutate(deleteConfirmId, {
       onSuccess: () => setDeleteConfirmId(null),
+    })
+  }
+
+  const handleTestSend = (row) => {
+    testSendMutation.mutate({ id: row.id }, {
+      onSuccess: (result) => {
+        if (result.status === "no_events") {
+          toast.info("테스트 발송할 이벤트가 없습니다.")
+          return
+        }
+        toast.success(`테스트 메일을 발송했습니다. (${result.sent}건)`)
+      },
+      onError: (sendError) => {
+        toast.error(sendError.message || "테스트 메일 발송에 실패했습니다.")
+      },
     })
   }
 
@@ -618,7 +655,7 @@ export function L3SpiderMailRuleSheet() {
                     <TableHead>패턴</TableHead>
                     <TableHead>최근 발송</TableHead>
                     <TableHead>최근 확인</TableHead>
-                    <TableHead className="w-20 text-right">작업</TableHead>
+                    <TableHead className="w-32 text-right">작업</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -635,10 +672,12 @@ export function L3SpiderMailRuleSheet() {
                         key={row.id}
                         row={row}
                         isUpdating={updateMutation.isPending}
+                        isTesting={testSendMutation.isPending && testSendMutation.variables?.id === row.id}
                         onEdit={() => setEditTarget({ mode: "edit", row })}
                         onDelete={() => setDeleteConfirmId(row.id)}
                         onToggle={(value) => handleToggle(row, value)}
                         onPermissions={() => setPermissionTarget({ row })}
+                        onTestSend={() => handleTestSend(row)}
                       />
                     ))
                   )}
