@@ -33,11 +33,66 @@ export const EMPTY_SUMMARY = {
   anomalies: [],
 }
 
-export const EMPTY_SELECTION = {
-  date: "",
-  lineIds: new Set(),
-  processIds: new Set(),
-  edsSteps: new Set(),
+export function createEmptySelection() {
+  return {
+    date: "",
+    lineIds: new Set(),
+    processIds: new Set(),
+    edsSteps: new Set(),
+  }
+}
+
+export const EMPTY_SELECTION = createEmptySelection()
+
+function valuesFromSearchParams(searchParams, names) {
+  const seen = new Set()
+  for (const name of names) {
+    for (const rawValue of searchParams.getAll(name)) {
+      for (const value of rawValue.split(",")) {
+        const cleaned = value.trim()
+        if (cleaned) seen.add(cleaned)
+      }
+    }
+  }
+  return Array.from(seen)
+}
+
+function firstValueFromSearchParams(searchParams, names) {
+  return valuesFromSearchParams(searchParams, names)[0] ?? ""
+}
+
+export function createSelectionFromSearchParams(searchParams) {
+  return {
+    date: firstValueFromSearchParams(searchParams, ["date"]),
+    lineIds: new Set(
+      valuesFromSearchParams(searchParams, ["lineId", "lineIds", "line_id", "line_ids"]),
+    ),
+    processIds: new Set(
+      valuesFromSearchParams(
+        searchParams,
+        ["processId", "processIds", "process_id", "process_ids"],
+      ),
+    ),
+    edsSteps: new Set(
+      valuesFromSearchParams(searchParams, ["edsStep", "edsSteps", "eds_step", "eds_steps"]),
+    ),
+  }
+}
+
+export function createLeafSelectionFromSearchParams(searchParams) {
+  const edsStep = firstValueFromSearchParams(searchParams, ["edsStep", "eds_step"])
+  const stepSeq = firstValueFromSearchParams(searchParams, ["stepSeq", "step_seq"])
+  const ppid = firstValueFromSearchParams(searchParams, ["ppid"])
+  const eqpch = firstValueFromSearchParams(searchParams, ["eqpch", "eqc"])
+  const binName = firstValueFromSearchParams(searchParams, ["binName", "bin_name"])
+
+  return {
+    checkedStep: edsStep && stepSeq ? `${edsStep}|||${stepSeq}` : null,
+    checkedPpid: ppid || null,
+    checkedEqc: eqpch || null,
+    checkedBin: binName || null,
+    analysisMode: binName ? "bin" : "eqpch",
+  }
 }
 
 export function createEmptyFilter() {

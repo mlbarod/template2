@@ -14,7 +14,7 @@
 | Data Movement | `/api/v1/data-movement/` | `apps/api/api/data_movement/urls.py` | `<table_name>/load/` |
 | Assistant | `/api/v1/assistant/` | `apps/api/api/assistant/urls.py` | `chat`, `rag-indexes` |
 | Line Dashboard / Drone | `/api/v1/line-dashboard/` | `apps/api/api/drone/urls.py` | `early-inform`, `tables`, `tables/update`, `jira-keys`, `notification-targets`, `notification-target-mappings`, `jira-user-sdwt-prods`, `notification-recipients`, `notification-recipient-permissions`, `my-notification-recipient-targets`, `history`, `line-ids`, `line-sdwt-options`, `sop/<sop_id>/instant-inform`, `sop/<sop_id>/retry-channel`, `sop/ingest/pop3/trigger`, `sop/precheck`, `sop/trigger` |
-| L3 Spider | `/api/v1/l3_spider/` | `apps/api/api/l3_spider/urls.py` | `meta`, `summary`, `data`, `filter-candidates` |
+| L3 Spider | `/api/v1/l3_spider/` | `apps/api/api/l3_spider/urls.py` | `meta`, `structure`, `stats`, `summary`, `data`, `filter-candidates`, `exclusion-filters`, `exclusion-filters/<pk>`, `mail-rules`, `mail-rules/<pk>`, `mail-rules/<pk>/permissions`, `mail-rules/trigger` |
 | FDC Trend | `/api/v1/fdc-trend/` | `apps/api/api/fdc_trend/urls.py` | `hard-spec/meta`, `hard-spec/recommendations` |
 | PM SPIDER | `/api/v1/pm_spider/` | `apps/api/api/pm_comparison/urls.py` | `meta`, `compare` |
 | Observer | `/api/v1/observer/` | `apps/api/api/observer/urls.py` | `lines`, `sdwts`, `prc-groups`, `equipments`, `equipment-info/<line_id>/<eqp_id>`, `equipment-info/<eqp_id>`, `logs`, `logs/eqp`, `logs/tip`, `logs/ctttm`, `logs/racb`, `logs/esop`, `tkin-prevent/prc-groups`, `tkin-prevent/processes`, `tkin-prevent/step-seqs`, `tkin-prevent/matrix` |
@@ -48,7 +48,7 @@
 | Django app | 모델 |
 | --- | --- |
 | `api.account` | `User`, `UserProfile`, `Affiliation`, `UserCurrentAffiliation`, `UserSdwtProdAccess`, `UserSdwtProdChange`, `ExternalAffiliationSnapshot` |
-| `api.activity` | `ActivityLog` |
+| `api.activity` | `ActivityLog`, `ExternalAppAccessDailyStat` |
 | `api.appstore` | `AppStoreApp`, `AppStoreLike`, `AppStoreComment`, `AppStoreCommentLike` |
 | `api.drone` | `DroneSOP`, `DroneSopTarget`, `DroneSopTargetChannelConfig`, `DroneSopNeedToSendRule`, `DroneSopTargetMapping`, `DroneSopTargetRecipient`, `DroneSopTargetDispatch`, `DroneSopDelivery`, `DroneEarlyInform` |
 | `api.emails` | `Email`, `EmailOutbox`, `EmailAsset` |
@@ -61,7 +61,8 @@
 | `api.data_movement.mes_line_mapping_info` | `MesLineMappingInfo`, `MesLineMappingInfoLoadJob` |
 | `api.data_movement.station_master` | `StationMaster`, `StationMasterLoadJob` |
 | `api.voc` | `VocPost`, `VocReply` |
-| `api.auth`, `api.assistant`, `api.rag`, `api.observer`, `api.l3_spider`, `api.fdc_trend`, `api.pm_comparison`, `api.health`, `api.common` | 자체 업무 model 없이 account/common/external DB 또는 외부 API/파일을 사용 |
+| `api.l3_spider` | `L3SpiderExclusionFilter`, `L3SpiderMailRule`, `L3SpiderMailDelivery`, `L3SpiderMailRulePermission` |
+| `api.auth`, `api.assistant`, `api.rag`, `api.observer`, `api.fdc_trend`, `api.pm_comparison`, `api.health`, `api.common` | 자체 업무 model 없이 account/common/external DB 또는 외부 API/파일을 사용 |
 
 ## Management command
 

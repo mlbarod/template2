@@ -71,8 +71,16 @@ export function fetchExclusionFilters() {
   return request("/exclusion-filters")
 }
 
+export function fetchMailRules() {
+  return request("/mail-rules")
+}
+
 export function createExclusionFilter(data) {
   return postJson("/exclusion-filters", data)
+}
+
+export function createMailRule(data) {
+  return postJson("/mail-rules", data)
 }
 
 export function updateExclusionFilter(id, data) {
@@ -83,8 +91,45 @@ export function updateExclusionFilter(id, data) {
   })
 }
 
+export function updateMailRule(id, data) {
+  return request(`/mail-rules/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  })
+}
+
+export function updateMailRulePermissions(id, permissions) {
+  return request(`/mail-rules/${id}/permissions`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ permissions }),
+  })
+}
+
 export async function deleteExclusionFilter(id) {
   const response = await fetch(buildBackendUrl(`${BASE_PATH}/exclusion-filters/${id}`), {
+    method: "DELETE",
+    credentials: "include",
+    cache: "no-store",
+  })
+  if (!response.ok) {
+    let message = `L3 Spider 요청 실패 (${response.status})`
+    try {
+      const payload = await response.json()
+      if (typeof payload?.error === "string") message = payload.error
+    } catch (_error) {
+      // 응답 본문을 읽지 못하면 기본 상태 코드 메시지를 사용합니다.
+    }
+    const error = new Error(message)
+    error.status = response.status
+    throw error
+  }
+  return null
+}
+
+export async function deleteMailRule(id) {
+  const response = await fetch(buildBackendUrl(`${BASE_PATH}/mail-rules/${id}`), {
     method: "DELETE",
     credentials: "include",
     cache: "no-store",

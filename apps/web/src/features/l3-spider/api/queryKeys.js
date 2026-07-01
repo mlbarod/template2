@@ -7,6 +7,7 @@ export const l3SpiderQueryKeys = {
   structure: (selectionKey) => ["l3-spider", "structure", selectionKey],
   stats: (selectionKey) => ["l3-spider", "stats", selectionKey],
   exclusionFilters: () => ["l3-spider", "exclusion-filters"],
+  mailRules: () => ["l3-spider", "mail-rules"],
   summary: (selectionKey) => ["l3-spider", "summary", selectionKey],
   data: (selectionKey, filterKey) => ["l3-spider", "data", selectionKey, filterKey],
   filterCandidates: (key) => ["l3-spider", "filter-candidates", key],

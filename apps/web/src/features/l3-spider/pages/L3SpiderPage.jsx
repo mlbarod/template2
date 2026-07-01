@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { ArrowDown, ArrowUp, Database } from "lucide-react"
+import { useSearchParams } from "react-router-dom"
 
 import { Button } from "@/components/ui/button"
 
@@ -7,6 +8,7 @@ import { L3SpiderChart } from "../components/L3SpiderChart"
 import { L3SpiderDataSelector } from "../components/L3SpiderDataSelector"
 import { L3SpiderExclusionSheet } from "../components/L3SpiderExclusionSheet"
 import { L3SpiderFilterPanel } from "../components/L3SpiderFilterPanel"
+import { L3SpiderMailRuleSheet } from "../components/L3SpiderMailRuleSheet"
 import {
   useL3SpiderData,
   useL3SpiderFilterCandidates,
@@ -15,24 +17,40 @@ import {
   useL3SpiderStructure,
 } from "../hooks/useL3SpiderQueries"
 import {
+  createLeafSelectionFromSearchParams,
+  createSelectionFromSearchParams,
   EMPTY_META,
-  EMPTY_SELECTION,
   hasCompleteSelection,
 } from "../utils/selection"
 
 export function L3SpiderPage() {
+  const [searchParams] = useSearchParams()
+  const urlSearchKey = searchParams.toString()
+  const initialDeepLinkState = useMemo(
+    () => ({
+      selection: createSelectionFromSearchParams(searchParams),
+      leafSelection: createLeafSelectionFromSearchParams(searchParams),
+    }),
+    [searchParams],
+  )
   const pageRef = useRef(null)
+  const appliedUrlSearchRef = useRef(urlSearchKey)
   const [pageScrollTop, setPageScrollTop] = useState(0)
   const [pageViewportHeight, setPageViewportHeight] = useState(0)
-  const [selection, setSelection] = useState(EMPTY_SELECTION)
-  const [checkedStep, setCheckedStep] = useState(null)
-  const [checkedPpid, setCheckedPpid] = useState(null)
-  const [checkedEqc, setCheckedEqc] = useState(null)   // EQPCH 모드
-  const [checkedBin, setCheckedBin] = useState(null)   // Bin 모드
+  const [selection, setSelection] = useState(initialDeepLinkState.selection)
+  const [checkedStep, setCheckedStep] = useState(initialDeepLinkState.leafSelection.checkedStep)
+  const [checkedPpid, setCheckedPpid] = useState(initialDeepLinkState.leafSelection.checkedPpid)
+  const [checkedEqc, setCheckedEqc] = useState(
+    initialDeepLinkState.leafSelection.checkedEqc,
+  ) // EQPCH 모드
+  const [checkedBin, setCheckedBin] = useState(
+    initialDeepLinkState.leafSelection.checkedBin,
+  ) // Bin 모드
   // 분석 모드: EQPCH 선택 → 'eqpch' / Bin 선택 → 'bin'
-  const [analysisMode, setAnalysisMode] = useState("eqpch")
+  const [analysisMode, setAnalysisMode] = useState(
+    initialDeepLinkState.leafSelection.analysisMode,
+  )
   const [xAxisMode, setXAxisMode] = useState("tkin_time")
-
 
   const metaQuery = useL3SpiderMeta()
   const structureQuery = useL3SpiderStructure(selection)
@@ -46,13 +64,25 @@ export function L3SpiderPage() {
     setCheckedPpid(null)
     setCheckedEqc(null)
     setCheckedBin(null)
+    setAnalysisMode("eqpch")
   }
 
-  useEffect(() => { resetLeafSelections() }, [selection])
-  useEffect(() => {
-    if (!structureQuery.isSuccess) return
+  const handleSelectionChange = (nextSelection) => {
+    setSelection(nextSelection)
     resetLeafSelections()
-  }, [structureQuery.data, structureQuery.isSuccess])
+  }
+
+  useEffect(() => {
+    if (urlSearchKey === appliedUrlSearchRef.current) return
+    appliedUrlSearchRef.current = urlSearchKey
+    setSelection(createSelectionFromSearchParams(searchParams))
+    const nextLeafSelection = createLeafSelectionFromSearchParams(searchParams)
+    setCheckedStep(nextLeafSelection.checkedStep)
+    setCheckedPpid(nextLeafSelection.checkedPpid)
+    setCheckedEqc(nextLeafSelection.checkedEqc)
+    setCheckedBin(nextLeafSelection.checkedBin)
+    setAnalysisMode(nextLeafSelection.analysisMode)
+  }, [searchParams, urlSearchKey])
   useEffect(() => {
     const page = pageRef.current
     if (!page) return undefined
@@ -125,12 +155,17 @@ export function L3SpiderPage() {
       <L3SpiderDataSelector
         meta={meta}
         selection={selection}
-        onSelectionChange={setSelection}
+        onSelectionChange={handleSelectionChange}
         isLoading={metaQuery.isFetching}
         onRefresh={() => metaQuery.refetch()}
         stats={statsQuery.data?.stats}
         showStats={isSelectionReady}
-        headerExtra={<L3SpiderExclusionSheet />}
+        headerExtra={(
+          <>
+            <L3SpiderMailRuleSheet />
+            <L3SpiderExclusionSheet />
+          </>
+        )}
         rightContent={
           <L3SpiderFilterPanel
             edsStepSeqs={structureQuery.data?.edsStepSeqs ?? {}}
