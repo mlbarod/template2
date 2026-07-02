@@ -29,6 +29,8 @@ import numpy as np
 import pandas as pd
 
 from api.common.services import send_knox_mail_api
+from api.data_movement.station_master import selectors as station_master_selectors
+from api.drone import selectors as drone_selectors
 from api.l3_spider import selectors
 
 SUMMARY_COLUMNS = ["step_seq", "ppid", "eqp_id", "eqc", "bin_name", "display_status"]
@@ -452,9 +454,6 @@ def _build_line_groups_from_index() -> list[dict]:
 
 
 def _build_line_groups_impl() -> list[dict]:
-    from api.data_movement.station_master.models import StationMaster
-    from api.drone.models import DroneSopTarget
-
     # 1. eqp_index → 모든 (line_id, process_id) × eqc 목록 (SQLite 한 번)
     combo_eqcs = selectors.query_all_eqcs_by_combo()
     if not combo_eqcs:
@@ -463,11 +462,8 @@ def _build_line_groups_impl() -> list[dict]:
     all_eqcs = {eqc.upper() for eqcs in combo_eqcs.values() for eqc in eqcs}
 
     # 2. station_master: station_lookup(대문자) → sdwt_prod_lookup
-    eqc_to_sdwt: dict[str, str] = dict(
-        StationMaster.objects
-        .filter(station_lookup__in=all_eqcs)
-        .exclude(sdwt_prod_lookup=None)
-        .values_list("station_lookup", "sdwt_prod_lookup")
+    eqc_to_sdwt = station_master_selectors.map_station_lookup_to_sdwt_prod_lookup(
+        station_lookup_values=all_eqcs
     )
 
     all_sdwt = {v for v in eqc_to_sdwt.values() if v}
@@ -476,13 +472,7 @@ def _build_line_groups_impl() -> list[dict]:
 
     # 3. drone_sop_target: target_user_sdwt_prod → line_id (=LINE_NAME)
     #    대소문자 혼용 가능 → 대문자로 정규화해 매핑
-    sdwt_to_line_name: dict[str, str] = {
-        t["target_user_sdwt_prod"].upper(): t["line_id"]
-        for t in DroneSopTarget.objects
-        .exclude(line_id="")
-        .exclude(line_id=None)
-        .values("target_user_sdwt_prod", "line_id")
-    }
+    sdwt_to_line_name = drone_selectors.map_target_user_sdwt_prod_to_line_id()
 
     # 4. (line_id_path, process_id) × eqc → LINE_NAME 결정
     #    line_name → {line_id_path → set(process_ids)}

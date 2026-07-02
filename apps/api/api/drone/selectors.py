@@ -1087,6 +1087,33 @@ def get_tip_status_line_sdwt_options_payload() -> dict[str, object]:
     }
 
 
+def map_target_user_sdwt_prod_to_line_id() -> dict[str, str]:
+    """Drone target_user_sdwt_prod 값별 line_id 매핑을 반환합니다.
+
+    반환:
+        대문자 target_user_sdwt_prod → line_id 매핑.
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+    """
+
+    rows = (
+        DroneSopTarget.objects.exclude(line_id__isnull=True)
+        .exclude(line_id__exact="")
+        .exclude(target_user_sdwt_prod__isnull=True)
+        .exclude(target_user_sdwt_prod__exact="")
+        .values("target_user_sdwt_prod", "line_id")
+    )
+    result: dict[str, str] = {}
+    for row in rows:
+        target_value = normalize_text(row.get("target_user_sdwt_prod"))
+        line_id = normalize_text(row.get("line_id"))
+        if not target_value or not line_id:
+            continue
+        result[target_value.upper()] = line_id
+    return result
+
+
 def list_drone_sop_target_user_sdwt_prod_values() -> list[str]:
     """Drone SOP 설정 대상 user_sdwt_prod 목록을 조회합니다.
 
