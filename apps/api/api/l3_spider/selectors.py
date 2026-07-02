@@ -48,6 +48,24 @@ def _connect_ro() -> sqlite3.Connection:
     return sqlite3.connect(uri, uri=True, timeout=10)
 
 
+def _rebuild_container_path(root: Path, date, line_id, process_id, eds_step, filepath) -> Path:
+    """인덱스에 저장된 filepath의 base(절대/상대/다른 호스트 무관)를 무시하고,
+    현재 API 컨테이너의 데이터 루트 + 파티션 컬럼 + 파일명으로 실제 경로를 재구성합니다.
+
+    알고리즘 서버가 filepath를 어떤 base로 저장했든({date}/... 상대경로든,
+    /algo-host/.../daily_anomaly/... 절대경로든) 컨테이너 경로로 안전하게 매핑됩니다.
+    파티션 컬럼은 조회 WHERE 조건에도 쓰이므로 항상 존재/정확이 보장됩니다.
+    """
+    return (
+        root
+        / str(date)
+        / str(line_id)
+        / str(process_id)
+        / str(eds_step)
+        / Path(str(filepath)).name
+    )
+
+
 def query_indexed_files(
     date: Optional[str] = None,
     line_id: Optional[str] = None,
@@ -90,7 +108,7 @@ def query_indexed_files(
         params.append(chamber_id)
 
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-    query = f"SELECT filepath FROM file_index {where}"
+    query = f"SELECT date, line_id, process_id, eds_step, filepath FROM file_index {where}"
 
     conn = _connect_ro()
     try:
@@ -99,7 +117,7 @@ def query_indexed_files(
         conn.close()
 
     root = get_data_root()
-    return [Path(r[0]) if Path(r[0]).is_absolute() else root / r[0] for r in rows]
+    return [_rebuild_container_path(root, *row) for row in rows]
 
 
 def query_indexed_files_by_range(
@@ -141,7 +159,7 @@ def query_indexed_files_by_range(
         conditions.append("EXISTS (SELECT 1 FROM json_each(chamber_ids) WHERE value = ?)")
         params.append(chamber_id)
 
-    query = f"SELECT filepath FROM file_index WHERE {' AND '.join(conditions)}"
+    query = f"SELECT date, line_id, process_id, eds_step, filepath FROM file_index WHERE {' AND '.join(conditions)}"
 
     conn = _connect_ro()
     try:
@@ -150,7 +168,7 @@ def query_indexed_files_by_range(
         conn.close()
 
     root = get_data_root()
-    return [Path(r[0]) if Path(r[0]).is_absolute() else root / r[0] for r in rows]
+    return [_rebuild_container_path(root, *row) for row in rows]
 
 
 def iter_data_files_legacy(selection: dict[str, object]) -> list[Path]:
