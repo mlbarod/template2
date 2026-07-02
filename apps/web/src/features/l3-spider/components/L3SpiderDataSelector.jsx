@@ -155,19 +155,43 @@ export function L3SpiderDataSelector({
   showStats,
   rightContent,
   headerExtra,
+  tabsSlot,
+  showBody = true,
 }) {
   const availabilityForDate = selection.date ? meta.availability?.[selection.date] ?? {} : {}
   const visibleLineIds = sortedValues(Object.keys(availabilityForDate))
+
+  // LINE_NAME mode: lineGroups maps lineName → (lineId, processIds[])
+  const lineGroups = meta.lineGroups ?? []
+  const hasLineGroups = lineGroups.length > 0
+  const lineGroupsForDate = lineGroups.filter((g) => g.lineId in availabilityForDate)
+
+  // Items shown in the Line column (LINE_NAMEs when configured, LINE_IDs otherwise)
+  const lineItemsForPanel = hasLineGroups ? lineGroupsForDate.map((g) => g.lineName) : visibleLineIds
+
+  // Selected items in Line column panel (LINE_NAMEs or LINE_IDs depending on mode)
+  const selectedLineItemsForPanel = hasLineGroups
+    ? (selection.lineNames ?? new Set())
+    : selection.lineIds
+
+  // Needed for edsStep computation below (always LINE_IDs)
   const selectedVisibleLineIds = sortedValues(selection.lineIds).filter((lineId) =>
     visibleLineIds.includes(lineId),
   )
+
+  // Allowed process IDs: restricted by lineGroup config (if active), then intersected with availability
   const processIds = sortedValues(
-    new Set(
-      selectedVisibleLineIds.flatMap((lineId) =>
-        Object.keys(availabilityForDate[lineId] ?? {}),
-      ),
-    ),
+    hasLineGroups
+      ? new Set(
+          lineGroupsForDate
+            .filter((g) => (selection.lineNames ?? new Set()).has(g.lineName))
+            .flatMap((g) => g.processIds.filter((pid) => availabilityForDate[g.lineId]?.[pid] != null)),
+        )
+      : new Set(
+          selectedVisibleLineIds.flatMap((lineId) => Object.keys(availabilityForDate[lineId] ?? {})),
+        ),
   )
+
   const selectedVisibleProcessIds = sortedValues(selection.processIds).filter((processId) =>
     processIds.includes(processId),
   )
@@ -192,32 +216,37 @@ export function L3SpiderDataSelector({
     onSelectionChange({ ...EMPTY_SELECTION, date })
   }
 
-  const changeLines = (lineIds) => {
+  const changeLines = (selectedLineItems) => {
+    let lineNames, lineIds, allowedProcessIds
+    if (hasLineGroups) {
+      lineNames = selectedLineItems
+      const selectedGroups = lineGroupsForDate.filter((g) => lineNames.has(g.lineName))
+      lineIds = new Set(selectedGroups.map((g) => g.lineId))
+      allowedProcessIds = new Set(
+        selectedGroups.flatMap((g) =>
+          g.processIds.filter((pid) => availabilityForDate[g.lineId]?.[pid] != null),
+        ),
+      )
+    } else {
+      lineNames = new Set()
+      lineIds = selectedLineItems
+      allowedProcessIds = new Set(
+        sortedValues(lineIds).flatMap((lineId) => Object.keys(availabilityForDate[lineId] ?? {})),
+      )
+    }
     const nextProcessIds = new Set(
-      sortedValues(selection.processIds).filter((processId) =>
-        sortedValues(
-          new Set(
-            sortedValues(lineIds).flatMap((lineId) =>
-              Object.keys(availabilityForDate[lineId] ?? {}),
-            ),
-          ),
-        ).includes(processId),
-      ),
+      sortedValues(selection.processIds).filter((pid) => allowedProcessIds.has(pid)),
     )
     const nextEdsSteps = new Set(
       sortedValues(selection.edsSteps).filter((edsStep) =>
-        sortedValues(
-          new Set(
-            sortedValues(lineIds).flatMap((lineId) =>
-              sortedValues(nextProcessIds).flatMap(
-                (processId) => availabilityForDate[lineId]?.[processId] ?? [],
-              ),
-            ),
-          ),
-        ).includes(edsStep),
+        sortedValues(lineIds)
+          .flatMap((lineId) =>
+            sortedValues(nextProcessIds).flatMap((pid) => availabilityForDate[lineId]?.[pid] ?? []),
+          )
+          .includes(edsStep),
       ),
     )
-    onSelectionChange({ ...selection, lineIds, processIds: nextProcessIds, edsSteps: nextEdsSteps })
+    onSelectionChange({ ...selection, lineNames, lineIds, processIds: nextProcessIds, edsSteps: nextEdsSteps })
   }
 
   const changeProcesses = (processIdsNext) => {
@@ -240,12 +269,12 @@ export function L3SpiderDataSelector({
   const selectorCards = (
     <div className="grid h-[320px] grid-cols-3 gap-4">
       <MultiSelectColumnCard
-        title="Line ID"
-        badge={`${visibleLineIds.length}`}
+        title={hasLineGroups ? "Line Name" : "Line ID"}
+        badge={`${lineItemsForPanel.length}`}
         disabled={!selection.date}
         placeholder="날짜를 먼저 선택하세요"
-        items={visibleLineIds}
-        selected={selection.lineIds}
+        items={lineItemsForPanel}
+        selected={selectedLineItemsForPanel}
         onChange={changeLines}
       />
       <MultiSelectColumnCard
@@ -332,20 +361,23 @@ export function L3SpiderDataSelector({
           </Tooltip>
         </div>
       </div>
-      {rightContent ? (
-        <div className="flex min-h-0 items-stretch gap-4 border-t px-6 py-2">
-          <div className="shrink-0">
+      {tabsSlot ? <div className="border-t px-6 py-1.5">{tabsSlot}</div> : null}
+      {showBody ? (
+        rightContent ? (
+          <div className="flex min-h-0 items-stretch gap-4 border-t px-6 py-2">
+            <div className="shrink-0">
+              {selectorCards}
+            </div>
+            <div className="min-w-0 flex-1">
+              {rightContent}
+            </div>
+          </div>
+        ) : (
+          <div className="border-t px-6 py-2">
             {selectorCards}
           </div>
-          <div className="min-w-0 flex-1">
-            {rightContent}
-          </div>
-        </div>
-      ) : (
-        <div className="border-t px-6 py-2">
-          {selectorCards}
-        </div>
-      )}
+        )
+      ) : null}
     </section>
   )
 }

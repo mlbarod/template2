@@ -3,12 +3,14 @@ import { ArrowDown, ArrowUp, Database } from "lucide-react"
 import { useSearchParams } from "react-router-dom"
 
 import { Button } from "@/components/ui/button"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 import { L3SpiderChart } from "../components/L3SpiderChart"
 import { L3SpiderDataSelector } from "../components/L3SpiderDataSelector"
 import { L3SpiderExclusionSheet } from "../components/L3SpiderExclusionSheet"
 import { L3SpiderFilterPanel } from "../components/L3SpiderFilterPanel"
 import { L3SpiderMailRuleSheet } from "../components/L3SpiderMailRuleSheet"
+import { L3SpiderSummaryView } from "../components/L3SpiderSummaryView"
 import {
   useL3SpiderData,
   useL3SpiderFilterCandidates,
@@ -51,6 +53,10 @@ export function L3SpiderPage() {
     initialDeepLinkState.leafSelection.analysisMode,
   )
   const [xAxisMode, setXAxisMode] = useState("tkin_time")
+  // Summary(날짜 전체 요약) ↔ Chart(기존 화면) 탭. 딥링크로 완전한 선택이 있으면 Chart로 시작.
+  const [activeTab, setActiveTab] = useState(
+    hasCompleteSelection(initialDeepLinkState.selection) ? "chart" : "summary",
+  )
 
   const metaQuery = useL3SpiderMeta()
   const structureQuery = useL3SpiderStructure(selection)
@@ -70,6 +76,22 @@ export function L3SpiderPage() {
   const handleSelectionChange = (nextSelection) => {
     setSelection(nextSelection)
     resetLeafSelections()
+  }
+
+  // Summary에서 매트릭스 셀/드릴다운 행 클릭 → 해당 조건으로 Chart 탭 이동(교차필터)
+  const handleDrillToChart = ({ line, process, edsStep, stepSeq, ppid, eqc }) => {
+    setSelection({
+      date: selection.date,
+      lineIds: new Set(line ? [line] : []),
+      processIds: new Set(process ? [process] : []),
+      edsSteps: new Set(edsStep ? [edsStep] : []),
+    })
+    setCheckedStep(edsStep && stepSeq ? `${edsStep}|||${stepSeq}` : null)
+    setCheckedPpid(ppid ?? null)
+    setCheckedEqc(eqc ?? null)
+    setCheckedBin(null)
+    setAnalysisMode("eqpch")
+    setActiveTab("chart")
   }
 
   useEffect(() => {
@@ -159,7 +181,18 @@ export function L3SpiderPage() {
         isLoading={metaQuery.isFetching}
         onRefresh={() => metaQuery.refetch()}
         stats={statsQuery.data?.stats}
-        showStats={isSelectionReady}
+        showStats={isSelectionReady && activeTab === "chart"}
+        showBody={activeTab === "chart"}
+        tabsSlot={(
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+              <TabsList>
+                <TabsTrigger value="summary">Summary</TabsTrigger>
+                <TabsTrigger value="chart">Chart</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+        )}
         headerExtra={(
           <>
             <L3SpiderMailRuleSheet />
@@ -193,7 +226,9 @@ export function L3SpiderPage() {
         </div>
       ) : null}
 
-      {!isSelectionReady ? (
+      {activeTab === "summary" ? (
+        <L3SpiderSummaryView date={selection.date} onDrill={handleDrillToChart} />
+      ) : !isSelectionReady ? (
         <div className="m-6 flex flex-1 items-center justify-center rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground shadow-sm">
           <div className="grid justify-items-center gap-2">
             <Database className="size-6" aria-hidden="true" />

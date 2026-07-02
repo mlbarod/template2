@@ -17,9 +17,14 @@ import pandas as pd
 DEFAULT_ROOT = Path(__file__).resolve().parent / "data" / "l3_spider" / "daily_anomaly"
 DEFAULT_DATES = ["2026-06-17", "2026-06-18"]
 
-LINE_IDS = ["line_a", "line_b"]
-PROCESS_IDS = ["process_etch", "process_clean"]
-EDS_STEPS = ["eds_001", "eds_002"]
+LINE_PROCESS_IDS = {
+    "line_a": ["ABCD", "ABCE", "ABCF", "ABCG"],
+    "line_b": ["ABCH", "ABCI", "ABCJ", "ABCK", "ABCL"],
+    "line_c": ["ABCM", "ABCN", "ABCO", "ABCP", "ABCQ", "ABCR"],
+    "line_d": ["ABCS", "ABCT", "ABCU", "ABCV"],
+    "line_e": ["ABCW", "ABCX", "ABCY", "ABCZ", "ABDA"],
+}
+EDS_STEPS = ["eds_001", "eds_002", "eds_003", "eds_004"]
 STEP_SEQS = ["step_001", "step_002", "step_003"]
 PPIDS = ["ppid_a", "ppid_b", "ppid_c"]
 EQP_IDS = ["eqp_301", "eqp_302", "eqp_303"]
@@ -49,7 +54,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _safe_unlink_generated_files(root: Path) -> int:
-    """기존 생성 파일 중 step#ppid#index 패턴만 삭제합니다."""
+    """기존 생성 파일 중 step#ppid#index 패턴을 삭제하고 빈 디렉터리를 정리합니다."""
 
     if not root.exists():
         return 0
@@ -59,6 +64,13 @@ def _safe_unlink_generated_files(root: Path) -> int:
         if path.is_file() and len(path.name.split("#")) == 3:
             path.unlink()
             removed += 1
+
+    for path in sorted(root.rglob("*"), key=lambda item: len(item.parts), reverse=True):
+        if path.is_dir():
+            try:
+                path.rmdir()
+            except OSError:
+                pass
     return removed
 
 
@@ -136,8 +148,8 @@ def main() -> None:
     file_count = 0
     row_count = 0
     for date in DEFAULT_DATES:
-        for line_id in LINE_IDS:
-            for process_id in PROCESS_IDS:
+        for line_id, process_ids in LINE_PROCESS_IDS.items():
+            for process_id in process_ids:
                 for eds_step in EDS_STEPS:
                     target_dir = root / date / line_id / process_id / eds_step
                     target_dir.mkdir(parents=True, exist_ok=True)

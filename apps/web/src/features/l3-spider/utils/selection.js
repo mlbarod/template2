@@ -7,6 +7,7 @@ export const EMPTY_META = {
   processIds: [],
   edsSteps: [],
   availability: {},
+  lineGroups: [],
 }
 
 export const EMPTY_STATS = {
@@ -36,6 +37,7 @@ export const EMPTY_SUMMARY = {
 export function createEmptySelection() {
   return {
     date: "",
+    lineNames: new Set(),
     lineIds: new Set(),
     processIds: new Set(),
     edsSteps: new Set(),
