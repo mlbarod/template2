@@ -5,6 +5,7 @@ import {
   CalendarDays,
   CheckCircle2,
   ClipboardPaste,
+  Download,
   FileSpreadsheet,
   Layers3,
   RefreshCw,
@@ -74,9 +75,15 @@ const CHART_COLORS = [
   "var(--chart-5)",
 ]
 
-const MANUAL_PASTE_SAMPLE =
-  "date\tapp_id\tapp_name\taccess_count\tunique_user_count\tmemo\n" +
-  "2026-06-29\texternal-foo\t외부 Foo\t120\t55\t외부 서버 리포트 기준"
+const MANUAL_TEMPLATE_HEADERS = [
+  "date",
+  "appName",
+  "accessCount",
+  "uniqueUserCount",
+  "memo",
+]
+
+const MANUAL_TEMPLATE_FILENAME = "external-app-access-template.csv"
 
 function getKstDateString(offsetDays = 0) {
   const now = new Date()
@@ -124,6 +131,35 @@ function formatSourceLabel(app) {
   if (app?.sourceType === "manual") return "수동"
   if (app?.sourceType === "mixed") return "복합"
   return app?.sourceName || "-"
+}
+
+function buildManualTemplateExampleRow() {
+  return [getKstDateString(), "AIO", "120", "55", "외부 서버 리포트 기준"]
+}
+
+function escapeCsvCell(value) {
+  const text = String(value ?? "")
+  if (!/[",\n\r]/.test(text)) return text
+  return `"${text.replaceAll('"', '""')}"`
+}
+
+function buildCsvText(rows) {
+  return `${rows.map((row) => row.map(escapeCsvCell).join(",")).join("\n")}\n`
+}
+
+function buildManualPasteSample() {
+  return buildCsvText([MANUAL_TEMPLATE_HEADERS, buildManualTemplateExampleRow()]).trimEnd()
+}
+
+function downloadManualTemplateCsv() {
+  const csvText = buildCsvText([MANUAL_TEMPLATE_HEADERS, buildManualTemplateExampleRow()])
+  const blob = new Blob([`\ufeff${csvText}`], { type: "text/csv;charset=utf-8" })
+  const href = URL.createObjectURL(blob)
+  const anchor = document.createElement("a")
+  anchor.href = href
+  anchor.download = MANUAL_TEMPLATE_FILENAME
+  anchor.click()
+  URL.revokeObjectURL(href)
 }
 
 function parseDateString(value) {
@@ -284,6 +320,22 @@ function ManualPastePanel({ onCommitted }) {
     commitMutation.mutate({ pastedText, sourceName })
   }
 
+  function handleTextChange(value) {
+    setPastedText(value)
+    setPreview(null)
+    previewMutation.reset()
+    commitMutation.reset()
+  }
+
+  function handlePaste(event) {
+    const nextText = event.clipboardData?.getData("text") ?? ""
+    if (!nextText.trim()) return
+
+    event.preventDefault()
+    handleTextChange(nextText)
+    previewMutation.mutate({ pastedText: nextText, sourceName })
+  }
+
   return (
     <div className="grid gap-4">
       {visiblePreview ? (
@@ -305,6 +357,8 @@ function ManualPastePanel({ onCommitted }) {
                 value={sourceName}
                 onChange={(event) => {
                   setSourceName(event.target.value)
+                  setPreview(null)
+                  previewMutation.reset()
                   commitMutation.reset()
                 }}
                 placeholder="manual"
@@ -318,116 +372,116 @@ function ManualPastePanel({ onCommitted }) {
               <Textarea
                 id="manual-paste-text"
                 value={pastedText}
-                onChange={(event) => {
-                  setPastedText(event.target.value)
-                  setPreview(null)
-                  previewMutation.reset()
-                  commitMutation.reset()
-                }}
-                placeholder={MANUAL_PASTE_SAMPLE}
+                onChange={(event) => handleTextChange(event.target.value)}
+                onPaste={handlePaste}
+                placeholder={buildManualPasteSample()}
                 className="min-h-28 font-mono text-xs"
               />
             </div>
           </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-xs text-muted-foreground">
-            필수 컬럼: date, app_id, access_count, unique_user_count
-          </p>
-          <div className="flex items-center gap-2">
-            <Button type="button" variant="outline" onClick={handlePreview} disabled={!canPreview}>
-              <ClipboardPaste className={cn("size-4", previewMutation.isPending && "animate-pulse")} />
-              미리보기
-            </Button>
-            <Button type="button" onClick={handleCommit} disabled={!canCommit}>
-              <CheckCircle2 className="size-4" />
-              반영
-            </Button>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">
+              필수 컬럼: date, appName, accessCount, uniqueUserCount
+            </p>
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="outline" onClick={downloadManualTemplateCsv}>
+                <Download className="size-4" />
+                템플릿 CSV
+              </Button>
+              <Button type="button" variant="outline" onClick={handlePreview} disabled={!canPreview}>
+                <ClipboardPaste className={cn("size-4", previewMutation.isPending && "animate-pulse")} />
+                미리보기
+              </Button>
+              <Button type="button" onClick={handleCommit} disabled={!canCommit}>
+                <CheckCircle2 className="size-4" />
+                반영
+              </Button>
+            </div>
           </div>
-        </div>
 
-        {previewMutation.error ? (
-          <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {previewMutation.error.message}
-          </div>
-        ) : null}
-        {commitMutation.error ? (
-          <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {commitMutation.error.message}
-          </div>
-        ) : null}
-        {commitMutation.data?.commit ? (
-          <div className="rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">
-            신규 {formatNumber(commitMutation.data.commit.createdRows)}건, 수정{" "}
-            {formatNumber(commitMutation.data.commit.updatedRows)}건을 반영했습니다.
-          </div>
-        ) : null}
+          {previewMutation.error ? (
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {previewMutation.error.message}
+            </div>
+          ) : null}
+          {commitMutation.error ? (
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {commitMutation.error.message}
+            </div>
+          ) : null}
+          {commitMutation.data?.commit ? (
+            <div className="rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">
+              신규 {formatNumber(commitMutation.data.commit.createdRows)}건, 수정{" "}
+              {formatNumber(commitMutation.data.commit.updatedRows)}건을 반영했습니다.
+            </div>
+          ) : null}
 
-        {visiblePreview?.errors?.length ? (
-          <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {visiblePreview.errors.join(", ")}
-          </div>
-        ) : null}
+          {visiblePreview?.errors?.length ? (
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {visiblePreview.errors.join(", ")}
+            </div>
+          ) : null}
 
-        {visiblePreview ? (
-          <div className="min-h-0 min-w-0 overflow-auto rounded-md border">
-            <Table>
-              <TableHeader className="bg-card">
-                <TableRow>
-                  <TableHead className="w-16 px-4">행</TableHead>
-                  <TableHead>날짜</TableHead>
-                  <TableHead>앱</TableHead>
-                  <TableHead className="text-right">접속횟수</TableHead>
-                  <TableHead className="text-right">접속 사용자</TableHead>
-                  <TableHead>상태</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {previewRows.length === 0 ? (
+          {visiblePreview ? (
+            <div className="min-h-0 min-w-0 overflow-auto rounded-md border">
+              <Table>
+                <TableHeader className="bg-card">
                   <TableRow>
-                    <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                      미리보기할 데이터 행이 없습니다.
-                    </TableCell>
+                    <TableHead className="w-16 px-4">행</TableHead>
+                    <TableHead>날짜</TableHead>
+                    <TableHead>앱</TableHead>
+                    <TableHead className="text-right">접속횟수</TableHead>
+                    <TableHead className="text-right">접속 사용자</TableHead>
+                    <TableHead>상태</TableHead>
                   </TableRow>
-                ) : (
-                  previewRows.map((row) => {
-                    const rowHasErrors = row.errors?.length > 0
-                    return (
-                      <TableRow key={row.rowNumber}>
-                        <TableCell className="px-4 text-muted-foreground tabular-nums">
-                          {row.rowNumber}
-                        </TableCell>
-                        <TableCell className="tabular-nums">{row.values?.date || "-"}</TableCell>
-                        <TableCell>
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium">{row.values?.appName || "-"}</p>
-                            <p className="text-xs text-muted-foreground">{row.values?.appId || "-"}</p>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatNumber(row.values?.accessCount)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatNumber(row.values?.uniqueUserCount)}
-                        </TableCell>
-                        <TableCell>
-                          {rowHasErrors ? (
-                            <span className="text-sm text-destructive">{row.errors.join(", ")}</span>
-                          ) : (
-                            <Badge variant="secondary">정상</Badge>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        ) : null}
+                </TableHeader>
+                <TableBody>
+                  {previewRows.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                        미리보기할 데이터 행이 없습니다.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    previewRows.map((row) => {
+                      const rowHasErrors = row.errors?.length > 0
+                      return (
+                        <TableRow key={row.rowNumber}>
+                          <TableCell className="px-4 text-muted-foreground tabular-nums">
+                            {row.rowNumber}
+                          </TableCell>
+                          <TableCell className="tabular-nums">{row.values?.date || "-"}</TableCell>
+                          <TableCell>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium">{row.values?.appName || "-"}</p>
+                              <p className="text-xs text-muted-foreground">{row.values?.appId || "-"}</p>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatNumber(row.values?.accessCount)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatNumber(row.values?.uniqueUserCount)}
+                          </TableCell>
+                          <TableCell>
+                            {rowHasErrors ? (
+                              <span className="text-sm text-destructive">{row.errors.join(", ")}</span>
+                            ) : (
+                              <Badge variant="secondary">정상</Badge>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
-  </div>
   )
 }
 
@@ -598,6 +652,7 @@ export function AccessStatsPage() {
   const statsQuery = useAppAccessStatsQuery(params, { enabled: Boolean(user?.is_superuser) })
   const payload = statsQuery.data
   const summary = payload?.summary ?? {}
+  const externalUsage = payload?.externalUsage
   const responsePeriod = payload?.period || periodKey
   const apps = useMemo(() => (Array.isArray(payload?.apps) ? payload.apps : []), [payload?.apps])
   const series = useMemo(() => (Array.isArray(payload?.series) ? payload.series : []), [payload?.series])
@@ -631,6 +686,12 @@ export function AccessStatsPage() {
             <p className="mt-1 text-sm text-muted-foreground">
               내부 앱 화면 진입 이벤트와 외부 앱 수동 입력 집계를 기준으로 앱별 접속횟수를 집계합니다.
             </p>
+            {externalUsage?.error ? (
+              <p className="mt-2 flex items-center gap-2 text-xs text-destructive">
+                <AlertTriangle className="size-3.5" aria-hidden="true" />
+                외부 사용량 API를 불러오지 못해 내부/수동 입력 통계만 표시합니다.
+              </p>
+            ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" variant="outline" onClick={() => setIsManualDialogOpen(true)}>

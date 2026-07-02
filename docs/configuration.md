@@ -28,6 +28,7 @@
 | `L3_SPIDER_*` / L3 Spider 파일 데이터/메일 | `L3_SPIDER_DATA_ROOT`, `L3_SPIDER_MAX_CHART_POINTS_PER_PANEL`, `L3_SPIDER_MAIL_SENDER`, `L3_SPIDER_MAIL_TARGET_URL` | read-only mount된 `daily_anomaly` Parquet 데이터 경로, 차트 sampling 제한, L3 Spider 알림 메일 발신자와 메일 본문 이동 링크 |
 | `FDC_HARD_SPEC_*` / FDC Trend 추천 데이터 | `FDC_HARD_SPEC_DATA_ROOT`, `FDC_HARD_SPEC_PRIORITY_PATH`, `FDC_HARD_SPEC_UNIT_MODEL_PATH`, `FDC_HARD_SPEC_HARD_LIMIT_PATH` | FDC Hard Limit 추천 Parquet 데이터 경로 |
 | `PM_COMPARISON_*` / PM SPIDER 파일 데이터 | `PM_COMPARISON_DATA_ROOT`, `PM_COMPARISON_DATA_HOST_PATH`, `PM_COMPARISON_MAX_FILES`, `PM_COMPARISON_MAX_META_DIRS` | PM SPIDER raw/score Parquet 데이터의 host mount와 컨테이너 내부 경로, scan 제한 |
+| 외부 앱 사용량 API | `EXTERNAL_APP_USAGE_API_URLS`, `EXTERNAL_APP_USAGE_API_TIMEOUT_SECONDS` | 앱별 접속현황에서 저장 없이 조회 시점에 합산하는 외부 사용량 API source 목록(JSON)과 timeout |
 | `DATA_MOVEMENT_*` / 파일 적재 데이터 | `DATA_MOVEMENT_HOST_PATH`, `DATA_MOVEMENT_FILE_READY_MIN_AGE_SECONDS`, `DATA_MOVEMENT_FILE_READY_STABILITY_SECONDS`, `DATA_MOVEMENT_M_TKIN_PREVENT_DIR`, `DATA_MOVEMENT_CTTTM_WORKORDER_LIST_DIR`, `DATA_MOVEMENT_CT_PROCESS_COMMENT_DIR`, `DATA_MOVEMENT_EQP_STATUS_CHG_DIR`, `DATA_MOVEMENT_MI_TIP_UPDATE_HIST_DIR`, `DATA_MOVEMENT_RACB_LIST_DIR`, `DATA_MOVEMENT_MES_LINE_MAPPING_INFO_DIR`, `DATA_MOVEMENT_STATION_MASTER_DIR` | FTP 등으로 수신한 파일의 host mount와 테이블별 root 경로. 하위 `incoming/processing` 사용. 최근 수정 파일과 stat 값이 변하는 파일은 이번 적재에서 제외 |
 | `FTP_*` / Data Movement FTP | `FTP_USER`, `FTP_PASS`, `FTP_PORT`, `FTP_PASV_ADDRESS`, `FTP_PASV_MIN_PORT`, `FTP_PASV_MAX_PORT` | `data_movement` 업로드용 FTP 계정, 접속 port, passive mode address/port |
 | `OIDC_*` / `ADFS_*` / Auth/OIDC | `OIDC_CLIENT_ID`, `OIDC_ISSUER`, `ADFS_AUTH_URL`, `ADFS_LOGOUT_URL`, `OIDC_REDIRECT_URI`, `ADFS_CER_PATH`, `ALLOWED_REDIRECT_HOSTS` | ADFS/OIDC 로그인 |
@@ -41,6 +42,13 @@
 | MinIO | `MINIO_*` | 메일 asset storage |
 | `VITE_*` / Web | `VITE_BACKEND_URL`, `BACKEND_API_URL`, `VITE_ASSISTANT_API_URL`, `VITE_AIRFLOW_BASE_URL`, `VITE_SITE_URL` | 브라우저와 container 내부 API URL |
 | `VITE_PORTAL_*` / Web | `VITE_PORTAL_PMX_URL`, `VITE_PORTAL_MOSAIC_URL`, `VITE_PORTAL_CONFLUENCE_URL` | Portal 전역 네비게이션의 외부 링크. 비어 있으면 메뉴에서 숨김 |
+
+### 외부 앱 사용량 API
+
+- 여러 외부 사용량 API를 사용할 때는 `EXTERNAL_APP_USAGE_API_URLS`에 명시적 source 목록을 JSON 배열로 설정합니다.
+- 예: `[{"sourceName":"m-etch-dx","url":"https://example.test/get/usage"},{"sourceName":"other-system","url":"https://other.example.test/get/usage"}]`
+- 각 응답 row는 `date`, `appName`, `accessCount`를 사용하며, `appName`은 앞뒤 공백 제거 후 대문자로 정규화되어 앱 키와 표시명에 사용됩니다.
+- `EXTERNAL_APP_USAGE_API_URLS=[]`이면 외부 API 조회를 비활성화합니다.
 
 ### L3 Spider 메일 링크 배포 체크
 

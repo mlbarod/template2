@@ -6,11 +6,14 @@
 from __future__ import annotations
 
 import csv
+import json
 from datetime import UTC, date, datetime, time, timedelta
 from io import StringIO
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import requests
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
@@ -33,7 +36,8 @@ MAX_STATS_DAYS = 90
 DEFAULT_STATS_PERIOD = "day"
 ALLOWED_STATS_PERIODS = {"day", "week", "month"}
 MANUAL_SOURCE_TYPE = ExternalAppAccessDailyStat.SOURCE_TYPE_MANUAL
-MANUAL_PASTE_EXPECTED_COLUMNS = ["date", "app_id", "app_name", "access_count", "unique_user_count", "memo"]
+EXTERNAL_USAGE_SOURCE_TYPE = "external_api"
+MANUAL_PASTE_EXPECTED_COLUMNS = ["date", "appName", "accessCount", "uniqueUserCount", "memo"]
 
 HEADER_ALIASES = {
     "date": "date",
@@ -62,7 +66,13 @@ HEADER_ALIASES = {
     "메모": "memo",
     "비고": "memo",
 }
-REQUIRED_MANUAL_COLUMNS = ["date", "app_id", "access_count", "unique_user_count"]
+REQUIRED_MANUAL_COLUMNS = ["date", "app_name", "access_count", "unique_user_count"]
+MANUAL_COLUMN_LABELS = {
+    "date": "date",
+    "app_name": "appName",
+    "access_count": "accessCount",
+    "unique_user_count": "uniqueUserCount",
+}
 
 
 def _parse_iso_date(value: str | None, *, field_name: str) -> date | None:
@@ -153,6 +163,186 @@ def _serialize_kst_date_end(value: Any) -> str | None:
     return None
 
 
+def _normalize_external_usage_source_name(value: Any) -> str:
+    """외부 사용량 API sourceName을 정규화합니다."""
+
+    if not isinstance(value, str):
+        return ""
+    return value.strip()[:80]
+
+
+def _read_external_usage_api_config() -> tuple[list[dict[str, str]], int, str | None]:
+    """외부 앱 사용량 API 설정을 Django settings에서 읽습니다."""
+
+    urls_raw = getattr(settings, "EXTERNAL_APP_USAGE_API_URLS", "") or ""
+    timeout = getattr(settings, "EXTERNAL_APP_USAGE_API_TIMEOUT_SECONDS", 10) or 10
+    try:
+        timeout_seconds = int(timeout)
+    except (TypeError, ValueError):
+        timeout_seconds = 10
+
+    if str(urls_raw).strip():
+        try:
+            parsed = json.loads(str(urls_raw))
+        except ValueError as exc:
+            return [], max(timeout_seconds, 1), f"EXTERNAL_APP_USAGE_API_URLS JSON 형식이 올바르지 않습니다: {exc}"
+        if not isinstance(parsed, list):
+            return [], max(timeout_seconds, 1), "EXTERNAL_APP_USAGE_API_URLS는 JSON 배열이어야 합니다."
+
+        sources: list[dict[str, str]] = []
+        for index, item in enumerate(parsed, start=1):
+            if not isinstance(item, dict):
+                return [], max(timeout_seconds, 1), f"EXTERNAL_APP_USAGE_API_URLS[{index}]는 객체여야 합니다."
+            source_name = _normalize_external_usage_source_name(item.get("sourceName"))
+            url = str(item.get("url") or "").strip()
+            if not source_name or not url:
+                return [], max(timeout_seconds, 1), f"EXTERNAL_APP_USAGE_API_URLS[{index}]에는 sourceName과 url이 필요합니다."
+            sources.append({"sourceName": source_name, "url": url})
+        return sources, max(timeout_seconds, 1), None
+
+    return [], max(timeout_seconds, 1), None
+
+
+def _normalize_external_usage_app_name(value: Any) -> str:
+    """외부 사용량 row의 앱 이름을 정규화합니다."""
+
+    if not isinstance(value, str):
+        return ""
+    return value.strip().upper()[:120]
+
+
+def _parse_external_usage_date(value: Any) -> date | None:
+    """외부 사용량 row의 날짜 값을 date로 변환합니다."""
+
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError:
+        return None
+
+
+def _parse_external_usage_access_count(value: Any) -> int | None:
+    """외부 사용량 row의 accessCount 값을 0 이상의 정수로 변환합니다."""
+
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        parsed = int(str(value).replace(",", "").strip())
+    except ValueError:
+        return None
+    if parsed < 0:
+        return None
+    return parsed
+
+
+def _normalize_external_usage_rows(
+    *,
+    payload: Any,
+    from_date: date,
+    to_date: date,
+    app_id: str | None,
+    source_name: str,
+) -> tuple[list[dict[str, Any]], int]:
+    """외부 사용량 API 응답을 기존 통계 집계 row 형태로 정규화합니다."""
+
+    if not isinstance(payload, list):
+        raise ValueError("External usage API response must be a list")
+
+    rows: list[dict[str, Any]] = []
+    skipped_count = 0
+    for raw_row in payload:
+        if not isinstance(raw_row, dict):
+            skipped_count += 1
+            continue
+
+        app_name = _normalize_external_usage_app_name(raw_row.get("appName"))
+        stat_date = _parse_external_usage_date(raw_row.get("date"))
+        access_count = _parse_external_usage_access_count(raw_row.get("accessCount"))
+        app_key = app_name
+        if not app_name or stat_date is None or access_count is None:
+            skipped_count += 1
+            continue
+        if stat_date < from_date or stat_date > to_date:
+            continue
+        if app_id and app_key != app_id:
+            continue
+
+        rows.append(
+            {
+                "app_id": app_key,
+                "app_name": app_name,
+                "stat_date": stat_date,
+                "access_count": access_count,
+                "unique_user_count": 0,
+                "source_type": EXTERNAL_USAGE_SOURCE_TYPE,
+                "source_name": source_name,
+            }
+        )
+
+    return rows, skipped_count
+
+
+def _load_external_usage_rows(
+    *,
+    from_date: date,
+    to_date: date,
+    app_id: str | None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """외부 사용량 API에서 앱별 사용량 row를 가져옵니다."""
+
+    sources, timeout_seconds, config_error = _read_external_usage_api_config()
+    status = {
+        "enabled": bool(sources),
+        "rowCount": 0,
+        "skippedRows": 0,
+        "error": None,
+        "sources": [],
+    }
+    if config_error:
+        status["error"] = config_error
+        return [], status
+    if not sources:
+        return [], status
+
+    all_rows: list[dict[str, Any]] = []
+    source_errors = 0
+    for source in sources:
+        source_status = {
+            "sourceName": source["sourceName"],
+            "rowCount": 0,
+            "skippedRows": 0,
+            "error": None,
+        }
+        try:
+            response = requests.get(source["url"], timeout=timeout_seconds)
+            response.raise_for_status()
+            rows, skipped_count = _normalize_external_usage_rows(
+                payload=response.json(),
+                from_date=from_date,
+                to_date=to_date,
+                app_id=app_id,
+                source_name=source["sourceName"],
+            )
+        except (requests.RequestException, ValueError) as exc:
+            source_status["error"] = f"외부 사용량 API 요청에 실패했습니다: {exc}"
+            source_errors += 1
+        else:
+            source_status["rowCount"] = len(rows)
+            source_status["skippedRows"] = skipped_count
+            all_rows.extend(rows)
+        status["sources"].append(source_status)
+
+    status["rowCount"] = sum(source["rowCount"] for source in status["sources"])
+    status["skippedRows"] = sum(source["skippedRows"] for source in status["sources"])
+    if source_errors:
+        status["error"] = "외부 사용량 API 요청에 실패해 외부 API 통계를 제외했습니다."
+        status["rowCount"] = 0
+        status["skippedRows"] = 0
+        return [], status
+    return all_rows, status
+
+
 def _normalize_header(value: Any) -> str:
     """붙여넣기 헤더 이름을 내부 컬럼명으로 정규화합니다."""
 
@@ -220,31 +410,29 @@ def _build_manual_row(
     if date_error:
         errors.append(date_error)
 
-    app_id = values_by_header.get("app_id", "").strip()[:120]
-    if not app_id:
-        errors.append("app_id is required")
+    app_name = _normalize_external_usage_app_name(values_by_header.get("app_name", ""))
+    if not app_name:
+        errors.append("appName is required")
 
-    app_name = values_by_header.get("app_name", "").strip()[:160] or app_id
-
-    access_count, access_error = _parse_manual_count(values_by_header.get("access_count", ""), field_name="access_count")
+    access_count, access_error = _parse_manual_count(values_by_header.get("access_count", ""), field_name="accessCount")
     if access_error:
         errors.append(access_error)
 
     unique_user_count, unique_error = _parse_manual_count(
         values_by_header.get("unique_user_count", ""),
-        field_name="unique_user_count",
+        field_name="uniqueUserCount",
     )
     if unique_error:
         errors.append(unique_error)
 
     if access_count is not None and unique_user_count is not None and unique_user_count > access_count:
-        errors.append("unique_user_count must be less than or equal to access_count")
+        errors.append("uniqueUserCount must be less than or equal to accessCount")
 
     return {
         "rowNumber": row_number,
         "values": {
             "date": _serialize_date(stat_date),
-            "appId": app_id,
+            "appId": app_name,
             "appName": app_name,
             "accessCount": access_count if access_count is not None else values_by_header.get("access_count", ""),
             "uniqueUserCount": unique_user_count
@@ -275,7 +463,11 @@ def build_manual_app_access_preview(*, pasted_text: str, source_name: str) -> di
 
     raw_headers, raw_rows = _read_paste_rows(pasted_text)
     headers = [_normalize_header(header) for header in raw_headers]
-    missing_columns = [column for column in REQUIRED_MANUAL_COLUMNS if column not in headers]
+    missing_columns = [
+        MANUAL_COLUMN_LABELS.get(column, column)
+        for column in REQUIRED_MANUAL_COLUMNS
+        if column not in headers
+    ]
     top_level_errors = [f"Missing required columns: {', '.join(missing_columns)}"] if missing_columns else []
 
     preview_rows: list[dict[str, Any]] = []
@@ -606,6 +798,7 @@ def get_app_access_stats_payload(
     """
 
     clean_app_id = app_id.strip() if isinstance(app_id, str) and app_id.strip() else None
+    external_app_id = _normalize_external_usage_app_name(clean_app_id) if clean_app_id else None
     period = _resolve_stats_period(period_value)
     from_date, to_date, start_at, end_at = _resolve_stats_range(
         from_value=from_value,
@@ -616,19 +809,24 @@ def get_app_access_stats_payload(
     external_app_rows = summarize_external_app_access_by_app(
         start_date=from_date,
         end_date=to_date,
-        app_id=clean_app_id,
+        app_id=external_app_id,
     )
     series_rows = summarize_app_access_by_date(start_at=start_at, end_at=end_at, app_id=clean_app_id)
     external_series_rows = summarize_external_app_access_by_date(
         start_date=from_date,
         end_date=to_date,
-        app_id=clean_app_id,
+        app_id=external_app_id,
     )
     totals = summarize_app_access_totals(start_at=start_at, end_at=end_at, app_id=clean_app_id)
     external_totals = summarize_external_app_access_totals(
         start_date=from_date,
         end_date=to_date,
-        app_id=clean_app_id,
+        app_id=external_app_id,
+    )
+    api_usage_rows, api_usage_status = _load_external_usage_rows(
+        from_date=from_date,
+        to_date=to_date,
+        app_id=external_app_id,
     )
 
     merged_apps: dict[str, dict[str, Any]] = {}
@@ -662,6 +860,19 @@ def get_app_access_stats_payload(
             source_name=_safe_text(row.get("source_name"), MANUAL_SOURCE_TYPE),
         )
 
+    for row in api_usage_rows:
+        app_key = _safe_text(row.get("app_id"), "unknown")
+        _append_app_summary(
+            merged=merged_apps,
+            app_id=app_key,
+            app_name=_safe_text(row.get("app_name"), app_key),
+            access_count=int(row.get("access_count") or 0),
+            unique_user_count=int(row.get("unique_user_count") or 0),
+            last_accessed_at=_serialize_kst_date_end(row.get("stat_date")),
+            source_type=_safe_text(row.get("source_type"), EXTERNAL_USAGE_SOURCE_TYPE),
+            source_name=_safe_text(row.get("source_name"), EXTERNAL_USAGE_SOURCE_TYPE),
+        )
+
     apps = _finalize_app_summaries(merged_apps)
 
     merged_series: dict[tuple[str, str], dict[str, Any]] = {}
@@ -693,9 +904,24 @@ def get_app_access_stats_payload(
             source_name=_safe_text(row.get("source_name"), MANUAL_SOURCE_TYPE),
         )
 
+    for row in api_usage_rows:
+        app_key = _safe_text(row.get("app_id"), "unknown")
+        stat_date = row.get("stat_date")
+        bucket_date = _get_period_start(stat_date, period=period) if isinstance(stat_date, date) else None
+        _append_series_summary(
+            merged=merged_series,
+            bucket_date=_serialize_date(bucket_date),
+            app_id=app_key,
+            app_name=_safe_text(row.get("app_name"), app_key),
+            access_count=int(row.get("access_count") or 0),
+            source_type=_safe_text(row.get("source_type"), EXTERNAL_USAGE_SOURCE_TYPE),
+            source_name=_safe_text(row.get("source_name"), EXTERNAL_USAGE_SOURCE_TYPE),
+        )
+
     series = _finalize_series_summaries(merged_series)
 
     top_app = apps[0] if apps else None
+    api_usage_access_count = sum(int(row.get("access_count") or 0) for row in api_usage_rows)
 
     return {
         "timezone": "Asia/Seoul",
@@ -705,11 +931,12 @@ def get_app_access_stats_payload(
             "to": to_date.isoformat(),
         },
         "summary": {
-            "totalAccessCount": totals["access_count"] + external_totals["access_count"],
+            "totalAccessCount": totals["access_count"] + external_totals["access_count"] + api_usage_access_count,
             "uniqueUserCount": totals["unique_user_count"] + external_totals["unique_user_count"],
             "activeAppCount": len(apps),
             "topApp": top_app,
         },
+        "externalUsage": api_usage_status,
         "apps": apps,
         "series": series,
     }

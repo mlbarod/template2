@@ -7,16 +7,19 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from unittest.mock import patch
 
+import requests
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.core.exceptions import ObjectDoesNotExist
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from api.activity.models import ActivityLog, ExternalAppAccessDailyStat
 
 
+@override_settings(EXTERNAL_APP_USAGE_API_URLS="[]")
 class ActivityLogEndpointTests(TestCase):
     """Activity 로그 조회 엔드포인트 테스트 모음."""
 
@@ -316,9 +319,9 @@ class ActivityLogEndpointTests(TestCase):
     def test_manual_app_access_preview_validates_spreadsheet_paste(self) -> None:
         """외부 앱 접속현황 붙여넣기 미리보기가 행 단위 오류를 반환하는지 확인합니다."""
         self.client.force_login(self.superuser)
-        pasted_text = "\t".join(["date", "app_id", "app_name", "access_count", "unique_user_count"]) + "\n"
-        pasted_text += "\t".join(["2026-06-17", "external-foo", "외부 Foo", "10", "3"]) + "\n"
-        pasted_text += "\t".join(["2026-06-17", "external-bar", "외부 Bar", "2", "5"])
+        pasted_text = "\t".join(["date", "appName", "accessCount", "uniqueUserCount"]) + "\n"
+        pasted_text += "\t".join(["2026-06-17", "external foo", "10", "3"]) + "\n"
+        pasted_text += "\t".join(["2026-06-17", "external bar", "2", "5"])
 
         response = self.client.post(
             reverse("activity-app-access-manual-preview"),
@@ -331,8 +334,32 @@ class ActivityLogEndpointTests(TestCase):
         self.assertEqual(payload["summary"]["totalRows"], 2)
         self.assertEqual(payload["summary"]["validRows"], 1)
         self.assertEqual(payload["summary"]["errorRows"], 1)
-        self.assertEqual(payload["rows"][0]["values"]["appId"], "external-foo")
+        self.assertEqual(payload["rows"][0]["values"]["appId"], "EXTERNAL FOO")
+        self.assertEqual(payload["rows"][0]["values"]["appName"], "EXTERNAL FOO")
         self.assertTrue(payload["rows"][1]["errors"])
+
+    def test_manual_app_access_preview_accepts_csv_template_paste(self) -> None:
+        """외부 앱 접속현황 CSV 템플릿 붙여넣기가 미리보기 유효 행으로 처리되는지 확인합니다."""
+        self.client.force_login(self.superuser)
+        pasted_text = (
+            "date,appName,accessCount,uniqueUserCount,memo\n"
+            "2026-06-17,external csv,9,4,CSV 템플릿"
+        )
+
+        response = self.client.post(
+            reverse("activity-app-access-manual-preview"),
+            data=json.dumps({"pastedText": pasted_text}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["summary"]["totalRows"], 1)
+        self.assertEqual(payload["summary"]["validRows"], 1)
+        self.assertEqual(payload["summary"]["errorRows"], 0)
+        self.assertEqual(payload["rows"][0]["values"]["appId"], "EXTERNAL CSV")
+        self.assertEqual(payload["rows"][0]["values"]["appName"], "EXTERNAL CSV")
+        self.assertEqual(payload["rows"][0]["values"]["memo"], "CSV 템플릿")
 
     def test_manual_app_access_commit_requires_superuser(self) -> None:
         """외부 앱 접속현황 수동 반영은 슈퍼유저만 허용합니다."""
@@ -340,7 +367,7 @@ class ActivityLogEndpointTests(TestCase):
 
         response = self.client.post(
             reverse("activity-app-access-manual-commit"),
-            data=json.dumps({"pastedText": "date\tapp_id\taccess_count\tunique_user_count\n2026-06-17\text\t1\t1"}),
+            data=json.dumps({"pastedText": "date\tappName\taccessCount\tuniqueUserCount\n2026-06-17\text\t1\t1"}),
             content_type="application/json",
         )
 
@@ -350,12 +377,12 @@ class ActivityLogEndpointTests(TestCase):
         """외부 앱 접속현황 수동 반영이 앱/날짜/출처 기준으로 upsert되는지 확인합니다."""
         self.client.force_login(self.superuser)
         first_text = (
-            "date\tapp_id\tapp_name\taccess_count\tunique_user_count\tmemo\n"
-            "2026-06-17\texternal-foo\t외부 Foo\t10\t3\t초기 입력"
+            "date\tappName\taccessCount\tuniqueUserCount\tmemo\n"
+            "2026-06-17\texternal foo\t10\t3\t초기 입력"
         )
         second_text = (
-            "date\tapp_id\tapp_name\taccess_count\tunique_user_count\tmemo\n"
-            "2026-06-17\texternal-foo\t외부 Foo\t12\t4\t수정 입력"
+            "date\tappName\taccessCount\tuniqueUserCount\tmemo\n"
+            "2026-06-17\t EXTERNAL FOO \t12\t4\t수정 입력"
         )
 
         first_response = self.client.post(
@@ -372,7 +399,8 @@ class ActivityLogEndpointTests(TestCase):
         self.assertEqual(first_response.status_code, 201)
         self.assertEqual(second_response.status_code, 201)
         self.assertEqual(ExternalAppAccessDailyStat.objects.count(), 1)
-        stat = ExternalAppAccessDailyStat.objects.get(app_id="external-foo")
+        stat = ExternalAppAccessDailyStat.objects.get(app_id="EXTERNAL FOO")
+        self.assertEqual(stat.app_name, "EXTERNAL FOO")
         self.assertEqual(stat.access_count, 12)
         self.assertEqual(stat.unique_user_count, 4)
         self.assertEqual(stat.memo, "수정 입력")
@@ -414,3 +442,148 @@ class ActivityLogEndpointTests(TestCase):
         external_row = next(app for app in payload["apps"] if app["appId"] == "external-foo")
         self.assertEqual(external_row["sourceType"], "manual")
         self.assertEqual(external_row["accessCount"], 10)
+
+    @override_settings(
+        EXTERNAL_APP_USAGE_API_URLS=(
+            '[{"sourceName":"m-etch-dx","url":"https://usage.example.test/get/usage"},'
+            '{"sourceName":"other-system","url":"https://other.example.test/get/usage"}]'
+        ),
+        EXTERNAL_APP_USAGE_API_TIMEOUT_SECONDS=3,
+    )
+    @patch("api.activity.services.activity_logs.requests.get")
+    def test_app_access_stats_includes_external_usage_api_source_rows(self, mock_get) -> None:
+        """외부 사용량 API source row가 기존 앱 접속 통계에 합산되는지 확인합니다."""
+
+        class FakeResponse:
+            """테스트용 외부 사용량 API 응답입니다."""
+
+            def __init__(self, rows: list[dict[str, object]]) -> None:
+                """응답 row를 저장합니다."""
+
+                self.rows = rows
+
+            def raise_for_status(self) -> None:
+                """HTTP 오류가 없다고 처리합니다."""
+
+            def json(self) -> list[dict[str, object]]:
+                """외부 사용량 API row 목록을 반환합니다."""
+
+                return self.rows
+
+        mock_get.side_effect = [
+            FakeResponse(
+                [
+                    {"date": "2026-01-01", "accessCount": 5556, "appName": "AIO"},
+                    {"date": "2026-01-02", "accessCount": 5536, "appName": " aio "},
+                    {"date": "2026-02-01", "accessCount": 9999, "appName": "AIO"},
+                ]
+            ),
+            FakeResponse(
+                [
+                    {"date": "2026-01-03", "accessCount": 100, "appName": "AIO"},
+                    {"date": "2026-01-03", "accessCount": 200, "appName": "OTHER"},
+                ]
+            ),
+        ]
+        self.client.force_login(self.superuser)
+
+        response = self.client.get(
+            reverse("activity-app-access-stats"),
+            {"from": "2026-01-01", "to": "2026-01-31", "appId": "aio"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["summary"]["totalAccessCount"], 11192)
+        self.assertEqual(payload["summary"]["uniqueUserCount"], 0)
+        self.assertEqual(payload["externalUsage"]["rowCount"], 3)
+        self.assertEqual(len(payload["externalUsage"]["sources"]), 2)
+        self.assertEqual(payload["externalUsage"]["sources"][0]["sourceName"], "m-etch-dx")
+        self.assertEqual(payload["externalUsage"]["sources"][0]["rowCount"], 2)
+        self.assertEqual(payload["externalUsage"]["sources"][1]["sourceName"], "other-system")
+        self.assertEqual(payload["externalUsage"]["sources"][1]["rowCount"], 1)
+        app_row = next(app for app in payload["apps"] if app["appId"] == "AIO")
+        self.assertEqual(app_row["appName"], "AIO")
+        self.assertEqual(app_row["sourceType"], "external_api")
+        self.assertEqual(app_row["sourceName"], "mixed")
+        self.assertEqual(app_row["accessCount"], 11192)
+        self.assertEqual(app_row["uniqueUserCount"], 0)
+        self.assertEqual(len(payload["series"]), 3)
+        mock_get.assert_any_call("https://usage.example.test/get/usage", timeout=3)
+        mock_get.assert_any_call("https://other.example.test/get/usage", timeout=3)
+
+    @override_settings(
+        EXTERNAL_APP_USAGE_API_URLS='[{"sourceName":"m-etch-dx","url":"https://usage.example.test/get/usage"}]'
+    )
+    @patch("api.activity.services.activity_logs.requests.get")
+    def test_app_access_stats_keeps_existing_stats_when_external_usage_api_fails(self, mock_get) -> None:
+        """외부 사용량 API 실패 시 기존 통계 응답을 유지하는지 확인합니다."""
+        mock_get.side_effect = requests.RequestException("network down")
+        ActivityLog.objects.create(
+            user=self.user,
+            action="APP_ACCESS",
+            path="/appstore",
+            method="EVENT",
+            status_code=200,
+            metadata={"app_id": "appstore", "app_name": "Appstore", "event_type": "app_access"},
+            created_at=datetime(2026, 1, 1, 1, 0, tzinfo=UTC),
+        )
+        self.client.force_login(self.superuser)
+
+        response = self.client.get(
+            reverse("activity-app-access-stats"),
+            {"from": "2026-01-01", "to": "2026-01-01"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["summary"]["totalAccessCount"], 1)
+        self.assertEqual(payload["apps"][0]["appId"], "appstore")
+        self.assertTrue(payload["externalUsage"]["error"])
+        self.assertEqual(payload["externalUsage"]["rowCount"], 0)
+
+    @override_settings(
+        EXTERNAL_APP_USAGE_API_URLS=(
+            '[{"sourceName":"m-etch-dx","url":"https://usage.example.test/get/usage"},'
+            '{"sourceName":"other-system","url":"https://other.example.test/get/usage"}]'
+        )
+    )
+    @patch("api.activity.services.activity_logs.requests.get")
+    def test_app_access_stats_excludes_all_external_api_rows_when_one_source_fails(self, mock_get) -> None:
+        """외부 사용량 API source 중 하나라도 실패하면 외부 API 통계를 모두 제외하는지 확인합니다."""
+
+        class FakeResponse:
+            """테스트용 외부 사용량 API 응답입니다."""
+
+            def raise_for_status(self) -> None:
+                """HTTP 오류가 없다고 처리합니다."""
+
+            def json(self) -> list[dict[str, object]]:
+                """외부 사용량 API row 목록을 반환합니다."""
+
+                return [{"date": "2026-01-01", "accessCount": 100, "appName": "AIO"}]
+
+        ActivityLog.objects.create(
+            user=self.user,
+            action="APP_ACCESS",
+            path="/appstore",
+            method="EVENT",
+            status_code=200,
+            metadata={"app_id": "appstore", "app_name": "Appstore", "event_type": "app_access"},
+            created_at=datetime(2026, 1, 1, 1, 0, tzinfo=UTC),
+        )
+        mock_get.side_effect = [FakeResponse(), requests.RequestException("network down")]
+        self.client.force_login(self.superuser)
+
+        response = self.client.get(
+            reverse("activity-app-access-stats"),
+            {"from": "2026-01-01", "to": "2026-01-01"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["summary"]["totalAccessCount"], 1)
+        self.assertEqual(payload["externalUsage"]["rowCount"], 0)
+        self.assertEqual(payload["externalUsage"]["sources"][0]["rowCount"], 1)
+        self.assertTrue(payload["externalUsage"]["sources"][1]["error"])
+        self.assertFalse(any(app["appId"] == "AIO" for app in payload["apps"]))
