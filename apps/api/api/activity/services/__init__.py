@@ -15,6 +15,7 @@ from .activity_logs import (
     get_recent_activity_payload,
     record_activity_log,
     record_app_access,
+    sync_external_app_usage_stats,
 )
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "get_recent_activity_payload",
     "record_activity_log",
     "record_app_access",
+    "sync_external_app_usage_stats",
 ]

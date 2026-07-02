@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import requests
@@ -15,8 +15,9 @@ from django.contrib.auth.models import Permission
 from django.core.exceptions import ObjectDoesNotExist
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
-from api.activity.models import ActivityLog, ExternalAppAccessDailyStat
+from api.activity.models import ActivityLog, ExternalAppAccessDailyStat, ExternalAppUsageSyncState
 
 
 @override_settings(EXTERNAL_APP_USAGE_API_URLS="[]")
@@ -157,13 +158,13 @@ class ActivityLogEndpointTests(TestCase):
         self.assertEqual(entry.metadata["app_id"], "appstore")
         self.assertEqual(entry.metadata["knox_id"], "knox-70000")
 
-    def test_app_access_stats_requires_superuser(self) -> None:
-        """앱 접속 통계 조회는 슈퍼유저만 허용합니다."""
+    def test_app_access_stats_allows_authenticated_user(self) -> None:
+        """앱 접속 통계 조회는 인증 사용자에게 허용됩니다."""
         self.client.force_login(self.user)
 
         response = self.client.get(reverse("activity-app-access-stats"))
 
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 200)
 
     def test_app_access_stats_aggregates_by_kst_and_knox_id(self) -> None:
         """KST 날짜 기준과 knox_id distinct 기준으로 앱 접속 통계를 집계합니다."""
@@ -451,8 +452,8 @@ class ActivityLogEndpointTests(TestCase):
         EXTERNAL_APP_USAGE_API_TIMEOUT_SECONDS=3,
     )
     @patch("api.activity.services.activity_logs.requests.get")
-    def test_app_access_stats_includes_external_usage_api_source_rows(self, mock_get) -> None:
-        """외부 사용량 API source row가 기존 앱 접속 통계에 합산되는지 확인합니다."""
+    def test_external_usage_sync_persists_api_rows_for_stats(self, mock_get) -> None:
+        """수동 동기화가 외부 API row를 저장하고 통계 조회는 DB 값을 사용하는지 확인합니다."""
 
         class FakeResponse:
             """테스트용 외부 사용량 API 응답입니다."""
@@ -473,51 +474,61 @@ class ActivityLogEndpointTests(TestCase):
         mock_get.side_effect = [
             FakeResponse(
                 [
-                    {"date": "2026-01-01", "accessCount": 5556, "appName": "AIO"},
-                    {"date": "2026-01-02", "accessCount": 5536, "appName": " aio "},
-                    {"date": "2026-02-01", "accessCount": 9999, "appName": "AIO"},
+                    {"date": (timezone.localdate() - timedelta(days=1)).isoformat(), "accessCount": 5556, "appName": "AIO"},
+                    {"date": timezone.localdate().isoformat(), "accessCount": 5536, "appName": " aio "},
+                    {"date": (timezone.localdate() - timedelta(days=120)).isoformat(), "accessCount": 9999, "appName": "AIO"},
                 ]
             ),
             FakeResponse(
                 [
-                    {"date": "2026-01-03", "accessCount": 100, "appName": "AIO"},
-                    {"date": "2026-01-03", "accessCount": 200, "appName": "OTHER"},
+                    {"date": timezone.localdate().isoformat(), "accessCount": 100, "appName": "AIO"},
+                    {"date": timezone.localdate().isoformat(), "accessCount": 200, "appName": "OTHER"},
                 ]
             ),
         ]
         self.client.force_login(self.superuser)
 
+        sync_response = self.client.post(reverse("activity-app-access-sync-external"))
+
+        self.assertEqual(sync_response.status_code, 200)
+        sync_payload = sync_response.json()
+        self.assertTrue(sync_payload["synced"])
+        self.assertFalse(sync_payload["skipped"])
+        self.assertEqual(sync_payload["commit"]["createdRows"], 5)
+        self.assertEqual(ExternalAppAccessDailyStat.objects.filter(source_type="external_api").count(), 5)
+        mock_get.assert_any_call("https://usage.example.test/get/usage", timeout=3, verify=False)
+        mock_get.assert_any_call("https://other.example.test/get/usage", timeout=3, verify=False)
+        mock_get.reset_mock()
+
         response = self.client.get(
             reverse("activity-app-access-stats"),
-            {"from": "2026-01-01", "to": "2026-01-31", "appId": "aio"},
+            {
+                "from": (timezone.localdate() - timedelta(days=1)).isoformat(),
+                "to": timezone.localdate().isoformat(),
+                "appId": "aio",
+            },
         )
 
         self.assertEqual(response.status_code, 200)
+        mock_get.assert_not_called()
         payload = response.json()
         self.assertEqual(payload["summary"]["totalAccessCount"], 11192)
         self.assertEqual(payload["summary"]["uniqueUserCount"], 0)
-        self.assertEqual(payload["externalUsage"]["rowCount"], 3)
-        self.assertEqual(len(payload["externalUsage"]["sources"]), 2)
-        self.assertEqual(payload["externalUsage"]["sources"][0]["sourceName"], "m-etch-dx")
-        self.assertEqual(payload["externalUsage"]["sources"][0]["rowCount"], 2)
-        self.assertEqual(payload["externalUsage"]["sources"][1]["sourceName"], "other-system")
-        self.assertEqual(payload["externalUsage"]["sources"][1]["rowCount"], 1)
+        self.assertEqual(payload["externalUsage"]["lastStatus"], "success")
         app_row = next(app for app in payload["apps"] if app["appId"] == "AIO")
         self.assertEqual(app_row["appName"], "AIO")
         self.assertEqual(app_row["sourceType"], "external_api")
         self.assertEqual(app_row["sourceName"], "mixed")
         self.assertEqual(app_row["accessCount"], 11192)
         self.assertEqual(app_row["uniqueUserCount"], 0)
-        self.assertEqual(len(payload["series"]), 3)
-        mock_get.assert_any_call("https://usage.example.test/get/usage", timeout=3, verify=False)
-        mock_get.assert_any_call("https://other.example.test/get/usage", timeout=3, verify=False)
+        self.assertEqual(len(payload["series"]), 2)
 
     @override_settings(
         EXTERNAL_APP_USAGE_API_URLS='[{"sourceName":"m-etch-dx","url":"https://usage.example.test/get/usage"}]'
     )
     @patch("api.activity.services.activity_logs.requests.get")
-    def test_app_access_stats_keeps_existing_stats_when_external_usage_api_fails(self, mock_get) -> None:
-        """외부 사용량 API 실패 시 기존 통계 응답을 유지하는지 확인합니다."""
+    def test_external_usage_sync_failure_keeps_existing_stats(self, mock_get) -> None:
+        """외부 API 동기화 실패 시 기존 통계 조회가 유지되는지 확인합니다."""
         mock_get.side_effect = requests.RequestException("network down")
         ActivityLog.objects.create(
             user=self.user,
@@ -526,31 +537,35 @@ class ActivityLogEndpointTests(TestCase):
             method="EVENT",
             status_code=200,
             metadata={"app_id": "appstore", "app_name": "Appstore", "event_type": "app_access"},
-            created_at=datetime(2026, 1, 1, 1, 0, tzinfo=UTC),
+            created_at=timezone.now(),
         )
         self.client.force_login(self.superuser)
 
+        sync_response = self.client.post(reverse("activity-app-access-sync-external"))
+
+        self.assertEqual(sync_response.status_code, 200)
+        sync_payload = sync_response.json()
+        self.assertFalse(sync_payload["synced"])
+        self.assertFalse(sync_payload["skipped"])
+        self.assertEqual(sync_payload["syncState"]["lastStatus"], "failed")
+
         response = self.client.get(
             reverse("activity-app-access-stats"),
-            {"from": "2026-01-01", "to": "2026-01-01"},
+            {"from": timezone.localdate().isoformat(), "to": timezone.localdate().isoformat()},
         )
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["summary"]["totalAccessCount"], 1)
         self.assertEqual(payload["apps"][0]["appId"], "appstore")
-        self.assertTrue(payload["externalUsage"]["error"])
-        self.assertEqual(payload["externalUsage"]["rowCount"], 0)
+        self.assertEqual(payload["externalUsage"]["lastStatus"], "failed")
 
     @override_settings(
-        EXTERNAL_APP_USAGE_API_URLS=(
-            '[{"sourceName":"m-etch-dx","url":"https://usage.example.test/get/usage"},'
-            '{"sourceName":"other-system","url":"https://other.example.test/get/usage"}]'
-        )
+        EXTERNAL_APP_USAGE_API_URLS='[{"sourceName":"m-etch-dx","url":"https://usage.example.test/get/usage"}]'
     )
     @patch("api.activity.services.activity_logs.requests.get")
-    def test_app_access_stats_keeps_successful_external_api_rows_when_one_source_fails(self, mock_get) -> None:
-        """외부 사용량 API source 중 일부가 실패해도 성공 row를 유지하는지 확인합니다."""
+    def test_external_usage_sync_allows_normal_user_first_attempt(self, mock_get) -> None:
+        """일반 사용자의 최초 동기화 시도는 1시간 제한 없이 허용됩니다."""
 
         class FakeResponse:
             """테스트용 외부 사용량 API 응답입니다."""
@@ -561,31 +576,76 @@ class ActivityLogEndpointTests(TestCase):
             def json(self) -> list[dict[str, object]]:
                 """외부 사용량 API row 목록을 반환합니다."""
 
-                return [{"date": "2026-01-01", "accessCount": 100, "appName": "AIO"}]
+                return [{"date": timezone.localdate().isoformat(), "accessCount": 10, "appName": "AIO"}]
 
-        ActivityLog.objects.create(
-            user=self.user,
-            action="APP_ACCESS",
-            path="/appstore",
-            method="EVENT",
-            status_code=200,
-            metadata={"app_id": "appstore", "app_name": "Appstore", "event_type": "app_access"},
-            created_at=datetime(2026, 1, 1, 1, 0, tzinfo=UTC),
-        )
-        mock_get.side_effect = [FakeResponse(), requests.RequestException("network down")]
-        self.client.force_login(self.superuser)
+        mock_get.return_value = FakeResponse()
+        self.client.force_login(self.user)
 
-        response = self.client.get(
-            reverse("activity-app-access-stats"),
-            {"from": "2026-01-01", "to": "2026-01-01"},
-        )
+        response = self.client.post(reverse("activity-app-access-sync-external"))
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload["summary"]["totalAccessCount"], 101)
-        self.assertIsNone(payload["externalUsage"]["error"])
-        self.assertEqual(payload["externalUsage"]["rowCount"], 1)
-        self.assertEqual(payload["externalUsage"]["sources"][0]["rowCount"], 1)
-        self.assertTrue(payload["externalUsage"]["sources"][1]["error"])
-        app_row = next(app for app in payload["apps"] if app["appId"] == "AIO")
-        self.assertEqual(app_row["accessCount"], 100)
+        self.assertTrue(payload["synced"])
+        self.assertFalse(payload["skipped"])
+        mock_get.assert_called_once_with("https://usage.example.test/get/usage", timeout=10, verify=False)
+
+    @override_settings(
+        EXTERNAL_APP_USAGE_API_URLS='[{"sourceName":"m-etch-dx","url":"https://usage.example.test/get/usage"}]'
+    )
+    @patch("api.activity.services.activity_logs.requests.get")
+    def test_external_usage_sync_skips_normal_user_within_one_hour(self, mock_get) -> None:
+        """일반 사용자는 마지막 동기화 시도 후 1시간 전에는 외부 API를 다시 호출하지 않습니다."""
+
+        state = ExternalAppUsageSyncState.objects.create(
+            sync_key="external_app_usage",
+            last_synced_at=None,
+            last_status="failed",
+            last_error="network down",
+        )
+        state.updated_at = timezone.now() - timedelta(minutes=30)
+        state.save(update_fields=["updated_at"])
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse("activity-app-access-sync-external"))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertFalse(payload["synced"])
+        self.assertTrue(payload["skipped"])
+        self.assertEqual(payload["syncState"]["lastStatus"], "failed")
+        self.assertTrue(payload["syncState"]["lastAttemptedAt"])
+        mock_get.assert_not_called()
+
+    @override_settings(
+        EXTERNAL_APP_USAGE_API_URLS='[{"sourceName":"m-etch-dx","url":"https://usage.example.test/get/usage"}]'
+    )
+    @patch("api.activity.services.activity_logs.requests.get")
+    def test_external_usage_sync_superuser_bypasses_one_hour_limit(self, mock_get) -> None:
+        """슈퍼유저는 마지막 동기화 후 1시간 전에도 수동 동기화할 수 있습니다."""
+
+        class FakeResponse:
+            """테스트용 외부 사용량 API 응답입니다."""
+
+            def raise_for_status(self) -> None:
+                """HTTP 오류가 없다고 처리합니다."""
+
+            def json(self) -> list[dict[str, object]]:
+                """외부 사용량 API row 목록을 반환합니다."""
+
+                return [{"date": timezone.localdate().isoformat(), "accessCount": 10, "appName": "AIO"}]
+
+        ExternalAppUsageSyncState.objects.create(
+            sync_key="external_app_usage",
+            last_synced_at=timezone.now() - timedelta(minutes=30),
+            last_status="success",
+        )
+        mock_get.return_value = FakeResponse()
+        self.client.force_login(self.superuser)
+
+        response = self.client.post(reverse("activity-app-access-sync-external"))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["synced"])
+        self.assertFalse(payload["skipped"])
+        mock_get.assert_called_once_with("https://usage.example.test/get/usage", timeout=10, verify=False)

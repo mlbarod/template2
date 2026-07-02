@@ -80,4 +80,23 @@ class ExternalAppAccessDailyStat(models.Model):
         return f"{self.stat_date} {self.app_id} {self.access_count}"
 
 
-__all__ = ["ActivityLog", "ExternalAppAccessDailyStat"]
+class ExternalAppUsageSyncState(models.Model):
+    """외부 앱 사용량 API 동기화 상태를 저장합니다."""
+
+    sync_key = models.CharField(max_length=80, unique=True)
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+    last_status = models.CharField(max_length=32, default="never")
+    last_error = models.TextField(blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "activity_external_app_usage_sync_state"
+        ordering = ["sync_key"]
+
+    def __str__(self) -> str:  # 디버깅용 문자열(커버리지 제외): pragma: no cover
+        """디버깅용 표시 문자열을 반환합니다."""
+        return f"{self.sync_key} {self.last_status}"
+
+
+__all__ = ["ActivityLog", "ExternalAppAccessDailyStat", "ExternalAppUsageSyncState"]

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   AlertTriangle,
   BarChart3,
@@ -11,13 +11,11 @@ import {
   RefreshCw,
   ShieldAlert,
   TrendingUp,
-  Users,
 } from "lucide-react"
 import {
   Bar,
   BarChart,
   CartesianGrid,
-  Legend,
   ResponsiveContainer,
   XAxis,
   YAxis,
@@ -25,7 +23,7 @@ import {
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardTitle } from "@/components/ui/card"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import {
   Dialog,
@@ -37,6 +35,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Slider } from "@/components/ui/slider"
 import {
   Table,
   TableBody,
@@ -51,15 +50,10 @@ import { cn } from "@/lib/utils"
 
 import {
   useAppAccessStatsQuery,
+  useExternalAppUsageSyncMutation,
   useManualAppAccessCommitMutation,
   useManualAppAccessPreviewMutation,
 } from "../hooks/useAccessStatsQueries"
-
-const RANGE_OPTIONS = [
-  { key: "today", label: "오늘", days: 1 },
-  { key: "7d", label: "7일", days: 7 },
-  { key: "30d", label: "30일", days: 30 },
-]
 
 const PERIOD_OPTIONS = [
   { key: "day", label: "일별" },
@@ -67,12 +61,24 @@ const PERIOD_OPTIONS = [
   { key: "month", label: "월별" },
 ]
 
+const MIN_ACCESS_DATE_OFFSET_DAYS = -365
+const MAX_ACCESS_DATE_OFFSET_DAYS = 0
+const DEFAULT_ACCESS_DATE_OFFSET_DAYS = -6
+
 const CHART_COLORS = [
   "var(--chart-1)",
   "var(--chart-2)",
   "var(--chart-3)",
   "var(--chart-4)",
   "var(--chart-5)",
+]
+
+const CHART_BG_CLASSES = [
+  "bg-[var(--chart-1)]",
+  "bg-[var(--chart-2)]",
+  "bg-[var(--chart-3)]",
+  "bg-[var(--chart-4)]",
+  "bg-[var(--chart-5)]",
 ]
 
 const MANUAL_TEMPLATE_HEADERS = [
@@ -95,10 +101,30 @@ function getKstDateString(offsetDays = 0) {
   return `${year}-${month}-${day}`
 }
 
-function buildRange(days) {
+function clampAccessDateOffset(value) {
+  const numericValue = Number(value)
+  if (!Number.isFinite(numericValue)) return DEFAULT_ACCESS_DATE_OFFSET_DAYS
+  return Math.min(
+    Math.max(Math.round(numericValue), MIN_ACCESS_DATE_OFFSET_DAYS),
+    MAX_ACCESS_DATE_OFFSET_DAYS
+  )
+}
+
+function buildRangeFromOffset(offsetDays) {
+  const from = getKstDateString(clampAccessDateOffset(offsetDays))
   const to = getKstDateString()
-  const from = getKstDateString(-(days - 1))
   return { from, to }
+}
+
+function formatAccessDateOffsetLabel(offsetDays) {
+  const clampedOffset = clampAccessDateOffset(offsetDays)
+  if (clampedOffset === 0) return "오늘"
+  return `${Math.abs(clampedOffset)}일 전`
+}
+
+function formatStatsRangeLabel(range) {
+  if (range.from === range.to) return range.from
+  return `${range.from} ~ ${range.to}`
 }
 
 function buildStatsParams(range, period) {
@@ -109,25 +135,8 @@ function formatNumber(value) {
   return new Intl.NumberFormat("ko-KR").format(Number(value) || 0)
 }
 
-function formatAverage(value) {
-  return new Intl.NumberFormat("ko-KR", {
-    maximumFractionDigits: 1,
-  }).format(Number(value) || 0)
-}
-
-function formatDateTime(value) {
-  if (!value) return "-"
-  return new Intl.DateTimeFormat("ko-KR", {
-    timeZone: "Asia/Seoul",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value))
-}
-
 function formatSourceLabel(app) {
-  if (app?.sourceType === "internal") return "내부"
+  if (app?.sourceType === "internal") return "AX Portal"
   if (app?.sourceType === "manual") return "수동"
   if (app?.sourceType === "mixed") return "복합"
   return app?.sourceName || "-"
@@ -248,23 +257,20 @@ function buildChartRows(series, apps, range, period) {
 
 function KpiCard({ title, value, description, icon: Icon, isLoading }) {
   return (
-    <Card className="gap-3 rounded-lg py-4 shadow-none">
-      <CardHeader className="flex flex-row items-center justify-between gap-3 px-4 py-0">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-        <Icon className="size-4 text-muted-foreground" aria-hidden="true" />
-      </CardHeader>
-      <CardContent className="px-4">
-        {isLoading ? (
-          <Skeleton className="h-8 w-28" />
-        ) : (
-          <div className="text-2xl font-semibold tabular-nums tracking-tight">{value}</div>
-        )}
-        <p className="mt-1 text-xs text-muted-foreground">{description}</p>
-      </CardContent>
+    <Card className="h-full min-h-0 gap-0.5 rounded-lg px-3 py-1.5 shadow-none items-start justify-start p-4 gap-2">
+      <div className="flex min-w-0 items-start justify-between gap-2">
+        <span className="truncate text-xs font-medium leading-none text-muted-foreground">{title}</span>
+        <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      </div>
+      {isLoading ? (
+        <Skeleton className="h-5 w-20" />
+      ) : (
+        <div className="truncate text-base font-semibold leading-5 tabular-nums tracking-tight">{value}</div>
+      )}
+      <p className="truncate text-[11px] leading-3 text-muted-foreground">{description}</p>
     </Card>
   )
 }
-
 function StatePanel({ icon: Icon, title, description, action }) {
   return (
     <div className="flex h-full min-h-64 items-center justify-center rounded-lg border bg-card p-8 text-center">
@@ -485,8 +491,63 @@ function ManualPastePanel({ onCommitted }) {
   )
 }
 
-function ChartPanel({ apps, chartRows, isLoading, error, period }) {
+function AccessDateSlider({ value, onChange }) {
+  const normalizedValue = clampAccessDateOffset(value)
+  const [draftValue, setDraftValue] = useState(normalizedValue)
+  const selectedDate = getKstDateString(draftValue)
+  const selectedLabel = formatAccessDateOffsetLabel(draftValue)
+
+  useEffect(() => {
+    setDraftValue(normalizedValue)
+  }, [normalizedValue])
+
+  function handleValueChange(nextValue) {
+    setDraftValue(clampAccessDateOffset(nextValue[0]))
+  }
+
+  function handleValueCommit(nextValue) {
+    const nextOffset = clampAccessDateOffset(nextValue[0])
+    setDraftValue(nextOffset)
+    onChange?.(nextOffset)
+  }
+
+  return (
+    <div className="flex h-9 min-w-[252px] max-w-[420px] flex-1 items-center gap-2 rounded-md border-border bg-card px-2">
+      <span className="mt-5 shrink-0 text-[11px] text-muted-foreground">-365일</span>
+      <div className="relative min-w-[120px] flex-1 pt-5">
+        <span className="absolute left-1/2 top-0 -translate-x-1/2 whitespace-nowrap text-[11px] font-medium text-muted-foreground">
+          {selectedDate} ({selectedLabel})
+        </span>
+        <Slider
+          className="[&>span:first-child]:h-2 [&>span:first-child]:bg-primary [&>span:first-child>span]:bg-muted [&_[role=slider]]:size-3 [&_[role=slider]]:shadow-sm"
+          min={MIN_ACCESS_DATE_OFFSET_DAYS}
+          max={MAX_ACCESS_DATE_OFFSET_DAYS}
+          step={1}
+          value={[draftValue]}
+          onValueChange={handleValueChange}
+          onValueCommit={handleValueCommit}
+          aria-label="접속 통계 날짜 선택"
+        />
+      </div>
+      <span className="mt-5 shrink-0 text-[11px] text-muted-foreground">오늘</span>
+    </div>
+  )
+}
+
+function ChartPanel({
+  apps,
+  chartRows,
+  isLoading,
+  error,
+  period,
+  dateOffset,
+  onDateOffsetChange,
+  periodKey,
+  onPeriodChange,
+}) {
+  const [hiddenAppIds, setHiddenAppIds] = useState(() => new Set())
   const chartApps = apps.slice(0, 5)
+  const visibleChartApps = chartApps.filter((app) => !hiddenAppIds.has(app.appId))
   const chartConfig = Object.fromEntries(
     chartApps.map((app, index) => [
       app.appId,
@@ -494,18 +555,45 @@ function ChartPanel({ apps, chartRows, isLoading, error, period }) {
     ])
   )
 
+  function toggleChartApp(appId) {
+    setHiddenAppIds((current) => {
+      const next = new Set(current)
+      if (next.has(appId)) {
+        next.delete(appId)
+      } else {
+        next.add(appId)
+      }
+      return next
+    })
+  }
+
   return (
-    <Card className="grid h-full min-h-0 min-w-0 grid-rows-[auto,1fr] gap-0 overflow-hidden rounded-lg py-0 shadow-none">
-      <CardHeader className="border-b px-4 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <CardTitle className="text-sm font-semibold">앱별 접속 추이</CardTitle>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline">{PERIOD_OPTIONS.find((option) => option.key === period)?.label ?? "일별"}</Badge>
-            <Badge variant="outline">Top {Math.min(apps.length, 5)}</Badge>
+    <Card className="flex h-full min-h-0 min-w-0 flex-col gap-0 overflow-hidden rounded-lg py-0 shadow-none">
+      <div className="flex h-12 shrink-0 items-center border-b px-4">
+        <div className="flex w-full min-w-0 items-center justify-between gap-3">
+          <CardTitle className="flex self-stretch items-center text-sm font-semibold leading-none">
+            앱별 접속 추이
+          </CardTitle>
+          <div className="flex shrink-0 items-center gap-2">
+            <AccessDateSlider value={dateOffset} onChange={onDateOffsetChange} />
+            <div className="flex items-center rounded-md border bg-background p-0.5">
+              {PERIOD_OPTIONS.map((option) => (
+                <Button
+                  key={option.key}
+                  type="button"
+                  size="sm"
+                  variant={periodKey === option.key ? "default" : "ghost"}
+                  className="h-6 px-2 text-xs"
+                  onClick={() => onPeriodChange(option.key)}
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
           </div>
         </div>
-      </CardHeader>
-      <CardContent className="min-h-0 px-4 py-4">
+      </div>
+      <CardContent className="min-h-0 flex-1 px-4 py-2">
         {isLoading ? (
           <div className="grid h-full min-h-72 gap-3">
             <Skeleton className="h-full min-h-64 w-full" />
@@ -523,44 +611,76 @@ function ChartPanel({ apps, chartRows, isLoading, error, period }) {
             description="선택한 기간에 기록된 앱 접속 이벤트가 없습니다."
           />
         ) : (
-          <ChartContainer config={chartConfig} className="h-full min-h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={chartRows}
-                margin={{ top: 16, right: 16, left: 0, bottom: 8 }}
-                barCategoryGap="24%"
-              >
-                <CartesianGrid stroke="var(--border)" strokeDasharray="4 4" vertical={false} />
-                <XAxis
-                  dataKey="date"
-                  tickFormatter={(value) => formatDateTick(value, period)}
-                  tickLine={false}
-                  axisLine={{ stroke: "var(--border)" }}
-                  tickMargin={8}
-                  minTickGap={16}
-                />
-                <YAxis
-                  tickLine={false}
-                  axisLine={{ stroke: "var(--border)" }}
-                  tickMargin={8}
-                  allowDecimals={false}
-                  width={52}
-                />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Legend verticalAlign="top" height={28} iconType="circle" />
-                {chartApps.map((app, index) => (
-                  <Bar
-                    key={app.appId}
-                    dataKey={app.appId}
-                    name={app.appName}
-                    stackId="access"
-                    fill={CHART_COLORS[index % CHART_COLORS.length]}
-                    maxBarSize={44}
+          <div className="flex h-full min-h-72 min-w-0 gap-4">
+            <ChartContainer config={chartConfig} className="h-full min-h-0 min-w-0 flex-1">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={chartRows}
+                  margin={{ top: 16, right: 16, left: 0, bottom: 28 }}
+                  barCategoryGap="24%"
+                >
+                  <CartesianGrid stroke="var(--border)" strokeDasharray="4 4" vertical={false} />
+                  <XAxis
+                    dataKey="date"
+                    tickFormatter={(value) => formatDateTick(value, period)}
+                    tickLine={false}
+                    axisLine={{ stroke: "var(--border)" }}
+                    tick={{ fontSize: 12 }}
+                    angle={-45}
+                    textAnchor="end"
+                    tickMargin={6}
+                    height={44}
+                    minTickGap={16}
                   />
-                ))}
-              </BarChart>
-            </ResponsiveContainer>
-          </ChartContainer>
+                  <YAxis
+                    tickLine={false}
+                    axisLine={{ stroke: "var(--border)" }}
+                    tick={{ fontSize: 12 }}
+                    tickMargin={6}
+                    allowDecimals={false}
+                    width={52}
+                  />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  {visibleChartApps.map((app) => {
+                    const colorIndex = chartApps.findIndex((item) => item.appId === app.appId)
+                    return (
+                      <Bar
+                        key={app.appId}
+                        dataKey={app.appId}
+                        name={app.appName}
+                        stackId="access"
+                        fill={CHART_COLORS[colorIndex % CHART_COLORS.length]}
+                        maxBarSize={44}
+                      />
+                    )
+                  })}
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartContainer>
+            <div className="flex w-40 shrink-0 flex-col justify-center gap-2">
+              {chartApps.map((app, index) => {
+                const isHidden = hiddenAppIds.has(app.appId)
+                return (
+                  <button
+                    key={app.appId}
+                    type="button"
+                    className={cn(
+                      "flex min-w-0 items-center gap-2 rounded-sm text-left text-xs text-muted-foreground outline-none transition-opacity hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                      isHidden && "opacity-40"
+                    )}
+                    onClick={() => toggleChartApp(app.appId)}
+                    aria-pressed={!isHidden}
+                  >
+                    <span
+                      className={cn("size-2.5 shrink-0 rounded-full", CHART_BG_CLASSES[index % CHART_BG_CLASSES.length])}
+                      aria-hidden="true"
+                    />
+                    <span className="truncate whitespace-nowrap">{app.appName}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
         )}
       </CardContent>
     </Card>
@@ -569,14 +689,14 @@ function ChartPanel({ apps, chartRows, isLoading, error, period }) {
 
 function AppTable({ apps, isLoading }) {
   return (
-    <Card className="grid h-full min-h-0 min-w-0 grid-rows-[auto,1fr] gap-0 overflow-hidden rounded-lg py-0 shadow-none">
-      <CardHeader className="border-b px-4 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <CardTitle className="text-sm font-semibold">앱별 접속 순위 및 상세 현황</CardTitle>
-          <Badge variant="secondary">{formatNumber(apps.length)} apps</Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="min-h-0 min-w-0 overflow-auto px-0 py-0">
+    <Card className="flex h-full min-h-0 min-w-0 flex-col gap-0 overflow-hidden rounded-lg py-0 shadow-none">
+      <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b px-4">
+        <CardTitle className="text-sm font-semibold">앱별 접속 순위 및 상세 현황</CardTitle>
+        <Badge variant="secondary" className="h-5 px-1.5 py-0 text-[11px]">
+          {formatNumber(apps.length)} apps
+        </Badge>
+      </div>
+      <CardContent className="flex min-h-0 min-w-0 flex-1 flex-col items-stretch justify-start overflow-auto px-0 py-0">
         {isLoading ? (
           <div className="grid gap-2 p-4">
             {Array.from({ length: 8 }).map((_, index) => (
@@ -584,49 +704,44 @@ function AppTable({ apps, isLoading }) {
             ))}
           </div>
         ) : (
-          <Table>
+          <Table className="table-fixed">
             <TableHeader className="sticky top-0 z-10 bg-card">
-              <TableRow>
-                <TableHead className="w-20 px-4">순위</TableHead>
-                <TableHead className="px-4">앱명</TableHead>
-                <TableHead>출처</TableHead>
-                <TableHead className="text-right">접속횟수</TableHead>
-                <TableHead className="text-right">접속 사용자</TableHead>
-                <TableHead className="text-right">사용자당 평균</TableHead>
-                <TableHead className="px-4 text-right">마지막 접속</TableHead>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="h-12 w-1/2 px-4 text-left">앱명</TableHead>
+                <TableHead className="h-12 w-1/4 text-center">출처</TableHead>
+                <TableHead className="h-12 w-1/4 px-4 text-center">접속횟수</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {apps.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
+                  <TableCell colSpan={3} className="h-32 text-center text-muted-foreground">
                     선택한 기간에 접속 기록이 없습니다.
                   </TableCell>
                 </TableRow>
               ) : (
                 apps.map((app, index) => (
                   <TableRow key={app.appId}>
-                    <TableCell className="px-4">
-                      <span
-                        className={cn(
-                          "inline-flex size-7 items-center justify-center rounded-md border bg-muted text-xs font-medium tabular-nums",
-                          index < 3 && "border-primary/30 bg-primary/10 text-primary"
-                        )}
-                      >
-                        {index + 1}
-                      </span>
+                    <TableCell className="w-1/2 px-4">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span
+                          className={cn(
+                            "inline-flex size-6 shrink-0 items-center justify-center rounded-md border bg-muted text-xs font-medium tabular-nums",
+                            index < 3 && "border-primary/30 bg-primary/10 text-primary"
+                          )}
+                        >
+                          {index + 1}
+                        </span>
+                        <span className="min-w-0 truncate font-medium">{app.appName}</span>
+                      </div>
                     </TableCell>
-                    <TableCell className="px-4 font-medium">{app.appName}</TableCell>
-                    <TableCell>
+                    <TableCell className="w-1/4 text-center">
                       <Badge variant={app.sourceType === "manual" ? "outline" : "secondary"}>
                         {formatSourceLabel(app)}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{formatNumber(app.accessCount)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatNumber(app.uniqueUserCount)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatAverage(app.avgAccessPerUser)}</TableCell>
-                    <TableCell className="px-4 text-right tabular-nums text-muted-foreground">
-                      {formatDateTime(app.lastAccessedAt)}
+                    <TableCell className="w-1/4 px-4 text-center tabular-nums">
+                      {formatNumber(app.accessCount)}
                     </TableCell>
                   </TableRow>
                 ))
@@ -639,20 +754,48 @@ function AppTable({ apps, isLoading }) {
   )
 }
 
+function KpiActionCard({ onManualInput, onExternalSync, canManualInput, isSyncing, syncLabel }) {
+  return (
+    <Card className="h-full min-h-0 justify-center gap-2 rounded-lg px-3 py-2 shadow-none">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-8 justify-start text-[11px]"
+        onClick={onManualInput}
+        disabled={!canManualInput}
+      >
+        <FileSpreadsheet className="size-4" />
+        외부 앱 수동입력
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-8 justify-start text-[11px]"
+        onClick={onExternalSync}
+        disabled={isSyncing}
+      >
+        <RefreshCw className={cn("size-4", isSyncing && "animate-spin")} />
+        {syncLabel}
+      </Button>
+    </Card>
+  )
+}
+
 export function AccessStatsPage() {
   const { user } = useAuth()
-  const [rangeKey, setRangeKey] = useState("7d")
+  const [dateOffset, setDateOffset] = useState(DEFAULT_ACCESS_DATE_OFFSET_DAYS)
   const [periodKey, setPeriodKey] = useState("day")
   const [isManualDialogOpen, setIsManualDialogOpen] = useState(false)
-  const selectedRange = RANGE_OPTIONS.find((option) => option.key === rangeKey) ?? RANGE_OPTIONS[1]
   const params = useMemo(
-    () => buildStatsParams(buildRange(selectedRange.days), periodKey),
-    [periodKey, selectedRange.days]
+    () => buildStatsParams(buildRangeFromOffset(dateOffset), periodKey),
+    [dateOffset, periodKey]
   )
-  const statsQuery = useAppAccessStatsQuery(params, { enabled: Boolean(user?.is_superuser) })
+  const statsQuery = useAppAccessStatsQuery(params, { enabled: Boolean(user) })
+  const externalSyncMutation = useExternalAppUsageSyncMutation()
   const payload = statsQuery.data
   const summary = payload?.summary ?? {}
-  const externalUsage = payload?.externalUsage
   const responsePeriod = payload?.period || periodKey
   const apps = useMemo(() => (Array.isArray(payload?.apps) ? payload.apps : []), [payload?.apps])
   const series = useMemo(() => (Array.isArray(payload?.series) ? payload.series : []), [payload?.series])
@@ -660,14 +803,19 @@ export function AccessStatsPage() {
     () => buildChartRows(series, apps, params, responsePeriod),
     [apps, params, responsePeriod, series]
   )
+  const externalSyncLabel = externalSyncMutation.data?.skipped
+    ? "최근 동기화됨"
+    : externalSyncMutation.data?.synced
+      ? "동기화 완료"
+      : "외부 API 동기화"
 
-  if (!user?.is_superuser) {
+  if (!user) {
     return (
       <div className="flex h-full min-h-0 items-center justify-center p-6">
         <StatePanel
           icon={ShieldAlert}
-          title="접속 통계 권한이 없습니다."
-          description="이 화면은 슈퍼유저만 볼 수 있습니다."
+          title="로그인이 필요합니다."
+          description="접속 현황은 로그인 후 볼 수 있습니다."
         />
       </div>
     )
@@ -675,70 +823,6 @@ export function AccessStatsPage() {
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-muted/30">
-      <header className="shrink-0 border-b bg-card px-6 py-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-semibold tracking-tight">앱별 접속 현황</h1>
-              <Badge variant="outline">KST</Badge>
-              <Badge variant="secondary">Superuser</Badge>
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              내부 앱 화면 진입 이벤트와 외부 앱 수동 입력 집계를 기준으로 앱별 접속횟수를 집계합니다.
-            </p>
-            {externalUsage?.error ? (
-              <p className="mt-2 flex items-center gap-2 text-xs text-destructive">
-                <AlertTriangle className="size-3.5" aria-hidden="true" />
-                외부 사용량 API를 불러오지 못해 내부/수동 입력 통계만 표시합니다.
-              </p>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="outline" onClick={() => setIsManualDialogOpen(true)}>
-              <FileSpreadsheet className="size-4" />
-              외부 앱 수동입력
-            </Button>
-            <div className="flex items-center rounded-md border bg-background p-1">
-              {RANGE_OPTIONS.map((option) => (
-                <Button
-                  key={option.key}
-                  type="button"
-                  size="sm"
-                  variant={rangeKey === option.key ? "default" : "ghost"}
-                  className="h-8"
-                  onClick={() => setRangeKey(option.key)}
-                >
-                  {option.label}
-                </Button>
-              ))}
-            </div>
-            <div className="flex items-center rounded-md border bg-background p-1">
-              {PERIOD_OPTIONS.map((option) => (
-                <Button
-                  key={option.key}
-                  type="button"
-                  size="sm"
-                  variant={periodKey === option.key ? "default" : "ghost"}
-                  className="h-8"
-                  onClick={() => setPeriodKey(option.key)}
-                >
-                  {option.label}
-                </Button>
-              ))}
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => statsQuery.refetch()}
-              disabled={statsQuery.isFetching}
-            >
-              <RefreshCw className={cn("size-4", statsQuery.isFetching && "animate-spin")} />
-              새로고침
-            </Button>
-          </div>
-        </div>
-      </header>
-
       <Dialog open={isManualDialogOpen} onOpenChange={setIsManualDialogOpen}>
         <DialogContent className="max-h-[88vh] max-w-5xl overflow-y-auto">
           <DialogHeader>
@@ -752,67 +836,81 @@ export function AccessStatsPage() {
       </Dialog>
 
       <main className="flex-1 min-h-0 min-w-0 overflow-y-auto px-6 py-4">
-        <div className="grid min-h-full grid-rows-[auto,minmax(360px,0.8fr),minmax(300px,0.7fr)] gap-4">
-          <section className="grid grid-cols-4 gap-4">
-            <KpiCard
-              title="전체 접속횟수"
-              value={formatNumber(summary.totalAccessCount)}
-              description={`${params.from} ~ ${params.to}`}
-              icon={TrendingUp}
-              isLoading={statsQuery.isLoading}
-            />
-            <KpiCard
-              title="접속 사용자"
-              value={formatNumber(summary.uniqueUserCount)}
-              description="knox_id 기준 중복 제거"
-              icon={Users}
-              isLoading={statsQuery.isLoading}
-            />
-            <KpiCard
-              title="접속 앱 수"
-              value={formatNumber(summary.activeAppCount)}
-              description="접속 기록이 있는 앱"
-              icon={Layers3}
-              isLoading={statsQuery.isLoading}
-            />
-            <KpiCard
-              title="최다 접속 앱"
-              value={summary.topApp?.appName || "-"}
-              description={
-                summary.topApp
-                  ? `${formatNumber(summary.topApp.accessCount)}회`
-                  : "접속 기록 없음"
-              }
-              icon={CalendarDays}
-              isLoading={statsQuery.isLoading}
-            />
+        <div className="grid min-h-full min-w-0 grid-cols-4 gap-4">
+          <section className="col-span-3 flex min-h-0 min-w-0 flex-col gap-4">
+            <div className="grid h-24 shrink-0 grid-cols-7 gap-4">
+              <div className="col-span-2 min-w-0">
+                <KpiCard
+                  title="전체 앱 개수"
+                  value={formatNumber(summary.activeAppCount)}
+                  description="접속 기록이 있는 앱"
+                  icon={Layers3}
+                  isLoading={statsQuery.isLoading}
+                />
+              </div>
+              <div className="col-span-2 min-w-0">
+                <KpiCard
+                  title="전체 접속횟수"
+                  value={formatNumber(summary.totalAccessCount)}
+                  description={formatStatsRangeLabel(params)}
+                  icon={TrendingUp}
+                  isLoading={statsQuery.isLoading}
+                />
+              </div>
+              <div className="col-span-2 min-w-0">
+                <KpiCard
+                  title="최다 접속 앱"
+                  value={summary.topApp?.appName || "-"}
+                  description={
+                    summary.topApp
+                      ? `${formatNumber(summary.topApp.accessCount)}회`
+                      : "접속 기록 없음"
+                  }
+                  icon={CalendarDays}
+                  isLoading={statsQuery.isLoading}
+                />
+              </div>
+              <div className="col-span-1 min-w-0">
+                <KpiActionCard
+                  onManualInput={() => setIsManualDialogOpen(true)}
+                  onExternalSync={() => externalSyncMutation.mutate()}
+                  canManualInput={Boolean(user?.is_superuser)}
+                  isSyncing={externalSyncMutation.isPending}
+                  syncLabel={externalSyncLabel}
+                />
+              </div>
+            </div>
+
+            {statsQuery.error ? (
+              <StatePanel
+                icon={AlertTriangle}
+                title="접속 통계를 불러오지 못했습니다."
+                description={statsQuery.error.message || "잠시 후 다시 시도하세요."}
+                action={
+                  <Button type="button" variant="outline" onClick={() => statsQuery.refetch()}>
+                    <RefreshCw className="size-4" />
+                    다시 시도
+                  </Button>
+                }
+              />
+            ) : (
+              <div className="min-h-0 min-w-0 flex-1">
+                <ChartPanel
+                  apps={apps}
+                  chartRows={chartRows}
+                  isLoading={statsQuery.isLoading}
+                  error={statsQuery.error}
+                  period={responsePeriod}
+                  dateOffset={dateOffset}
+                  onDateOffsetChange={setDateOffset}
+                  periodKey={periodKey}
+                  onPeriodChange={setPeriodKey}
+                />
+              </div>
+            )}
           </section>
 
-          {statsQuery.error ? (
-            <StatePanel
-              icon={AlertTriangle}
-              title="접속 통계를 불러오지 못했습니다."
-              description={statsQuery.error.message || "잠시 후 다시 시도하세요."}
-              action={
-                <Button type="button" variant="outline" onClick={() => statsQuery.refetch()}>
-                  <RefreshCw className="size-4" />
-                  다시 시도
-                </Button>
-              }
-            />
-          ) : (
-            <section className="min-h-0 min-w-0">
-              <ChartPanel
-                apps={apps}
-                chartRows={chartRows}
-                isLoading={statsQuery.isLoading}
-                error={statsQuery.error}
-                period={responsePeriod}
-              />
-            </section>
-          )}
-
-          <section className="min-h-0 min-w-0">
+          <section className="col-span-1 min-h-[420px] min-w-0">
             <AppTable apps={apps} isLoading={statsQuery.isLoading} />
           </section>
         </div>

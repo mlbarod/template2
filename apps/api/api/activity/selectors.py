@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from django.db.models import Count, Max, Q, QuerySet, Sum
 from django.db.models.functions import TruncDate
 
-from .models import ActivityLog, ExternalAppAccessDailyStat
+from .models import ActivityLog, ExternalAppAccessDailyStat, ExternalAppUsageSyncState
 
 APP_ACCESS_ACTION = "APP_ACCESS"
 KST = ZoneInfo("Asia/Seoul")
@@ -302,3 +302,22 @@ def summarize_external_app_access_by_date(
         .annotate(access_count=Sum("access_count"))
         .order_by("stat_date", "app_name", "app_id")
     )
+
+
+def get_external_app_usage_sync_state(*, sync_key: str) -> ExternalAppUsageSyncState | None:
+    """외부 앱 사용량 동기화 상태를 조회합니다.
+
+    입력:
+    - sync_key: 동기화 상태 식별자
+
+    반환:
+    - ExternalAppUsageSyncState | None: 저장된 동기화 상태
+
+    부작용:
+    - 없음(읽기 전용)
+
+    오류:
+    - 없음
+    """
+
+    return ExternalAppUsageSyncState.objects.filter(sync_key=sync_key).first()

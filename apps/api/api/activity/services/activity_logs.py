@@ -17,9 +17,10 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from ..models import ActivityLog, ExternalAppAccessDailyStat
+from ..models import ActivityLog, ExternalAppAccessDailyStat, ExternalAppUsageSyncState
 from ..selectors import (
     APP_ACCESS_ACTION,
+    get_external_app_usage_sync_state,
     get_recent_activity_logs,
     summarize_external_app_access_by_app,
     summarize_external_app_access_by_date,
@@ -37,6 +38,9 @@ DEFAULT_STATS_PERIOD = "day"
 ALLOWED_STATS_PERIODS = {"day", "week", "month"}
 MANUAL_SOURCE_TYPE = ExternalAppAccessDailyStat.SOURCE_TYPE_MANUAL
 EXTERNAL_USAGE_SOURCE_TYPE = "external_api"
+EXTERNAL_USAGE_SYNC_KEY = "external_app_usage"
+EXTERNAL_USAGE_SYNC_THROTTLE = timedelta(hours=1)
+EXTERNAL_USAGE_SYNC_LOOKBACK_DAYS = 365
 MANUAL_PASTE_EXPECTED_COLUMNS = ["date", "appName", "accessCount", "uniqueUserCount", "memo"]
 
 HEADER_ALIASES = {
@@ -343,6 +347,155 @@ def _load_external_usage_rows(
         status["skippedRows"] = 0
         return [], status
     return all_rows, status
+
+
+def _get_external_usage_sync_window(now: datetime) -> tuple[date, date]:
+    """수동 동기화 대상 날짜 범위를 계산합니다."""
+
+    today_kst = now.astimezone(KST).date()
+    return today_kst - timedelta(days=EXTERNAL_USAGE_SYNC_LOOKBACK_DAYS), today_kst
+
+
+def _serialize_external_usage_sync_state(state: ExternalAppUsageSyncState | None) -> dict[str, Any]:
+    """외부 API 동기화 상태를 응답 payload 형태로 변환합니다."""
+
+    last_synced_at = state.last_synced_at if state else None
+    last_attempted_at = state.updated_at if state else None
+    next_sync_available_at = (
+        last_attempted_at + EXTERNAL_USAGE_SYNC_THROTTLE if last_attempted_at is not None else None
+    )
+    return {
+        "syncKey": EXTERNAL_USAGE_SYNC_KEY,
+        "lastSyncedAt": _serialize_datetime(last_synced_at),
+        "lastAttemptedAt": _serialize_datetime(last_attempted_at),
+        "nextSyncAvailableAt": _serialize_datetime(next_sync_available_at),
+        "lastStatus": state.last_status if state else "never",
+        "lastError": state.last_error if state else "",
+    }
+
+
+def _is_external_usage_sync_throttled(
+    *,
+    state: ExternalAppUsageSyncState,
+    now: datetime,
+) -> bool:
+    """마지막 동기화 시도 후 1시간이 지나지 않았는지 확인합니다."""
+
+    if state.updated_at is None:
+        return False
+    return now - state.updated_at < EXTERNAL_USAGE_SYNC_THROTTLE
+
+
+def _upsert_external_usage_rows(
+    *,
+    rows: list[dict[str, Any]],
+    user: Any | None,
+) -> dict[str, int]:
+    """외부 API row를 일별 집계 테이블에 저장합니다."""
+
+    created_count = 0
+    updated_count = 0
+    with transaction.atomic():
+        for row in rows:
+            _, created = ExternalAppAccessDailyStat.objects.update_or_create(
+                app_id=_safe_text(row.get("app_id"), "unknown"),
+                stat_date=row["stat_date"],
+                source_name=_safe_text(row.get("source_name"), EXTERNAL_USAGE_SOURCE_TYPE),
+                defaults={
+                    "app_name": _safe_text(row.get("app_name"), _safe_text(row.get("app_id"), "unknown")),
+                    "access_count": int(row.get("access_count") or 0),
+                    "unique_user_count": int(row.get("unique_user_count") or 0),
+                    "source_type": EXTERNAL_USAGE_SOURCE_TYPE,
+                    "memo": "외부 API 수동 동기화",
+                    "raw_payload": {
+                        **row,
+                        "stat_date": _serialize_date(row.get("stat_date")),
+                    },
+                    "updated_by": user if getattr(user, "is_authenticated", False) else None,
+                    "created_by": user if getattr(user, "is_authenticated", False) else None,
+                },
+            )
+            if created:
+                created_count += 1
+            else:
+                updated_count += 1
+    return {"createdRows": created_count, "updatedRows": updated_count}
+
+
+def sync_external_app_usage_stats(
+    *,
+    user: Any | None = None,
+    now: datetime | None = None,
+    bypass_throttle: bool = False,
+) -> dict[str, Any]:
+    """외부 앱 사용량 API를 수동 동기화합니다.
+
+    입력:
+    - user: 동기화 요청 사용자
+    - now: 테스트용 현재 시각
+    - bypass_throttle: 1시간 제한 우회 여부
+
+    반환:
+    - dict[str, Any]: 동기화 결과와 마지막 상태
+
+    부작용:
+    - 외부 API를 호출하고 ExternalAppAccessDailyStat/ExternalAppUsageSyncState를 갱신합니다.
+
+    오류:
+    - 없음. 실패 정보는 payload의 error/status에 담습니다.
+    """
+
+    current = now or timezone.now()
+    with transaction.atomic():
+        state, created = ExternalAppUsageSyncState.objects.select_for_update().get_or_create(
+            sync_key=EXTERNAL_USAGE_SYNC_KEY,
+            defaults={"last_status": "never"},
+        )
+        if not created and not bypass_throttle and _is_external_usage_sync_throttled(state=state, now=current):
+            return {
+                "synced": False,
+                "skipped": True,
+                "reason": "최근 1시간 내 외부 API 동기화 이력이 있습니다.",
+                "syncState": _serialize_external_usage_sync_state(state),
+                "commit": {"createdRows": 0, "updatedRows": 0},
+            }
+        state.last_status = "running"
+        state.last_error = ""
+        state.save(update_fields=["last_status", "last_error", "updated_at"])
+
+    from_date, to_date = _get_external_usage_sync_window(current)
+    rows, status = _load_external_usage_rows(from_date=from_date, to_date=to_date, app_id=None)
+    if status.get("error"):
+        with transaction.atomic():
+            state = ExternalAppUsageSyncState.objects.select_for_update().get(sync_key=EXTERNAL_USAGE_SYNC_KEY)
+            state.last_status = "failed"
+            state.last_error = str(status["error"])
+            state.save(update_fields=["last_status", "last_error", "updated_at"])
+        return {
+            "synced": False,
+            "skipped": False,
+            "reason": str(status["error"]),
+            "syncState": _serialize_external_usage_sync_state(state),
+            "externalUsage": status,
+            "commit": {"createdRows": 0, "updatedRows": 0},
+        }
+
+    commit = _upsert_external_usage_rows(rows=rows, user=user)
+    with transaction.atomic():
+        state = ExternalAppUsageSyncState.objects.select_for_update().get(sync_key=EXTERNAL_USAGE_SYNC_KEY)
+        state.last_synced_at = current
+        state.last_status = "success"
+        state.last_error = ""
+        state.save(update_fields=["last_synced_at", "last_status", "last_error", "updated_at"])
+
+    return {
+        "synced": True,
+        "skipped": False,
+        "reason": "",
+        "syncState": _serialize_external_usage_sync_state(state),
+        "externalUsage": status,
+        "commit": commit,
+    }
 
 
 def _normalize_header(value: Any) -> str:
@@ -825,12 +978,6 @@ def get_app_access_stats_payload(
         end_date=to_date,
         app_id=external_app_id,
     )
-    api_usage_rows, api_usage_status = _load_external_usage_rows(
-        from_date=from_date,
-        to_date=to_date,
-        app_id=external_app_id,
-    )
-
     merged_apps: dict[str, dict[str, Any]] = {}
     for row in app_rows:
         app_key = _safe_text(row.get("metadata__app_id"), "unknown")
@@ -860,19 +1007,6 @@ def get_app_access_stats_payload(
             last_accessed_at=_serialize_kst_date_end(row.get("last_stat_date")),
             source_type=_safe_text(row.get("source_type"), MANUAL_SOURCE_TYPE),
             source_name=_safe_text(row.get("source_name"), MANUAL_SOURCE_TYPE),
-        )
-
-    for row in api_usage_rows:
-        app_key = _safe_text(row.get("app_id"), "unknown")
-        _append_app_summary(
-            merged=merged_apps,
-            app_id=app_key,
-            app_name=_safe_text(row.get("app_name"), app_key),
-            access_count=int(row.get("access_count") or 0),
-            unique_user_count=int(row.get("unique_user_count") or 0),
-            last_accessed_at=_serialize_kst_date_end(row.get("stat_date")),
-            source_type=_safe_text(row.get("source_type"), EXTERNAL_USAGE_SOURCE_TYPE),
-            source_name=_safe_text(row.get("source_name"), EXTERNAL_USAGE_SOURCE_TYPE),
         )
 
     apps = _finalize_app_summaries(merged_apps)
@@ -906,24 +1040,10 @@ def get_app_access_stats_payload(
             source_name=_safe_text(row.get("source_name"), MANUAL_SOURCE_TYPE),
         )
 
-    for row in api_usage_rows:
-        app_key = _safe_text(row.get("app_id"), "unknown")
-        stat_date = row.get("stat_date")
-        bucket_date = _get_period_start(stat_date, period=period) if isinstance(stat_date, date) else None
-        _append_series_summary(
-            merged=merged_series,
-            bucket_date=_serialize_date(bucket_date),
-            app_id=app_key,
-            app_name=_safe_text(row.get("app_name"), app_key),
-            access_count=int(row.get("access_count") or 0),
-            source_type=_safe_text(row.get("source_type"), EXTERNAL_USAGE_SOURCE_TYPE),
-            source_name=_safe_text(row.get("source_name"), EXTERNAL_USAGE_SOURCE_TYPE),
-        )
-
     series = _finalize_series_summaries(merged_series)
 
     top_app = apps[0] if apps else None
-    api_usage_access_count = sum(int(row.get("access_count") or 0) for row in api_usage_rows)
+    sync_state = get_external_app_usage_sync_state(sync_key=EXTERNAL_USAGE_SYNC_KEY)
 
     return {
         "timezone": "Asia/Seoul",
@@ -933,12 +1053,12 @@ def get_app_access_stats_payload(
             "to": to_date.isoformat(),
         },
         "summary": {
-            "totalAccessCount": totals["access_count"] + external_totals["access_count"] + api_usage_access_count,
+            "totalAccessCount": totals["access_count"] + external_totals["access_count"],
             "uniqueUserCount": totals["unique_user_count"] + external_totals["unique_user_count"],
             "activeAppCount": len(apps),
             "topApp": top_app,
         },
-        "externalUsage": api_usage_status,
+        "externalUsage": _serialize_external_usage_sync_state(sync_state),
         "apps": apps,
         "series": series,
     }

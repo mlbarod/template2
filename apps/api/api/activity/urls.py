@@ -11,6 +11,7 @@ from .views import (
     ActivityLogView,
     AppAccessEventView,
     AppAccessStatsView,
+    ExternalAppUsageSyncView,
     ManualAppAccessStatsCommitView,
     ManualAppAccessStatsPreviewView,
 )
@@ -28,5 +29,6 @@ urlpatterns = [
         name="activity-app-access-manual-preview",
     ),
     path("app-access-stats", AppAccessStatsView.as_view(), name="activity-app-access-stats"),
+    path("app-access-sync-external", ExternalAppUsageSyncView.as_view(), name="activity-app-access-sync-external"),
     path("logs", ActivityLogView.as_view(), name="activity-logs"),
 ]

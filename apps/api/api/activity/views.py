@@ -23,6 +23,7 @@ from .services import (
     get_app_access_stats_payload,
     get_recent_activity_payload,
     record_app_access,
+    sync_external_app_usage_stats,
 )
 
 # 조회 건수 관련 상수(한 곳에서 관리)
@@ -151,7 +152,7 @@ class AppAccessEventView(APIView):
 
 
 class AppAccessStatsView(APIView):
-    """슈퍼유저 전용 앱 접속 통계 조회 API입니다."""
+    """인증 사용자용 앱 접속 통계 조회 API입니다."""
 
     permission_classes: list[type] = []
 
@@ -172,15 +173,11 @@ class AppAccessStatsView(APIView):
 
         오류:
         - 401: 인증 실패
-        - 403: 슈퍼유저 아님
         - 400: 날짜 범위 오류
         """
 
         if not request.user.is_authenticated:
             return JsonResponse({"error": "Unauthorized"}, status=401)
-
-        if not request.user.is_superuser:
-            return JsonResponse({"error": "Forbidden"}, status=403)
 
         try:
             payload = get_app_access_stats_payload(
@@ -288,10 +285,43 @@ class ManualAppAccessStatsCommitView(APIView):
         return JsonResponse(payload, status=201)
 
 
+class ExternalAppUsageSyncView(APIView):
+    """인증 사용자용 외부 앱 사용량 수동 동기화 API입니다."""
+
+    permission_classes: list[type] = []
+
+    def post(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """외부 앱 사용량 API를 호출해 일별 집계 테이블에 저장합니다.
+
+        입력:
+        - 없음
+
+        반환:
+        - JsonResponse: 동기화 여부, skip 여부, 저장 건수, 마지막 동기화 상태
+
+        부작용:
+        - 1시간 제한을 통과하면 외부 API를 호출하고 DB row를 upsert합니다.
+
+        오류:
+        - 401: 인증 실패
+        - 일반 사용자는 최근 1시간 내 성공 동기화가 있으면 skip됩니다.
+        """
+
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "Unauthorized"}, status=401)
+
+        payload = sync_external_app_usage_stats(
+            user=request.user,
+            bypass_throttle=bool(request.user.is_superuser),
+        )
+        return JsonResponse(payload, status=200)
+
+
 __all__ = [
     "ActivityLogView",
     "AppAccessEventView",
     "AppAccessStatsView",
+    "ExternalAppUsageSyncView",
     "ManualAppAccessStatsCommitView",
     "ManualAppAccessStatsPreviewView",
 ]

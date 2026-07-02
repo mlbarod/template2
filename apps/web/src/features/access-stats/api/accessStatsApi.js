@@ -34,6 +34,12 @@ export function fetchAppAccessStats({ from, to, appId, period } = {}) {
   return request(`/app-access-stats${query ? `?${query}` : ""}`)
 }
 
+export function syncExternalAppUsageStats() {
+  return request("/app-access-sync-external", {
+    method: "POST",
+  })
+}
+
 export function recordAppAccess({ appId, appName, path }) {
   return request("/app-access", {
     method: "POST",
