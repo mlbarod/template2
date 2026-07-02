@@ -38,7 +38,7 @@ export const portalNavigationItems = [
       { title: "L0 Spider(개발중)", href: "/fdc_trend" },
       { title: "L3 Spider(개발중)", href: "/l3_spider" },
       { title: "PM Spider(개발중)", href: "/pm_spider" },
-      { title: "접속 현황", href: "/access-stats", requireSuperuser: true },
+      { title: "접속 현황", href: "/access-stats" },
       externalLink("PMx", "VITE_PORTAL_PMX_URL"),
     ]),
   },
