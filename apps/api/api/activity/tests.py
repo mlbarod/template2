@@ -509,8 +509,8 @@ class ActivityLogEndpointTests(TestCase):
         self.assertEqual(app_row["accessCount"], 11192)
         self.assertEqual(app_row["uniqueUserCount"], 0)
         self.assertEqual(len(payload["series"]), 3)
-        mock_get.assert_any_call("https://usage.example.test/get/usage", timeout=3)
-        mock_get.assert_any_call("https://other.example.test/get/usage", timeout=3)
+        mock_get.assert_any_call("https://usage.example.test/get/usage", timeout=3, verify=False)
+        mock_get.assert_any_call("https://other.example.test/get/usage", timeout=3, verify=False)
 
     @override_settings(
         EXTERNAL_APP_USAGE_API_URLS='[{"sourceName":"m-etch-dx","url":"https://usage.example.test/get/usage"}]'
@@ -549,8 +549,8 @@ class ActivityLogEndpointTests(TestCase):
         )
     )
     @patch("api.activity.services.activity_logs.requests.get")
-    def test_app_access_stats_excludes_all_external_api_rows_when_one_source_fails(self, mock_get) -> None:
-        """외부 사용량 API source 중 하나라도 실패하면 외부 API 통계를 모두 제외하는지 확인합니다."""
+    def test_app_access_stats_keeps_successful_external_api_rows_when_one_source_fails(self, mock_get) -> None:
+        """외부 사용량 API source 중 일부가 실패해도 성공 row를 유지하는지 확인합니다."""
 
         class FakeResponse:
             """테스트용 외부 사용량 API 응답입니다."""
@@ -582,8 +582,10 @@ class ActivityLogEndpointTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload["summary"]["totalAccessCount"], 1)
-        self.assertEqual(payload["externalUsage"]["rowCount"], 0)
+        self.assertEqual(payload["summary"]["totalAccessCount"], 101)
+        self.assertIsNone(payload["externalUsage"]["error"])
+        self.assertEqual(payload["externalUsage"]["rowCount"], 1)
         self.assertEqual(payload["externalUsage"]["sources"][0]["rowCount"], 1)
         self.assertTrue(payload["externalUsage"]["sources"][1]["error"])
-        self.assertFalse(any(app["appId"] == "AIO" for app in payload["apps"]))
+        app_row = next(app for app in payload["apps"] if app["appId"] == "AIO")
+        self.assertEqual(app_row["accessCount"], 100)

@@ -307,6 +307,7 @@ def _load_external_usage_rows(
 
     all_rows: list[dict[str, Any]] = []
     source_errors = 0
+    source_successes = 0
     for source in sources:
         source_status = {
             "sourceName": source["sourceName"],
@@ -315,7 +316,7 @@ def _load_external_usage_rows(
             "error": None,
         }
         try:
-            response = requests.get(source["url"], timeout=timeout_seconds)
+            response = requests.get(source["url"], timeout=timeout_seconds, verify=False)
             response.raise_for_status()
             rows, skipped_count = _normalize_external_usage_rows(
                 payload=response.json(),
@@ -328,6 +329,7 @@ def _load_external_usage_rows(
             source_status["error"] = f"외부 사용량 API 요청에 실패했습니다: {exc}"
             source_errors += 1
         else:
+            source_successes += 1
             source_status["rowCount"] = len(rows)
             source_status["skippedRows"] = skipped_count
             all_rows.extend(rows)
@@ -335,7 +337,7 @@ def _load_external_usage_rows(
 
     status["rowCount"] = sum(source["rowCount"] for source in status["sources"])
     status["skippedRows"] = sum(source["skippedRows"] for source in status["sources"])
-    if source_errors:
+    if source_errors and not source_successes:
         status["error"] = "외부 사용량 API 요청에 실패해 외부 API 통계를 제외했습니다."
         status["rowCount"] = 0
         status["skippedRows"] = 0
