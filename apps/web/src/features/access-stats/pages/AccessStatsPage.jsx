@@ -247,20 +247,20 @@ function formatDateTick(value, period) {
 }
 
 function buildChartRows(series, apps, range, period) {
-  const topApps = apps.slice(0, 5)
-  const topIds = new Set(topApps.map((app) => app.appId))
+  const chartApps = apps
+  const chartIds = new Set(chartApps.map((app) => app.appId))
   const rows = new Map(
     buildDateKeys(range, period).map((date) => [
       date,
-      Object.fromEntries([["date", date], ...topApps.map((app) => [app.appId, 0])]),
+      Object.fromEntries([["date", date], ...chartApps.map((app) => [app.appId, 0])]),
     ])
   )
 
   series
-    .filter((row) => topIds.has(row.appId))
+    .filter((row) => chartIds.has(row.appId))
     .forEach((row) => {
       if (!rows.has(row.date)) {
-        rows.set(row.date, Object.fromEntries([["date", row.date], ...topApps.map((app) => [app.appId, 0])]))
+        rows.set(row.date, Object.fromEntries([["date", row.date], ...chartApps.map((app) => [app.appId, 0])]))
       }
       rows.get(row.date)[row.appId] = Number(row.accessCount) || 0
     })
@@ -629,7 +629,7 @@ function ChartPanel({
   const [chartView, setChartView] = useState("combined")
   const [chartType, setChartType] = useState("bar")
   const [chartColorByAppId, setChartColorByAppId] = useState({})
-  const chartApps = apps.slice(0, 5)
+  const chartApps = apps
   const visibleChartApps = chartApps.filter((app) => !hiddenAppIds.has(app.appId))
   const getChartColor = (appId, index) => chartColorByAppId[appId] || CHART_COLORS[index % CHART_COLORS.length]
   const getChartBgClass = (appId, index) => {
@@ -930,7 +930,7 @@ function ChartPanel({
                 )}
               </ResponsiveContainer>
             </ChartContainer>
-            <div className="flex w-40 shrink-0 flex-col justify-center gap-2">
+            <div className="flex max-h-full w-40 shrink-0 flex-col gap-2 overflow-y-auto pr-1">
               {chartApps.map((app, index) => {
                 const isHidden = hiddenAppIds.has(app.appId)
                 return (
