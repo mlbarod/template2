@@ -165,11 +165,13 @@ export function L3SpiderDataSelector({
   const lineGroups = meta.lineGroups ?? []
   const hasLineGroups = lineGroups.length > 0
   const lineGroupsForDate = lineGroups.filter((g) => g.lineId in availabilityForDate)
+  // 선택 날짜에 '실제로 존재하는' line_name → process → [eds] (백엔드가 날짜·step_seq·제외필터 반영).
+  // 패널 옵션은 전적으로 이걸로 → 그 날 데이터 없는 조합은 애초에 선택지에 안 뜬다.
+  const lnaForDate = hasLineGroups ? (meta.lineNameAvailability?.[selection.date] ?? {}) : {}
 
   // Line 컬럼에 표시할 항목입니다. 설정이 있으면 LINE_NAME, 없으면 LINE_ID를 사용합니다.
-  // 한 line_name이 여러 line_id에 걸칠 수 있어(override는 line_id 무관) 중복 제거해 하나로 표시.
   const lineItemsForPanel = hasLineGroups
-    ? sortedValues(new Set(lineGroupsForDate.map((g) => g.lineName)))
+    ? sortedValues(Object.keys(lnaForDate))
     : visibleLineIds
 
   // Line 컬럼 패널의 선택값입니다. 모드에 따라 LINE_NAME 또는 LINE_ID가 들어갑니다.
@@ -182,13 +184,11 @@ export function L3SpiderDataSelector({
     visibleLineIds.includes(lineId),
   )
 
-  // 허용 process ID는 lineGroup 설정이 있으면 먼저 제한한 뒤 availability와 교집합을 냅니다.
+  // line_name 모드에서는 선택 날짜에 실제로 존재하는 process만 허용합니다.
   const processIds = sortedValues(
     hasLineGroups
       ? new Set(
-          lineGroupsForDate
-            .filter((g) => (selection.lineNames ?? new Set()).has(g.lineName))
-            .flatMap((g) => g.processIds.filter((pid) => availabilityForDate[g.lineId]?.[pid] != null)),
+          [...(selection.lineNames ?? new Set())].flatMap((name) => Object.keys(lnaForDate[name] ?? {})),
         )
       : new Set(
           selectedVisibleLineIds.flatMap((lineId) => Object.keys(availabilityForDate[lineId] ?? {})),
@@ -198,21 +198,17 @@ export function L3SpiderDataSelector({
   const selectedVisibleProcessIds = sortedValues(selection.processIds).filter((processId) =>
     processIds.includes(processId),
   )
-  // (line_name 모드) 선택된 line_name×process 에서 '실제 존재하는' eds 만 반환.
-  // line_name은 step_seq로 결정되므로(override), (lineId,process)의 모든 eds가 그 line_name에
-  // 있는 게 아니다. procEds(line_name별 유효 eds) ∩ 해당 날짜 availability 로 죽은 옵션을 없앤다.
-  // line_id 모드는 기존대로 availability 사용.
+  // 선택된 line×process 에서 '실제 존재하는' eds 만 반환.
+  // line_name 모드: lnaForDate(백엔드가 날짜·step_seq·제외필터 반영) 직접 사용 → 죽은 옵션 없음.
+  // line_id 모드: 기존대로 availability 사용.
   const edsStepsFor = (lineNamesSet, lineIdList, processList) => {
     const out = new Set()
     if (hasLineGroups) {
-      for (const g of lineGroupsForDate) {
-        if (!lineNamesSet.has(g.lineName)) continue
-        const dateProcEds = availabilityForDate[g.lineId] ?? {}
+      for (const name of lineNamesSet) {
+        const procs = lnaForDate[name]
+        if (!procs) continue
         for (const pid of processList) {
-          const valid = new Set(g.procEds?.[pid] ?? [])
-          for (const eds of dateProcEds[pid] ?? []) {
-            if (valid.has(eds)) out.add(eds)
-          }
+          for (const eds of procs[pid] ?? []) out.add(eds)
         }
       }
     } else {
@@ -243,12 +239,12 @@ export function L3SpiderDataSelector({
     let lineNames, lineIds, allowedProcessIds
     if (hasLineGroups) {
       lineNames = selectedLineItems
+      // 조회용 line_id 는 lineGroups(전역)로 해석 — 행 단위 line_name 필터가 정확성 보장.
       const selectedGroups = lineGroupsForDate.filter((g) => lineNames.has(g.lineName))
       lineIds = new Set(selectedGroups.map((g) => g.lineId))
+      // 선택 가능한 process 는 그 날짜 lnaForDate 기준(그 날 없는 process 배제).
       allowedProcessIds = new Set(
-        selectedGroups.flatMap((g) =>
-          g.processIds.filter((pid) => availabilityForDate[g.lineId]?.[pid] != null),
-        ),
+        [...lineNames].flatMap((name) => Object.keys(lnaForDate[name] ?? {})),
       )
     } else {
       lineNames = new Set()

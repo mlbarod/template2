@@ -54,6 +54,7 @@ with DAG(
     start_date=days_ago(1),
     catchup=False,
     max_active_runs=1,
+    is_paused_upon_creation=False,
     tags=["l3-spider", "mail"],
 ) as dag:
     trigger_l3_spider_mail = PythonOperator(

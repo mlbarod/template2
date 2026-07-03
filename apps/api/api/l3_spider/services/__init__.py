@@ -435,23 +435,50 @@ def _get_raw_file_rows() -> list[dict[str, str]]:
     return rows
 
 
-def _build_line_groups_from_index() -> list[dict]:
-    """file_index의 (line_id, process_id, step_seq) 조합 + _meta/line_name_rules.csv
-    규칙으로 lineGroups(line_name 기준)를 동적 생성합니다.
+def _build_line_groups() -> list[dict]:
+    """[{lineName, lineId, processIds}] — 전체 날짜 기준 line_name→line_id 매핑(TTL 캐시).
 
-    결과는 TTL 캐시에 보관합니다. 규칙 미매칭 조합은 line_id 로 폴백됩니다.
+    Chart 드릴/조회에서 line_name→line_id 해석용. 행 단위 line_name 필터가 정확성을 보장하므로
+    전체 날짜여도 무방(제외 필터와 무관 → 규칙 독립 캐시). 규칙 미매칭 조합은 line_id 로 폴백.
     """
     cached = _line_groups_cache.get(_LINE_GROUPS_KEY)
     if cached is not None:
         return cached
-
     try:
         groups = _build_line_groups_impl()
     except Exception:
         groups = []
-
     _line_groups_cache.set(_LINE_GROUPS_KEY, groups)
     return groups
+
+
+def _build_line_name_availability(rules: list) -> dict:
+    """{date: {lineName: {processId: [edsStep]}}} — '그 날짜에 실제로 존재하는' line_name→process→eds.
+
+    line_name은 step_seq로 갈리므로(override), 어떤 날 그 line_name이 어떤 process·eds를 갖는지는
+    날짜마다 다를 수 있다. 패널이 '그 날 없는 조합'을 선택지로 내놓아 하위가 비는 문제를 없애기
+    위해 날짜별로 내려준다. 제외 필터(rules)의 경로 필드(line_id/process/eds/step_seq)를 적용해,
+    제외된 조합이 패널에 남지 않게 한다(eqc·bin 기준 규칙은 컬럼이 없어 자동 무시).
+    """
+    combos = selectors.query_all_date_line_process_eds_step()
+    if not combos:
+        return {}
+    df = pd.DataFrame(combos, columns=["date", "line_id", "process_id", "eds_step", "step_seq"])
+    df = _apply_exclusion_filters_with_rules(df, rules)
+    if df.empty:
+        return {}
+    lna: dict[str, dict[str, dict[str, set[str]]]] = {}   # date -> lineName -> process -> {eds}
+    for row in df.itertuples(index=False):
+        name = line_name_rules.resolve_line_name(row.line_id, row.process_id, row.step_seq)
+        lna.setdefault(str(row.date), {}).setdefault(name, {}) \
+           .setdefault(str(row.process_id), set()).add(str(row.eds_step))
+    return {
+        date: {
+            name: {p: sorted(es) for p, es in sorted(procs.items())}
+            for name, procs in sorted(names.items())
+        }
+        for date, names in sorted(lna.items())
+    }
 
 
 def _filter_files_by_line_names(files: list, selection: dict[str, object]) -> list:
@@ -485,32 +512,27 @@ def _filter_files_by_line_names(files: list, selection: dict[str, object]) -> li
 
 
 def _build_line_groups_impl() -> list[dict]:
-    # 규칙 기반: file_index의 (line_id, process_id, eds_step, step_seq) 조합을 resolve_line_name으로
-    # line_name에 매핑해 집계합니다(eqc·parquet·Postgres 불필요). step_seq마다 line_name이
-    # 달라질 수 있어(예: EndFab override) 한 (line_id, process)가 여러 line_name에 나타날 수 있고,
-    # 그 line_name이 실제로 존재하는 eds도 step_seq에 따라 갈립니다. 그래서 (line_name, line_id)별로
-    # procEds(process→[eds])를 함께 계산해, 프론트 패널이 '해당 line_name에 없는 eds'를
-    # 선택지로 내놓아 하위가 비는(죽은 옵션) 문제를 없앱니다.
-    combos = selectors.query_all_line_process_eds_step()
+    # 규칙 기반: file_index의 (line_id, process_id, step_seq) 조합을 resolve_line_name으로
+    # line_name에 매핑(eqc·parquet·Postgres 불필요). step_seq마다 line_name이 달라질 수 있어
+    # (override) 한 (line_id, process)가 여러 line_name에 나타날 수 있다. line_name→line_id 해석용.
+    combos = selectors.query_all_date_line_process_eds_step()
     if not combos:
         return []
-
-    # line_name -> line_id -> {process_id -> set(eds_step)}
-    result: dict[str, dict[str, dict[str, set[str]]]] = {}
-    for line_id, process_id, eds_step, step_seq in combos:
+    groups: dict[str, dict[str, dict[str, set[str]]]] = {}   # lineName -> lineId -> process -> {eds}
+    for _date, line_id, process_id, eds_step, step_seq in combos:
         line_name = line_name_rules.resolve_line_name(line_id, process_id, step_seq)
-        result.setdefault(line_name, {}).setdefault(str(line_id), {}) \
-              .setdefault(str(process_id), set()).add(str(eds_step))
-
+        groups.setdefault(line_name, {}).setdefault(str(line_id), {}).setdefault(str(process_id), set()).add(
+            str(eds_step),
+        )
     return [
         {
             "lineName": ln,
             "lineId": lid,
             "processIds": sorted(proc_eds),
-            "procEds": {p: sorted(es) for p, es in sorted(proc_eds.items())},
+            "procEds": {pid: sorted(eds_steps) for pid, eds_steps in sorted(proc_eds.items())},
         }
-        for ln in sorted(result)
-        for lid, proc_eds in sorted(result[ln].items())
+        for ln in sorted(groups)
+        for lid, proc_eds in sorted(groups[ln].items())
     ]
 
 
@@ -564,7 +586,8 @@ def get_meta(*, user: Any | None = None) -> dict[str, object]:
             }
             for date, lines in sorted(availability.items())
         },
-        "lineGroups": _build_line_groups_from_index(),
+        "lineGroups": _build_line_groups(),
+        "lineNameAvailability": _build_line_name_availability(rules),
     }
     _meta_cache.set(rules_hash, result)
     return result
@@ -837,8 +860,8 @@ def _serialize_mail_rule(row, *, user_id: int | None = None) -> dict[str, object
         "timezone": row.timezone,
         "isActive": row.is_active,
         "memo": row.memo,
-        "lastSentAt": row.last_sent_at.strftime("%Y-%m-%d %H:%M") if row.last_sent_at else None,
-        "lastCheckedAt": row.last_checked_at.strftime("%Y-%m-%d %H:%M") if row.last_checked_at else None,
+        "lastSentAt": row.last_sent_at.astimezone(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M") if row.last_sent_at else None,
+        "lastCheckedAt": row.last_checked_at.astimezone(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M") if row.last_checked_at else None,
         "accessLevel": access["accessLevel"],
         "isOwner": access["isOwner"],
         "canWrite": access["canWrite"],
@@ -1156,6 +1179,9 @@ def _collect_mail_rule_events(rule, *, today: str) -> list[dict[str, object]]:
             column: _safe_string(value)
             for column, value in zip(available_group_columns, key_values)
         }
+        event["line_name"] = line_name_rules.resolve_line_name(
+            event.get("line_id", ""), event.get("process_id", ""), event.get("step_seq", "")
+        )
         if "tkin_time" in group.columns:
             tkin = pd.to_datetime(group["tkin_time"], errors="coerce").dropna()
             event["latest_tkin_time"] = tkin.max().strftime("%Y-%m-%d %H:%M:%S") if not tkin.empty else ""
@@ -1272,6 +1298,7 @@ def _build_l3_mail_body(rule, events: list[dict[str, object]]) -> str:
     for event in events[:_MAIL_DIGEST_PREVIEW_LIMIT]:
         cells = [
             event.get("date"),
+            event.get("line_name"),
             event.get("line_id"),
             event.get("process_id"),
             event.get("eds_step"),
@@ -1282,16 +1309,17 @@ def _build_l3_mail_body(rule, events: list[dict[str, object]]) -> str:
             event.get("display_status"),
             event.get("latest_tkin_time"),
         ]
+        td = 'style="padding:5px 14px;white-space:nowrap;"'
         event_url = _build_l3_spider_event_url(target_url, event)
         action_cell = (
-            f'<td><a href="{html.escape(event_url, quote=True)}" '
+            f'<td {td}><a href="{html.escape(event_url, quote=True)}" '
             'target="_blank" rel="noopener noreferrer">열기</a></td>'
             if event_url
-            else "<td></td>"
+            else f"<td {td}></td>"
         )
         rows.append(
             "<tr>"
-            + "".join(f"<td>{html.escape(_safe_string(value))}</td>" for value in cells)
+            + "".join(f"<td {td}>{html.escape(_safe_string(value))}</td>" for value in cells)
             + action_cell
             + "</tr>"
         )
@@ -1310,18 +1338,20 @@ def _build_l3_mail_body(rule, events: list[dict[str, object]]) -> str:
       </a>
     </p>
 """
+    cell_style = "padding:5px 14px;white-space:nowrap;"
+    th_style = cell_style + "background:#f3f4f6;font-weight:600;"
     return f"""
 <html>
-  <body>
+  <body style="font-family:sans-serif;font-size:13px;">
     <h3>L3 Spider 이상감지 알림</h3>
     <p>규칙: {html.escape(rule.name)}</p>
     <p>조건: {html.escape(rule.severity_mode)}</p>
     {action_html}
-    <table border="1" cellspacing="0" cellpadding="4">
+    <table border="1" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border-color:#d1d5db;">
       <thead>
         <tr>
-          <th>Date</th><th>Line</th><th>Process</th><th>EDS Step</th><th>Step</th>
-          <th>PPID</th><th>EQPCH</th><th>Bin</th><th>Status</th><th>Last TKin</th><th>Link</th>
+          <th style="{th_style}">Date</th><th style="{th_style}">Line Name</th><th style="{th_style}">Line ID</th><th style="{th_style}">Process</th><th style="{th_style}">EDS Step</th><th style="{th_style}">Step</th>
+          <th style="{th_style}">PPID</th><th style="{th_style}">EQPCH</th><th style="{th_style}">Bin</th><th style="{th_style}">Status</th><th style="{th_style}">Last TKin</th><th style="{th_style}">Link</th>
         </tr>
       </thead>
       <tbody>
