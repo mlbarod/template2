@@ -83,6 +83,7 @@ export function useL3SpiderFilterCandidates(selection, edsStep, stepSeq, ppid) {
   const key = JSON.stringify({
     date: selection.date,
     lineIds: [...(selection.lineIds ?? [])].sort(),
+    lineNames: [...(selection.lineNames ?? [])].sort(),
     processIds: [...(selection.processIds ?? [])].sort(),
     edsStep,
     stepSeq,
@@ -94,6 +95,7 @@ export function useL3SpiderFilterCandidates(selection, edsStep, stepSeq, ppid) {
       fetchL3SpiderFilterCandidates({
         dates: [selection.date],
         lineIds: [...(selection.lineIds ?? [])],
+        lineNames: [...(selection.lineNames ?? [])],
         processIds: [...(selection.processIds ?? [])],
         edsStep,
         stepSeq,

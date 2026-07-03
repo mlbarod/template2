@@ -31,6 +31,13 @@ class L3SpiderDataRequestSerializer(serializers.Serializer):
     lineIds = serializers.ListField(child=serializers.CharField(), allow_empty=True)
     processIds = serializers.ListField(child=serializers.CharField(), allow_empty=True)
     edsSteps = serializers.ListField(child=serializers.CharField(), allow_empty=True)
+    # line_name(조직 라벨 또는 미분류 폴백 line_id). 경로가 아니라 행 필터용이므로 path 검증 제외.
+    lineNames = serializers.ListField(
+        child=serializers.CharField(),
+        allow_empty=True,
+        required=False,
+        default=list,
+    )
     selectedEqcs = serializers.ListField(
         child=serializers.CharField(),
         allow_empty=True,
@@ -231,6 +238,12 @@ class L3SpiderFilterCandidatesSerializer(serializers.Serializer):
     edsStep = serializers.CharField()
     stepSeq = serializers.CharField()
     ppid = serializers.CharField()
+    lineNames = serializers.ListField(
+        child=serializers.CharField(),
+        allow_empty=True,
+        required=False,
+        default=list,
+    )
 
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         """파일 경로에 직접 반영되는 값을 검증합니다."""

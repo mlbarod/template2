@@ -138,6 +138,7 @@ export function buildSelectionPayload(selection, extra = {}) {
   return {
     dates: selection.date ? [selection.date] : [],
     lineIds: setToPayload(selection.lineIds),
+    lineNames: setToPayload(selection.lineNames ?? new Set()),
     processIds: setToPayload(selection.processIds),
     edsSteps: setToPayload(selection.edsSteps),
     ...extra,

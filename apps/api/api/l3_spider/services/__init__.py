@@ -29,7 +29,7 @@ import numpy as np
 import pandas as pd
 
 from api.common.services import send_knox_mail_api
-from api.l3_spider import selectors
+from api.l3_spider import line_name_rules, selectors
 
 SUMMARY_COLUMNS = ["step_seq", "ppid", "eqp_id", "eqc", "bin_name", "display_status"]
 # 파일명에서 step_seq/ppid 파싱 성공 시 파일에서 읽을 컬럼 (절반으로 감소)
@@ -37,7 +37,7 @@ _SUMMARY_COLUMNS_SLIM = ["eqc", "bin_name", "display_status"]
 _SUMMARY_DEDUP_KEYS = ["step_seq", "ppid", "eqc", "bin_name", "display_status"]
 # daily summary: 카운트 집계용 — dedup 없이 전체 행을 읽습니다.
 _DAILY_SUMMARY_COLUMNS = ["step_seq", "ppid", "eqc", "bin_name", "display_status", "lot_id"]
-_DAILY_SUMMARY_COLUMNS_SLIM = ["eqc", "bin_name", "display_status", "lot_id"]
+_DAILY_SUMMARY_COLUMNS_SLIM = ["step_seq", "eqc", "bin_name", "display_status", "lot_id"]
 _STATS_COLUMNS = ["eqc", "bin_name", "display_status", "tkin_time"]
 MAIL_EVENT_COLUMNS = ["step_seq", "ppid", "eqc", "bin_name", "display_status", "tkin_time"]
 CHART_COLUMNS = [
@@ -170,6 +170,7 @@ def _make_selection_cache_key(selection: dict) -> str:
     return json.dumps({
         "dates": sorted(selection.get("dates") or []),
         "lineIds": sorted(selection.get("lineIds") or []),
+        "lineNames": sorted(selection.get("lineNames") or []),
         "processIds": sorted(selection.get("processIds") or []),
         "edsSteps": sorted(selection.get("edsSteps") or []),
     }, sort_keys=True)
@@ -451,68 +452,43 @@ def _build_line_groups_from_index() -> list[dict]:
     return groups
 
 
+def _filter_files_by_line_names(files: list, selection: dict[str, object]) -> list:
+    """선택된 line_name(들)이 있으면 파일 목록을 line_name 기준으로 필터합니다.
+
+    각 파일의 line_name = resolve(line_id, process_id, step_seq) — 전부 경로/파일명에서 얻으므로
+    parquet를 읽지 않습니다. step_seq가 파일마다 고정이라 파일 단위로 line_name이 하나로 정해집니다.
+    """
+    line_names = {str(v) for v in (selection.get("lineNames") or []) if v}
+    if not line_names:
+        return list(files)
+    root = selectors.get_data_root()
+    filtered: list = []
+    for path in files:
+        parsed = _parse_filename_key(path)
+        if not parsed:
+            continue
+        step_seq, _ppid = parsed
+        parts = path.relative_to(root).parts
+        if len(parts) < 4:
+            continue
+        line_id, process_id = parts[1], parts[2]
+        if line_name_rules.resolve_line_name(line_id, process_id, step_seq) in line_names:
+            filtered.append(path)
+    return filtered
+
+
 def _build_line_groups_impl() -> list[dict]:
-    from api.data_movement.station_master.models import StationMaster
-    from api.drone.models import DroneSopTarget
-
-    # 1. eqp_index → 모든 (line_id, process_id) × eqc 목록 (SQLite 한 번)
-    combo_eqcs = selectors.query_all_eqcs_by_combo()
-    if not combo_eqcs:
+    # 규칙 기반: file_index의 (line_id, process_id, step_seq) 조합을 resolve_line_name으로
+    # line_name에 매핑해 집계합니다(eqc·parquet·Postgres 불필요). step_seq마다 line_name이
+    # 달라질 수 있어(예: EndFab override) 한 process가 여러 line_name에 나타날 수 있습니다.
+    combos = selectors.query_all_line_process_step()
+    if not combos:
         return []
 
-    all_eqcs = {eqc.upper() for eqcs in combo_eqcs.values() for eqc in eqcs}
-
-    # 2. station_master: station_lookup(대문자) → sdwt_prod_lookup
-    eqc_to_sdwt: dict[str, str] = dict(
-        StationMaster.objects
-        .filter(station_lookup__in=all_eqcs)
-        .exclude(sdwt_prod_lookup=None)
-        .values_list("station_lookup", "sdwt_prod_lookup")
-    )
-
-    all_sdwt = {v for v in eqc_to_sdwt.values() if v}
-    if not all_sdwt:
-        return []
-
-    # 3. drone_sop_target: target_user_sdwt_prod → line_id (=LINE_NAME)
-    #    대소문자 혼용 가능 → 대문자로 정규화해 매핑
-    sdwt_to_line_name: dict[str, str] = {
-        t["target_user_sdwt_prod"].upper(): t["line_id"]
-        for t in DroneSopTarget.objects
-        .exclude(line_id="")
-        .exclude(line_id=None)
-        .values("target_user_sdwt_prod", "line_id")
-    }
-
-    # 4. (line_id_path, process_id) × eqc → LINE_NAME 결정
-    #    line_name → {line_id_path → set(process_ids)}
-    #    line_name → {line_id_path → set(eqcs)}  ← 경고 로그용
     result: dict[str, dict[str, set[str]]] = {}
-    result_eqcs: dict[str, dict[str, set[str]]] = {}
-    for (line_id, process_id), eqcs in combo_eqcs.items():
-        for eqc in eqcs:
-            sdwt = eqc_to_sdwt.get(eqc.upper())
-            if not sdwt:
-                continue
-            ln = sdwt_to_line_name.get(sdwt.upper())
-            if not ln:
-                continue
-            result.setdefault(ln, {}).setdefault(line_id, set()).add(process_id)
-            result_eqcs.setdefault(ln, {}).setdefault(line_id, set()).add(eqc)
-
-    # 5. 검증: 동일 LINE_NAME이 여러 lineId에 매핑되면 데이터 혼재 위험 → 경고 로그
-    logger = logging.getLogger(__name__)
-    for ln, line_id_map in result.items():
-        if len(line_id_map) > 1:
-            detail = {
-                lid: sorted(result_eqcs.get(ln, {}).get(lid, []))
-                for lid in sorted(line_id_map)
-            }
-            logger.warning(
-                "L3Spider LINE_NAME 충돌: 동일 LINE_NAME '%s'이 여러 lineId에 매핑됨 — "
-                "서로 다른 폴더 데이터가 합쳐질 수 있습니다. lineId별 원인 eqp: %s",
-                ln, detail,
-            )
+    for line_id, process_id, step_seq in combos:
+        line_name = line_name_rules.resolve_line_name(line_id, process_id, step_seq)
+        result.setdefault(line_name, {}).setdefault(str(line_id), set()).add(str(process_id))
 
     return [
         {"lineName": ln, "lineId": lid, "processIds": sorted(pids)}
@@ -1607,9 +1583,12 @@ def get_structure(selection: dict[str, object], *, user: Any | None = None) -> d
     if cached is not None:
         return cached
 
+    line_names = {str(v) for v in (selection.get("lineNames") or []) if v}
+
+    # 파일명 스캔만으로 처리(parquet 읽기 없음). line_name은 (line_id, process_id, step_seq)로
+    # 파일마다 결정되므로 스캔 중 바로 필터합니다.
     root = selectors.get_data_root()
     file_rows: list[dict[str, str]] = []
-
     try:
         for path in selectors.iter_data_files(selection):
             parsed = _parse_filename_key(path)
@@ -1620,6 +1599,8 @@ def get_structure(selection: dict[str, object], *, user: Any | None = None) -> d
             if len(relative_parts) < 5:
                 continue
             date, line_id, process_id, eds_step = relative_parts[:4]
+            if line_names and line_name_rules.resolve_line_name(line_id, process_id, step_seq) not in line_names:
+                continue
             file_rows.append({
                 "date": date,
                 "line_id": line_id,
@@ -1630,11 +1611,9 @@ def get_structure(selection: dict[str, object], *, user: Any | None = None) -> d
             })
     except (FileNotFoundError, NotADirectoryError) as exc:
         raise L3SpiderServiceError(str(exc), status_code=404) from exc
-
     if not file_rows:
         _structure_cache.set(cache_key, empty)
         return empty
-
     df = pd.DataFrame(file_rows).drop_duplicates()
     # eqc·bin_name 컬럼이 없으므로 해당 필드가 있는 규칙은 자동으로 제외 대상 없음 처리됨
     df = _apply_exclusion_filters_with_rules(df, rules)
@@ -1642,7 +1621,7 @@ def get_structure(selection: dict[str, object], *, user: Any | None = None) -> d
     eds_step_seqs: dict[str, set[str]] = {}
     eds_step_ppids: dict[str, set[str]] = {}
 
-    if not df.empty:
+    if not df.empty and {"eds_step", "step_seq", "ppid"}.issubset(df.columns):
         for _, row in df[["eds_step", "step_seq", "ppid"]].drop_duplicates().iterrows():
             eds_step = str(row["eds_step"])
             step_seq = str(row["step_seq"])
@@ -1677,6 +1656,7 @@ def get_stats(selection: dict[str, object], *, user: Any | None = None) -> dict[
     except (FileNotFoundError, NotADirectoryError) as exc:
         raise L3SpiderServiceError(str(exc), status_code=404) from exc
 
+    files = _filter_files_by_line_names(files, selection)
     frames = _parallel_read(files, _read_stats_file)
     if not frames:
         _stats_cache.set(cache_key, empty)
@@ -1964,6 +1944,18 @@ def get_daily_summary(selection: dict[str, object], *, user: Any | None = None) 
             merged[col] = ""
         merged[col] = merged[col].fillna("").astype(str)
 
+    # line 차원을 규칙 기반 line_name으로 (없으면 line_id 폴백). (line_id, process, step_seq)마다 결정.
+    _name_map = {
+        (lid, pid, sseq): line_name_rules.resolve_line_name(lid, pid, sseq)
+        for lid, pid, sseq in merged[["line_id", "process_id", "step_seq"]]
+        .drop_duplicates()
+        .itertuples(index=False)
+    }
+    merged["line_name"] = [
+        _name_map[(lid, pid, sseq)]
+        for lid, pid, sseq in zip(merged["line_id"], merged["process_id"], merged["step_seq"])
+    ]
+
     status = merged["display_status"].astype(str)
     is_hr = status == "High Risk Chamber"
     is_wn = status == "Warning"
@@ -1971,8 +1963,8 @@ def get_daily_summary(selection: dict[str, object], *, user: Any | None = None) 
     merged["_hr"] = is_hr.astype(int)
     merged["_wn"] = is_wn.astype(int)
 
-    # 모니터링 그룹 = line × process × eds_step × bin_name 조합수
-    group_cols = ["line_id", "process_id", "eds_step", "bin_name"]
+    # 모니터링 그룹 = line_name × process × eds_step × bin_name 조합수
+    group_cols = ["line_name", "process_id", "eds_step", "bin_name"]
     group_keys = merged[group_cols].drop_duplicates()
     anomaly_group_keys = merged.loc[is_anom, group_cols].drop_duplicates()
 
@@ -1980,7 +1972,7 @@ def get_daily_summary(selection: dict[str, object], *, user: Any | None = None) 
         "groups": int(len(group_keys)),
         "binNames": int(merged["bin_name"].nunique()),
         "stepSeqs": int(merged["step_seq"].nunique()),
-        "lines": int(merged["line_id"].nunique()),
+        "lines": int(merged["line_name"].nunique()),
         "processes": int(merged["process_id"].nunique()),
         "edsSteps": int(merged["eds_step"].nunique()),
         "ppids": int(merged["ppid"].nunique()),
@@ -1995,15 +1987,15 @@ def get_daily_summary(selection: dict[str, object], *, user: Any | None = None) 
         "warningEqpchs": int(merged.loc[is_wn, "eqc"].nunique()),
     }
 
-    # ── 매트릭스: line × process × eds_step (모니터링된 조합 = 이상 0도 포함) ──
+    # ── 매트릭스: line_name × process × eds_step (모니터링된 조합 = 이상 0도 포함) ──
     cells: list[dict[str, object]] = []
-    for (line_id, process_id, eds_step), group in merged.groupby(
-        ["line_id", "process_id", "eds_step"], sort=True
+    for (line_name, process_id, eds_step), group in merged.groupby(
+        ["line_name", "process_id", "eds_step"], sort=True
     ):
         hr_c = int(group["_hr"].sum())
         wn_c = int(group["_wn"].sum())
         cells.append({
-            "line": line_id,
+            "line": line_name,
             "process": process_id,
             "edsStep": eds_step,
             "highRisk": hr_c,
@@ -2012,7 +2004,7 @@ def get_daily_summary(selection: dict[str, object], *, user: Any | None = None) 
             "bins": int(group["bin_name"].nunique()),
         })
     matrix = {
-        "lines": sorted(merged["line_id"].unique().tolist()),
+        "lines": sorted(merged["line_name"].unique().tolist()),
         "processes": sorted(merged["process_id"].unique().tolist()),
         "edsSteps": sorted(merged["eds_step"].unique().tolist()),
         "cells": cells,
@@ -2064,6 +2056,8 @@ def get_data(selection: dict[str, object], *, user: Any | None = None) -> dict[s
         raise L3SpiderServiceError(str(exc), status_code=404) from exc
     except NotADirectoryError as exc:
         raise L3SpiderServiceError(str(exc), status_code=400) from exc
+
+    files = _filter_files_by_line_names(files, selection)
 
     # ── 병렬 읽기 ────────────────────────────────────────────────────────────
     raw_frames = _parallel_read(files, functools.partial(_read_chart_file, columns=CHART_COLUMNS))
@@ -2140,6 +2134,8 @@ def get_filter_candidates(selection: dict[str, object], *, user: Any | None = No
         files = list(selectors.iter_filter_candidate_files(dates, line_ids, process_ids, eds_step, step_seq, ppid))
     except (FileNotFoundError, NotADirectoryError) as exc:
         raise L3SpiderServiceError(str(exc), status_code=404) from exc
+
+    files = _filter_files_by_line_names(files, selection)
 
     def _read_candidate_file(path: Path) -> pd.DataFrame | None:
         try:

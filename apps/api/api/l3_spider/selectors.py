@@ -320,63 +320,44 @@ def iter_filter_candidate_files(
                         yield path
 
 
-def query_eqc_for_process(line_id: str, process_id: str) -> list[str]:
-    """(line_id, process_id)에 실제로 존재하는 전체 eqc 목록을 반환합니다.
+def _query_all_line_process_step_legacy() -> list[tuple[str, str, str]]:
+    """인덱스 미사용: 파일명 스캔으로 (line_id, process_id, step_seq) 조합을 수집합니다."""
+    root = get_data_root()
+    if not root.exists():
+        return []
+    combos: set[tuple[str, str, str]] = set()
+    for path in root.glob("*/*/*/*/*"):  # date/line_id/process_id/eds_step/file
+        if not path.is_file():
+            continue
+        parts = path.relative_to(root).parts
+        if len(parts) < 5:
+            continue
+        line_id, process_id = parts[1], parts[2]
+        name = parts[4]
+        step_seq = name.split("#", 1)[0] if "#" in name else ""
+        combos.add((line_id, process_id, step_seq))
+    return sorted(combos)
 
-    eqp_index 테이블(원본 tkin 기반, 이상 감지 여부 무관)을 조회하므로
-    해당 조합의 설비 전체를 빠짐없이 반환합니다.
+
+def query_all_line_process_step() -> list[tuple[str, str, str]]:
+    """file_index의 모든 (line_id, process_id, step_seq) 조합을 반환합니다.
+
+    규칙 기반 line_name 매핑(lineGroups)용. 인덱스가 없거나 조회 실패 시
+    legacy 디렉토리 스캔으로 fallback합니다.
     """
-    if not _get_index_db_path().exists():
-        return []
-    conn = _connect_ro()
-    try:
-        rows = conn.execute(
-            "SELECT DISTINCT eqc FROM eqp_index WHERE line_id = ? AND process_id = ? ORDER BY eqc",
-            (line_id, process_id),
-        ).fetchall()
-    except sqlite3.OperationalError:
-        return []
-    finally:
-        conn.close()
-    return [r[0] for r in rows]
-
-
-def query_all_line_process_combos() -> list[tuple[str, str]]:
-    """eqp_index에 기록된 모든 (line_id, process_id) 조합 목록을 반환합니다."""
-    if not _get_index_db_path().exists():
-        return []
-    conn = _connect_ro()
-    try:
-        rows = conn.execute(
-            "SELECT DISTINCT line_id, process_id FROM eqp_index ORDER BY line_id, process_id"
-        ).fetchall()
-    except sqlite3.OperationalError:
-        return []
-    finally:
-        conn.close()
-    return [(r[0], r[1]) for r in rows]
-
-
-def query_all_eqcs_by_combo() -> dict[tuple[str, str], list[str]]:
-    """eqp_index의 모든 (line_id, process_id) → eqc 목록을 한 번에 조회합니다.
-
-    get_meta()에서 LINE_NAME 결정 시 N번 왕복 없이 한 번에 가져오기 위한 배치 버전.
-    """
-    if not _get_index_db_path().exists():
-        return {}
-    conn = _connect_ro()
-    try:
-        rows = conn.execute(
-            "SELECT DISTINCT line_id, process_id, eqc FROM eqp_index ORDER BY line_id, process_id, eqc"
-        ).fetchall()
-    except sqlite3.OperationalError:
-        return {}
-    finally:
-        conn.close()
-    result: dict[tuple[str, str], list[str]] = {}
-    for line_id, process_id, eqc in rows:
-        result.setdefault((line_id, process_id), []).append(eqc)
-    return result
+    if _get_index_db_path().exists():
+        conn = _connect_ro()
+        try:
+            rows = conn.execute(
+                "SELECT DISTINCT line_id, process_id, step_seq FROM file_index"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            rows = None
+        finally:
+            conn.close()
+        if rows is not None:
+            return [(str(r[0]), str(r[1]), str(r[2])) for r in rows]
+    return _query_all_line_process_step_legacy()
 
 
 def iter_all_data_files_legacy() -> list[Path]:
