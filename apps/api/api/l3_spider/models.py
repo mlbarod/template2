@@ -67,7 +67,6 @@ class L3SpiderMailRule(models.Model):
     ppid = models.CharField(max_length=200, default="*")
     eqpch = models.CharField(max_length=200, default="*")
     bin_name = models.CharField(max_length=200, default="*")
-    date_from = models.DateField(null=True, blank=True)
     date_to = models.DateField(null=True, blank=True)
     severity_mode = models.CharField(
         max_length=32,

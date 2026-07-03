@@ -483,22 +483,32 @@ def _filter_files_by_line_names(files: list, selection: dict[str, object]) -> li
 
 
 def _build_line_groups_impl() -> list[dict]:
-    # 규칙 기반: file_index의 (line_id, process_id, step_seq) 조합을 resolve_line_name으로
+    # 규칙 기반: file_index의 (line_id, process_id, eds_step, step_seq) 조합을 resolve_line_name으로
     # line_name에 매핑해 집계합니다(eqc·parquet·Postgres 불필요). step_seq마다 line_name이
-    # 달라질 수 있어(예: EndFab override) 한 process가 여러 line_name에 나타날 수 있습니다.
-    combos = selectors.query_all_line_process_step()
+    # 달라질 수 있어(예: EndFab override) 한 (line_id, process)가 여러 line_name에 나타날 수 있고,
+    # 그 line_name이 실제로 존재하는 eds도 step_seq에 따라 갈립니다. 그래서 (line_name, line_id)별로
+    # procEds(process→[eds])를 함께 계산해, 프론트 패널이 '해당 line_name에 없는 eds'를
+    # 선택지로 내놓아 하위가 비는(죽은 옵션) 문제를 없앱니다.
+    combos = selectors.query_all_line_process_eds_step()
     if not combos:
         return []
 
-    result: dict[str, dict[str, set[str]]] = {}
-    for line_id, process_id, step_seq in combos:
+    # line_name -> line_id -> {process_id -> set(eds_step)}
+    result: dict[str, dict[str, dict[str, set[str]]]] = {}
+    for line_id, process_id, eds_step, step_seq in combos:
         line_name = line_name_rules.resolve_line_name(line_id, process_id, step_seq)
-        result.setdefault(line_name, {}).setdefault(str(line_id), set()).add(str(process_id))
+        result.setdefault(line_name, {}).setdefault(str(line_id), {}) \
+              .setdefault(str(process_id), set()).add(str(eds_step))
 
     return [
-        {"lineName": ln, "lineId": lid, "processIds": sorted(pids)}
+        {
+            "lineName": ln,
+            "lineId": lid,
+            "processIds": sorted(proc_eds),
+            "procEds": {p: sorted(es) for p, es in sorted(proc_eds.items())},
+        }
         for ln in sorted(result)
-        for lid, pids in sorted(result[ln].items())
+        for lid, proc_eds in sorted(result[ln].items())
     ]
 
 
@@ -616,7 +626,6 @@ def _serialize_exclusion_filter(row) -> dict[str, object]:
         "ppid": row.ppid,
         "eqpch": row.eqpch,
         "binName": row.bin_name,
-        "dateFrom": row.date_from.isoformat() if row.date_from else None,
         "dateTo": row.date_to.isoformat() if row.date_to else None,
         "isActive": row.is_active,
         "memo": row.memo,
@@ -818,7 +827,6 @@ def _serialize_mail_rule(row, *, user_id: int | None = None) -> dict[str, object
         "ppid": row.ppid,
         "eqpch": row.eqpch,
         "binName": row.bin_name,
-        "dateFrom": row.date_from.isoformat() if row.date_from else None,
         "dateTo": row.date_to.isoformat() if row.date_to else None,
         "severityMode": row.severity_mode,
         "receiverEmails": list(row.receiver_emails or []),
@@ -865,7 +873,6 @@ def create_mail_rule(data: dict[str, object], *, user: Any) -> dict[str, int]:
         ppid=data["ppid"],
         eqpch=data["eqpch"],
         bin_name=data["bin_name"],
-        date_from=data.get("date_from"),
         date_to=data.get("date_to"),
         severity_mode=data["severity_mode"],
         receiver_emails=data["receiver_emails"],
@@ -906,7 +913,6 @@ def update_mail_rule(
         "ppid": "ppid",
         "eqpch": "eqpch",
         "bin_name": "bin_name",
-        "date_from": "date_from",
         "date_to": "date_to",
         "severity_mode": "severity_mode",
         "receiver_emails": "receiver_emails",
@@ -1016,7 +1022,6 @@ def _mail_rule_to_pattern_dict(rule) -> dict[str, object]:
         "ppid": rule.ppid,
         "eqpch": rule.eqpch,
         "bin_name": rule.bin_name,
-        "date_from": rule.date_from,
         "date_to": rule.date_to,
     }
 
@@ -1053,16 +1058,6 @@ def _filter_frame_for_mail_rule(merged: pd.DataFrame, rule) -> pd.DataFrame:
             return filtered.iloc[0:0]
         mask = mask & filtered[column].astype(str).apply(lambda v, p=pattern: _matches_pattern(v, p))
 
-    date_from = rule_dict.get("date_from")
-    date_to = rule_dict.get("date_to")
-    if (date_from or date_to) and "date" in filtered.columns:
-        date_col = filtered["date"].astype(str)
-        if date_from:
-            boundary = date_from.isoformat() if hasattr(date_from, "isoformat") else str(date_from)
-            mask = mask & (date_col >= boundary)
-        if date_to:
-            boundary = date_to.isoformat() if hasattr(date_to, "isoformat") else str(date_to)
-            mask = mask & (date_col <= boundary)
     return filtered[mask]
 
 
@@ -1097,14 +1092,9 @@ def _build_mail_event_key(event: dict[str, object]) -> str:
     return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
 
 
-def _resolve_mail_rule_files(rule) -> list[Path]:
-    """rule의 date/scope 필드를 인덱스 쿼리에 내려보내 읽을 파일 수를 줄입니다.
+def _resolve_mail_rule_files(rule, *, today: str) -> list[Path]:
+    """오늘 날짜 파일만 인덱스로 조회합니다. line/process/eds_step이 정확한 값이면 추가 필터링합니다."""
 
-    - date_from/date_to가 있으면 query_indexed_files_by_range로 날짜 범위 pre-filter.
-    - line_id/process_id/eds_step이 정확한 값(와일드카드 없음)이면 추가 filter.
-    - eqpch는 인덱스 컬럼(eqp_ids/chamber_ids)과 구조가 달라 인덱스로 내리지 않음.
-    - 인덱스 없거나 결과가 비면 iter_all_data_files_legacy()로 폴백.
-    """
     def _is_exact(val: Any) -> bool:
         s = str(val) if val is not None else ""
         return bool(s) and s != "*" and "*" not in s and "?" not in s
@@ -1117,31 +1107,18 @@ def _resolve_mail_rule_files(rule) -> list[Path]:
     if _is_exact(rule.eds_step):
         kwargs["eds_step"] = rule.eds_step
 
-    date_from = rule.date_from
-    date_to = rule.date_to
-
-    if date_from or date_to:
-        date_from_str = date_from.isoformat() if date_from else "0000-00-00"
-        date_to_str = date_to.isoformat() if date_to else "9999-99-99"
-        files = selectors.query_indexed_files_by_range(
-            date_from=date_from_str,
-            date_to=date_to_str,
-            **kwargs,
-        )
-        # 인덱스 파일 없으면 빈 리스트 → 전체 스캔 폴백
-        if not files:
-            files = selectors.iter_all_data_files_legacy()
-        return files
-
-    # 날짜 필터 없음 — 기존 iter_all_data_files (인덱스 전체 → legacy 폴백)
-    return selectors.iter_all_data_files()
+    files = selectors.query_indexed_files_by_range(date_from=today, date_to=today, **kwargs)
+    if not files:
+        # 인덱스 없거나 결과 없으면 날짜 디렉터리 직접 스캔
+        files = selectors.iter_date_files(today)
+    return files
 
 
-def _collect_mail_rule_events(rule) -> list[dict[str, object]]:
-    """메일 알림 rule에 매칭되는 이상감지 이벤트 목록을 수집합니다."""
+def _collect_mail_rule_events(rule, *, today: str) -> list[dict[str, object]]:
+    """메일 알림 rule에 매칭되는 오늘 날짜 이상감지 이벤트 목록을 수집합니다."""
 
     try:
-        files = _resolve_mail_rule_files(rule)
+        files = _resolve_mail_rule_files(rule, today=today)
     except FileNotFoundError as exc:
         raise L3SpiderServiceError(str(exc), status_code=404) from exc
     except NotADirectoryError as exc:
@@ -1186,6 +1163,15 @@ def _collect_mail_rule_events(rule) -> list[dict[str, object]]:
     return events
 
 
+def _rule_local_today(rule, *, now: dt_datetime) -> "date":
+    """rule 타임존 기준 오늘 날짜를 반환합니다."""
+    try:
+        tz = ZoneInfo(rule.timezone or "Asia/Seoul")
+    except Exception:
+        tz = ZoneInfo("Asia/Seoul")
+    return now.astimezone(tz).date()
+
+
 def _is_mail_rule_due(rule, *, now: dt_datetime) -> bool:
     """현재 시각 기준으로 rule 발송 시간이 되었는지 판단합니다."""
 
@@ -1194,12 +1180,16 @@ def _is_mail_rule_due(rule, *, now: dt_datetime) -> bool:
     except Exception:
         tz = ZoneInfo("Asia/Seoul")
     local_now = now.astimezone(tz)
+    local_today = local_now.date()
+    # date_to 만료 체크
+    if rule.date_to and local_today > rule.date_to:
+        return False
     if local_now.time().replace(second=0, microsecond=0) < rule.send_time:
         return False
     checked_at = rule.last_checked_at or rule.last_sent_at
     if not checked_at:
         return True
-    return checked_at.astimezone(tz).date() < local_now.date()
+    return checked_at.astimezone(tz).date() < local_today
 
 
 def _mark_mail_rule_checked(rule, *, sent: bool = False) -> None:
@@ -1399,7 +1389,8 @@ def _process_mail_rule(rule, *, now: dt_datetime) -> dict[str, object]:
     if not _is_mail_rule_due(rule, now=now):
         return {"ruleId": rule.id, "status": "not_due", "claimed": 0, "sent": 0}
 
-    events = _collect_mail_rule_events(rule)
+    today = _rule_local_today(rule, now=now).isoformat()
+    events = _collect_mail_rule_events(rule, today=today)
     if not events:
         _mark_mail_rule_checked(rule)
         return {"ruleId": rule.id, "status": "no_events", "claimed": 0, "sent": 0}
@@ -1464,7 +1455,8 @@ def send_mail_rule_test(rule_id: int, *, user: Any) -> dict[str, object]:
     if not rule.receiver_emails:
         raise L3SpiderServiceError("수신자가 없습니다.", status_code=400)
 
-    events = _collect_mail_rule_events(rule)
+    today = _rule_local_today(rule, now=timezone.now()).isoformat()
+    events = _collect_mail_rule_events(rule, today=today)
     if not events:
         return {
             "ruleId": rule.id,
