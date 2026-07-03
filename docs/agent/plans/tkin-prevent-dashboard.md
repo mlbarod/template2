@@ -40,6 +40,7 @@
 - [x] T/K Prevent 전용 PRC group endpoint 추가 및 테스트 보강
 - [x] matrix cell hover comment 표시 추가
 - [x] TIP현황 matrix 행 헤더에 line_id 표시 추가
+- [x] matrix cell key에 line_id 반영
 
 ## 검증
 - [x] `docker compose -f docker-compose.dev.yml exec -T api python manage.py test api.observer --keepdb`
@@ -52,6 +53,9 @@
 - [x] `npm run agent:audit:ui`
 - [x] `npm run web:lint -- --quiet`
 - [x] `npm run web:build`
+- [x] `git diff --check`
+- [x] `docker compose -f docker-compose.dev.yml exec -T api python manage.py test api.observer --keepdb`
+- [x] `npm run agent:audit:api-boundary`
 - [x] `git diff --check`
 - [x] `docker compose -f docker-compose.dev.yml exec -T api python manage.py test api.observer --keepdb`
 - [x] `npm run agent:audit:api-boundary`
@@ -72,6 +76,8 @@
 - 대응: API에서 중복 제거 후 배열로 내려주고 UI에서 줄 단위로 표시한다.
 - 위험: `tkin_restc_lot_count` 명칭과 모델 필드 `tkin_restrc_lot_count` 철자가 다르다.
 - 대응: 현재 모델 필드명 `tkin_restrc_lot_count`를 사용한다.
+- 위험: matrix `id`/`cells` key 변경으로 frontend cell lookup이 깨질 수 있다.
+- 대응: frontend는 backend `columns[].id`와 `rows[].cells[id]`를 함께 사용하므로 같은 응답 내 정합성을 selector 테스트로 검증한다.
 
 ## 진행 기록
 - 2026-06-23: observer 기준정보 API 재사용과 `m_tkin_prevent` matrix 신규 endpoint 추가 방향으로 계획을 작성했다.
@@ -86,3 +92,4 @@
 - 2026-06-29: matrix cell hover 시 `tkin_prevent_comment`를 표시하도록 matrix 응답과 frontend cell tooltip을 확장했다.
 - 2026-06-29: TIP현황 matrix 행 헤더에 실제 `m_tkin_prevent.line_id`를 `EQP ID` 앞에 표시하는 작업을 시작했다.
 - 2026-06-29: `lineId` matrix 응답과 frontend 고정 행 헤더 반영을 완료하고 observer 테스트, boundary/UI audit, web lint, diff check를 통과했다.
+- 2026-07-03: `line_id`만 다른 동일 `eqp_id/ch/ppid` row가 같은 cell로 합쳐지는 원인을 확인하고 matrix key에 `line_id`를 포함하도록 수정했다.

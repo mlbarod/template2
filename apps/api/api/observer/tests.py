@@ -473,26 +473,94 @@ class ObserverEndpointTests(TestCase):
             params,
             ["SD-10", "ETCH", "PROC-1", "10", "LEVEL1", "LEVEL2", "LEVEL3"],
         )
+        first_column_id = "LINE-A::EQP-1::CH-1"
+        second_column_id = "LINE-A::EQP-1::CH-2"
+        self.assertEqual(matrix["columns"][0]["id"], first_column_id)
         self.assertEqual(matrix["columns"][0]["label"], "EQP-1-CH-1")
         self.assertEqual(matrix["columns"][0]["lineId"], "LINE-A")
-        self.assertEqual(matrix["rows"][0]["cells"]["EQP-1-CH-1"][0]["status"], "DOING")
+        self.assertEqual(matrix["rows"][0]["cells"][first_column_id][0]["status"], "DOING")
         self.assertEqual(
-            matrix["rows"][0]["cells"]["EQP-1-CH-1"][0]["comment"],
+            matrix["rows"][0]["cells"][first_column_id][0]["comment"],
             "DOING COMMENT",
         )
         self.assertEqual(
-            matrix["rows"][0]["cells"]["EQP-1-CH-2"][0]["status"],
+            matrix["rows"][0]["cells"][second_column_id][0]["status"],
             "LEVEL2(2/4/10)",
         )
         self.assertEqual(
-            matrix["rows"][0]["cells"]["EQP-1-CH-2"][0]["comment"],
+            matrix["rows"][0]["cells"][second_column_id][0]["comment"],
             "PREVENT COMMENT",
         )
         self.assertIn("prevent.tkin_prevent_comment", query)
         self.assertIn("prevent.process_id = %s", query)
         self.assertIn("prevent.step_seq = %s", query)
+        self.assertIn(
+            (
+                "order by prevent.ppid, prevent.line_id, prevent.eqp_id, "
+                "prevent.tkin_prevent_chamber_id"
+            ),
+            query,
+        )
         self.assertNotIn("upper(trim(prevent.process_id))", query)
         self.assertNotIn("upper(trim(prevent.step_seq))", query)
+
+    def test_tkin_prevent_matrix_separates_columns_by_line_id(self) -> None:
+        with patch(
+            f"{OBSERVER_SELECTORS}._fetch_all",
+            return_value=[
+                {
+                    "ppid": "PPID-A",
+                    "line_id": "LINE-A",
+                    "eqp_id": "EQP-1",
+                    "tkin_prevent_chamber_id": "CH-1",
+                    "tkin_prevent_type": "DOING",
+                    "tkin_prevent_comment": "SAME COMMENT",
+                    "registration_level": None,
+                    "tkin_restrc_lot_count": None,
+                    "tkin_lot_count": None,
+                    "level2_restrc_lot_count": None,
+                },
+                {
+                    "ppid": "PPID-A",
+                    "line_id": "LINE-B",
+                    "eqp_id": "EQP-1",
+                    "tkin_prevent_chamber_id": "CH-1",
+                    "tkin_prevent_type": "DOING",
+                    "tkin_prevent_comment": "SAME COMMENT",
+                    "registration_level": None,
+                    "tkin_restrc_lot_count": None,
+                    "tkin_lot_count": None,
+                    "level2_restrc_lot_count": None,
+                },
+            ],
+        ):
+            matrix = selectors.get_tkin_prevent_matrix(
+                user_sdwt_prod="SD-10",
+                prc_group="ETCH",
+                process_id="proc-1",
+                step_seq="10",
+            )
+
+        first_column_id = "LINE-A::EQP-1::CH-1"
+        second_column_id = "LINE-B::EQP-1::CH-1"
+        self.assertEqual(matrix["totalRows"], 1)
+        self.assertEqual(matrix["totalColumns"], 2)
+        self.assertEqual(
+            [column["id"] for column in matrix["columns"]],
+            [first_column_id, second_column_id],
+        )
+        self.assertEqual(
+            [column["lineId"] for column in matrix["columns"]],
+            ["LINE-A", "LINE-B"],
+        )
+        self.assertEqual(
+            matrix["rows"][0]["cells"][first_column_id][0]["status"],
+            "DOING",
+        )
+        self.assertEqual(
+            matrix["rows"][0]["cells"][second_column_id][0]["status"],
+            "DOING",
+        )
 
     def test_observer_equipment_info_returns_result(self) -> None:
         payload = {

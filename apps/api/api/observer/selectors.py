@@ -660,7 +660,7 @@ def get_tkin_prevent_matrix(
           and prevent.ppid is not null
           and prevent.ppid <> ''
           {_tkin_registration_level_clause()}
-        order by prevent.ppid, prevent.eqp_id, prevent.tkin_prevent_chamber_id
+        order by prevent.ppid, prevent.line_id, prevent.eqp_id, prevent.tkin_prevent_chamber_id
         """,
         [
             *_tkin_scope_params(user_sdwt_prod=user_sdwt_prod, prc_group=prc_group),
@@ -682,7 +682,8 @@ def get_tkin_prevent_matrix(
         if not ppid or not eqp_id:
             continue
 
-        column_id = f"{eqp_id}-{chamber_id}"
+        column_id = f"{line_id}::{eqp_id}::{chamber_id}"
+        column_label = f"{eqp_id}-{chamber_id}"
         columns_by_id.setdefault(
             column_id,
             {
@@ -690,7 +691,7 @@ def get_tkin_prevent_matrix(
                 "lineId": line_id,
                 "eqpId": eqp_id,
                 "chamberId": chamber_id,
-                "label": column_id,
+                "label": column_label,
             },
         )
         matrix_row = rows_by_ppid.setdefault(ppid, {"ppid": ppid, "cells": {}})
