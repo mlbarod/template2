@@ -640,8 +640,8 @@ export function L3SpiderMailRuleSheet() {
                     <TableHead>주기</TableHead>
                     <TableHead>수신자</TableHead>
                     <TableHead>패턴</TableHead>
-                    <TableHead>최근 발송</TableHead>
-                    <TableHead>최근 확인</TableHead>
+                    <TableHead>최근 발송 (KST)</TableHead>
+                    <TableHead>최근 확인 (KST)</TableHead>
                     <TableHead className="w-32 text-right">작업</TableHead>
                   </TableRow>
                 </TableHeader>

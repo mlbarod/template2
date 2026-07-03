@@ -339,44 +339,44 @@ def _query_all_line_process_step_legacy() -> list[tuple[str, str, str]]:
     return sorted(combos)
 
 
-def query_all_line_process_eds_step() -> list[tuple[str, str, str, str]]:
-    """file_index의 모든 (line_id, process_id, eds_step, step_seq) 조합을 반환합니다.
+def query_all_date_line_process_eds_step() -> list[tuple[str, str, str, str, str]]:
+    """file_index의 모든 (date, line_id, process_id, eds_step, step_seq) 조합을 반환합니다.
 
-    lineGroups의 procEds(line_name별 process→유효 eds) 계산용. line_name은 step_seq로
-    결정되므로, 어떤 eds가 특정 line_name에 실제로 존재하는지 알려면 eds+step_seq가 함께 필요합니다.
-    인덱스가 없거나 조회 실패 시 legacy 디렉토리 스캔으로 fallback합니다.
+    날짜별 line_name 가용성(lineNameAvailability) 계산용. line_name은 step_seq로 결정되므로,
+    특정 날짜에 어떤 line_name→process→eds가 '실제로' 존재하는지 알려면 date+eds+step_seq가
+    함께 필요합니다. 인덱스가 없거나 조회 실패 시 legacy 디렉토리 스캔으로 fallback합니다.
     """
     if _get_index_db_path().exists():
         conn = _connect_ro()
         try:
             rows = conn.execute(
-                "SELECT DISTINCT line_id, process_id, eds_step, step_seq FROM file_index"
+                "SELECT DISTINCT date, line_id, process_id, eds_step, step_seq FROM file_index"
             ).fetchall()
         except sqlite3.OperationalError:
             rows = None
         finally:
             conn.close()
         if rows is not None:
-            return [(str(r[0]), str(r[1]), str(r[2]), str(r[3])) for r in rows]
-    return _query_all_line_process_eds_step_legacy()
+            return [(str(r[0]), str(r[1]), str(r[2]), str(r[3]), str(r[4])) for r in rows]
+    return _query_all_date_line_process_eds_step_legacy()
 
 
-def _query_all_line_process_eds_step_legacy() -> list[tuple[str, str, str, str]]:
-    """인덱스 미사용: 파일명 스캔으로 (line_id, process_id, eds_step, step_seq) 조합을 수집합니다."""
+def _query_all_date_line_process_eds_step_legacy() -> list[tuple[str, str, str, str, str]]:
+    """인덱스 미사용: 파일명 스캔으로 (date, line_id, process_id, eds_step, step_seq) 조합 수집."""
     root = get_data_root()
     if not root.exists():
         return []
-    combos: set[tuple[str, str, str, str]] = set()
+    combos: set[tuple[str, str, str, str, str]] = set()
     for path in root.glob("*/*/*/*/*"):  # date/line_id/process_id/eds_step/file
         if not path.is_file():
             continue
         parts = path.relative_to(root).parts
         if len(parts) < 5:
             continue
-        line_id, process_id, eds_step = parts[1], parts[2], parts[3]
+        date, line_id, process_id, eds_step = parts[0], parts[1], parts[2], parts[3]
         name = parts[4]
         step_seq = name.split("#", 1)[0] if "#" in name else ""
-        combos.add((line_id, process_id, eds_step, step_seq))
+        combos.add((date, line_id, process_id, eds_step, step_seq))
     return sorted(combos)
 
 
