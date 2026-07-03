@@ -77,7 +77,7 @@ def query_indexed_files(
 ) -> list[Path]:
     """SQLite 인덱스에서 조건에 맞는 filepath 목록을 조회합니다.
 
-    인덱스 파일이 없으면 빈 리스트를 반환합니다 — 호출부에서 legacy fallback으로 처리하세요.
+    인덱스 파일이 없으면 빈 리스트를 반환합니다 — 호출부에서 기존 방식 폴백으로 처리하세요.
     반환된 Path 리스트는 기존 pd.read_parquet() 에 그대로 넘길 수 있습니다.
     """
     if not _get_index_db_path().exists():
@@ -172,7 +172,7 @@ def query_indexed_files_by_range(
 
 
 def iter_data_files_legacy(selection: dict[str, object]) -> list[Path]:
-    """디렉토리 직접 스캔 방식 (인덱스 미사용) — iter_data_files의 fallback."""
+    """디렉토리 직접 스캔 방식 (인덱스 미사용) — iter_data_files의 폴백."""
     ensure_data_root()
     root = get_data_root()
     root_resolved = root.resolve()
@@ -198,7 +198,7 @@ def iter_data_files(selection: dict[str, object]) -> list[Path]:
     """선택 조건에 해당하는 Parquet 파일 목록을 반환합니다.
 
     (date, line_id, process_id, eds_step) 조합별로 인덱스를 조회하고,
-    결과가 빈 조합만 legacy 디렉토리 스캔으로 fallback합니다.
+    결과가 빈 조합만 기존 디렉토리 스캔으로 폴백합니다.
     """
     files: list[Path] = []
     for date in selection.get("dates", []):
@@ -224,7 +224,7 @@ def iter_data_files(selection: dict[str, object]) -> list[Path]:
 
 
 def iter_date_files_legacy(date: str) -> list[Path]:
-    """특정 날짜 하위의 모든 파일을 디렉토리 스캔합니다 (인덱스 미사용 fallback)."""
+    """특정 날짜 하위의 모든 파일을 디렉토리 스캔합니다 (인덱스 미사용 폴백)."""
     ensure_data_root()
     root = get_data_root()
     root_resolved = root.resolve()
@@ -242,7 +242,7 @@ def iter_date_files_legacy(date: str) -> list[Path]:
 def iter_date_files(date: str) -> list[Path]:
     """특정 날짜의 모든 Parquet 파일을 반환합니다 (line/process/eds 무관 전체).
 
-    인덱스 조회 결과가 비어 있으면 legacy 디렉토리 스캔으로 fallback합니다.
+    인덱스 조회 결과가 비어 있으면 기존 디렉토리 스캔으로 폴백합니다.
     """
     found = query_indexed_files(date=date)
     if found:
@@ -320,67 +320,78 @@ def iter_filter_candidate_files(
                         yield path
 
 
-def query_eqc_for_process(line_id: str, process_id: str) -> list[str]:
-    """(line_id, process_id)에 실제로 존재하는 전체 eqc 목록을 반환합니다.
+def _query_all_line_process_step_legacy() -> list[tuple[str, str, str]]:
+    """인덱스 미사용: 파일명 스캔으로 (line_id, process_id, step_seq) 조합을 수집합니다."""
+    root = get_data_root()
+    if not root.exists():
+        return []
+    combos: set[tuple[str, str, str]] = set()
+    for path in root.glob("*/*/*/*/*"):  # 날짜/line_id/process_id/eds_step/파일
+        if not path.is_file():
+            continue
+        parts = path.relative_to(root).parts
+        if len(parts) < 5:
+            continue
+        line_id, process_id = parts[1], parts[2]
+        name = parts[4]
+        step_seq = name.split("#", 1)[0] if "#" in name else ""
+        combos.add((line_id, process_id, step_seq))
+    return sorted(combos)
 
-    eqp_index 테이블(원본 tkin 기반, 이상 감지 여부 무관)을 조회하므로
-    해당 조합의 설비 전체를 빠짐없이 반환합니다.
+
+def query_date_file_index(date: str) -> list[dict]:
+    """특정 날짜의 file_index 행(파일별 메타 + 상태 카운트)을 반환합니다.
+
+    high_risk_cnt/warning_cnt/normal_cnt 가 있으면 요약을 parquet 없이 집계할 수 있습니다.
+    카운트 컬럼이 없는(구) 인덱스거나 인덱스 자체가 없으면 빈 리스트 → 호출부에서 parquet 폴백.
     """
     if not _get_index_db_path().exists():
         return []
     conn = _connect_ro()
     try:
-        rows = conn.execute(
-            "SELECT DISTINCT eqc FROM eqp_index WHERE line_id = ? AND process_id = ? ORDER BY eqc",
-            (line_id, process_id),
-        ).fetchall()
+        available = {r[1] for r in conn.execute("PRAGMA table_info(file_index)")}
+        if "high_risk_cnt" not in available:
+            return []  # 카운트 컬럼 미존재(구 인덱스) → parquet 폴백
+        wanted = [
+            "filepath", "line_id", "process_id", "eds_step", "step_seq", "ppid",
+            "bin_names", "row_cnt", "high_risk_cnt", "warning_cnt", "normal_cnt",
+            "high_risk_eqcs",  # 있으면 이상 EQPCH까지 인덱스로 집계
+        ]
+        cols = [c for c in wanted if c in available]
+        cursor = conn.execute(
+            f"SELECT {', '.join(cols)} FROM file_index WHERE date = ?", (date,)
+        )
+        columns = [c[0] for c in cursor.description]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
     except sqlite3.OperationalError:
         return []
     finally:
         conn.close()
-    return [r[0] for r in rows]
 
 
-def query_all_line_process_combos() -> list[tuple[str, str]]:
-    """eqp_index에 기록된 모든 (line_id, process_id) 조합 목록을 반환합니다."""
-    if not _get_index_db_path().exists():
-        return []
-    conn = _connect_ro()
-    try:
-        rows = conn.execute(
-            "SELECT DISTINCT line_id, process_id FROM eqp_index ORDER BY line_id, process_id"
-        ).fetchall()
-    except sqlite3.OperationalError:
-        return []
-    finally:
-        conn.close()
-    return [(r[0], r[1]) for r in rows]
+def query_all_line_process_step() -> list[tuple[str, str, str]]:
+    """file_index의 모든 (line_id, process_id, step_seq) 조합을 반환합니다.
 
-
-def query_all_eqcs_by_combo() -> dict[tuple[str, str], list[str]]:
-    """eqp_index의 모든 (line_id, process_id) → eqc 목록을 한 번에 조회합니다.
-
-    get_meta()에서 LINE_NAME 결정 시 N번 왕복 없이 한 번에 가져오기 위한 배치 버전.
+    규칙 기반 line_name 매핑(lineGroups)용. 인덱스가 없거나 조회 실패 시
+    기존 디렉토리 스캔으로 폴백합니다.
     """
-    if not _get_index_db_path().exists():
-        return {}
-    conn = _connect_ro()
-    try:
-        rows = conn.execute(
-            "SELECT DISTINCT line_id, process_id, eqc FROM eqp_index ORDER BY line_id, process_id, eqc"
-        ).fetchall()
-    except sqlite3.OperationalError:
-        return {}
-    finally:
-        conn.close()
-    result: dict[tuple[str, str], list[str]] = {}
-    for line_id, process_id, eqc in rows:
-        result.setdefault((line_id, process_id), []).append(eqc)
-    return result
+    if _get_index_db_path().exists():
+        conn = _connect_ro()
+        try:
+            rows = conn.execute(
+                "SELECT DISTINCT line_id, process_id, step_seq FROM file_index"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            rows = None
+        finally:
+            conn.close()
+        if rows is not None:
+            return [(str(r[0]), str(r[1]), str(r[2])) for r in rows]
+    return _query_all_line_process_step_legacy()
 
 
 def iter_all_data_files_legacy() -> list[Path]:
-    """glob 직접 스캔 방식 (인덱스 미사용) — iter_all_data_files의 fallback."""
+    """glob 직접 스캔 방식 (인덱스 미사용) — iter_all_data_files의 폴백."""
     ensure_data_root()
     root = get_data_root()
     return [path for path in root.glob("*/*/*/*/*") if path.is_file()]
@@ -389,7 +400,7 @@ def iter_all_data_files_legacy() -> list[Path]:
 def iter_all_data_files() -> list[Path]:
     """데이터 루트 아래의 모든 일반 파일 목록을 반환합니다.
 
-    인덱스 조회 결과가 비어 있으면 legacy glob 스캔으로 fallback합니다.
+    인덱스 조회 결과가 비어 있으면 기존 glob 스캔으로 폴백합니다.
     """
     found = query_indexed_files()  # 필터 없음 = 전체
     return found if found else iter_all_data_files_legacy()

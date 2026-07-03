@@ -23,10 +23,23 @@ from .models import (
     L3SpiderMailRule,
     L3SpiderMailRulePermission,
 )
+from .services import line_name_rules
 
 
 class L3SpiderServiceTests(SimpleTestCase):
     """L3 Spider 파일 기반 서비스 동작을 검증합니다."""
+
+    def setUp(self) -> None:
+        """서비스 인메모리 캐시를 초기화합니다."""
+
+        services._meta_cache.clear()
+        services._structure_cache.clear()
+        services._stats_cache.clear()
+        services._daily_summary_cache.clear()
+        services._raw_file_rows_cache.clear()
+        services._line_groups_cache.clear()
+        line_name_rules._cache["mtime"] = None
+        line_name_rules._cache["rules"] = None
 
     def _columnar_rows(self, data: dict[str, object]) -> list[dict[str, object]]:
         """columnar 응답을 테스트 검증용 row 목록으로 변환합니다."""
@@ -108,6 +121,52 @@ class L3SpiderServiceTests(SimpleTestCase):
         )
         frame.to_parquet(target / "S1#PPID_A#0", engine="pyarrow")
 
+    def _write_line_name_sample(self, root: Path) -> None:
+        """line_name 필터 검증용 다중 라인 샘플을 생성합니다."""
+
+        rows = [
+            (
+                root / "2025-01-15" / "L1" / "P1" / "EDS_M" / "S1#PPID_A#0",
+                "EQC_A",
+                "High Risk Chamber",
+            ),
+            (
+                root / "2025-01-15" / "L2" / "P2" / "EDS_M" / "S1#PPID_A#0",
+                "EQC_B",
+                "High Risk Chamber",
+            ),
+        ]
+        for path, eqc, status in rows:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            frame = pd.DataFrame(
+                [
+                    {
+                        "tkin_time": pd.Timestamp("2025-01-15 00:00:00"),
+                        "root_lot_id": "ROOT",
+                        "lot_id": "LOT",
+                        "wafer_id": "W01",
+                        "eqc": eqc,
+                        "bin_name": "BIN_A",
+                        "bin_value": 1.2,
+                        "prop_over_50": 0.7,
+                        "lsl": 0.0,
+                        "usl": 2.0,
+                        "display_status": status,
+                        "comment": None,
+                    }
+                ]
+            )
+            frame.to_parquet(path, engine="pyarrow")
+
+    def _write_line_name_rules(self, root: Path, body: str) -> None:
+        """line_name 규칙 CSV를 생성합니다."""
+
+        meta_dir = root / "_meta"
+        meta_dir.mkdir(parents=True, exist_ok=True)
+        (meta_dir / "line_name_rules.csv").write_text(body, encoding="utf-8")
+        line_name_rules._cache["mtime"] = None
+        line_name_rules._cache["rules"] = None
+
     def test_meta_summary_and_data_use_camel_case_contract(self) -> None:
         """메타/요약/데이터 응답이 camelCase 계약을 따르는지 확인합니다."""
 
@@ -181,6 +240,106 @@ class L3SpiderServiceTests(SimpleTestCase):
         self.assertEqual(summary["edsStepPpids"], {"EDS_M|||S1": ["PPID_A"]})
         self.assertEqual(rows[0]["stepSeq"], "S1")
         self.assertEqual(rows[0]["ppid"], "PPID_A")
+
+    def test_line_name_rules_fall_back_to_line_id_without_csv(self) -> None:
+        """line_name 규칙 CSV가 없으면 line_id로 폴백해야 합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with override_settings(L3_SPIDER_DATA_ROOT=str(root)):
+                result = line_name_rules.resolve_line_name("L1", "P1", "S1")
+
+        self.assertEqual(result, "L1")
+
+    def test_line_name_rules_apply_exact_override_and_wildcards(self) -> None:
+        """line_name 규칙의 exact/override/wildcard 우선순위를 검증합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_line_name_rules(
+                root,
+                "\n".join(
+                    [
+                        "type,line_id,process_id,step_seq,line_name",
+                        "base,L1,P1,,BaseName",
+                        "base,L%,P%,,WildBase",
+                        "override,,P1,S2,OverrideName",
+                        "override,,P%,S3,WildOverride",
+                    ]
+                ),
+            )
+
+            with override_settings(L3_SPIDER_DATA_ROOT=str(root)):
+                base = line_name_rules.resolve_line_name("L1", "P1", "S1")
+                override = line_name_rules.resolve_line_name("L1", "P1", "S2")
+                wild_override = line_name_rules.resolve_line_name("L9", "P9", "S3")
+                wild_base = line_name_rules.resolve_line_name("L9", "P9", "S9")
+
+        self.assertEqual(base, "BaseName")
+        self.assertEqual(override, "OverrideName")
+        self.assertEqual(wild_override, "WildOverride")
+        self.assertEqual(wild_base, "WildBase")
+
+    def test_line_name_groups_and_filters_use_rules_csv(self) -> None:
+        """lineGroups와 데이터 조회가 line_name 규칙 CSV를 기준으로 동작해야 합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_line_name_sample(root)
+            self._write_line_name_rules(
+                root,
+                "\n".join(
+                    [
+                        "type,line_id,process_id,step_seq,line_name",
+                        "base,L1,P1,,FabA",
+                        "base,L2,P2,,FabB",
+                    ]
+                ),
+            )
+            selection = {
+                "dates": ["2025-01-15"],
+                "lineIds": ["L1", "L2"],
+                "lineNames": ["FabA"],
+                "processIds": ["P1", "P2"],
+                "edsSteps": ["EDS_M"],
+                "selectedEqcs": ["EQC_A", "EQC_B"],
+                "selectedStepBins": [],
+                "selectedPpidBins": [],
+                "selectedSteps": ["S1"],
+                "checkedPpids": ["PPID_A"],
+                "checkedBins": ["BIN_A"],
+            }
+            filter_selection = {
+                "dates": ["2025-01-15"],
+                "lineIds": ["L1", "L2"],
+                "lineNames": ["FabA"],
+                "processIds": ["P1", "P2"],
+                "edsStep": "EDS_M",
+                "stepSeq": "S1",
+                "ppid": "PPID_A",
+            }
+
+            with override_settings(L3_SPIDER_DATA_ROOT=str(root)), patch.object(
+                services,
+                "_get_exclusion_rules",
+                return_value=[],
+            ):
+                meta = services.get_meta()
+                stats = services.get_stats(selection)
+                data = services.get_data(selection)
+                candidates = services.get_filter_candidates(filter_selection)
+                rows = self._columnar_rows(data)
+
+        self.assertEqual(
+            meta["lineGroups"],
+            [
+                {"lineName": "FabA", "lineId": "L1", "processIds": ["P1"]},
+                {"lineName": "FabB", "lineId": "L2", "processIds": ["P2"]},
+            ],
+        )
+        self.assertEqual(stats["stats"]["total"], 1)
+        self.assertEqual([row["eqc"] for row in rows], ["EQC_A"])
+        self.assertEqual(candidates["eqcHighRiskBins"], {"EQC_A": ["BIN_A"]})
 
 
 class L3SpiderExclusionFilterOwnershipTests(TestCase):
