@@ -161,25 +161,28 @@ export function L3SpiderDataSelector({
   const availabilityForDate = selection.date ? meta.availability?.[selection.date] ?? {} : {}
   const visibleLineIds = sortedValues(Object.keys(availabilityForDate))
 
-  // LINE_NAME mode: lineGroups maps lineName → (lineId, processIds[])
+  // LINE_NAME 모드에서는 lineGroups가 lineName을 (lineId, processIds[])로 매핑합니다.
   const lineGroups = meta.lineGroups ?? []
   const hasLineGroups = lineGroups.length > 0
   const lineGroupsForDate = lineGroups.filter((g) => g.lineId in availabilityForDate)
 
-  // Items shown in the Line column (LINE_NAMEs when configured, LINE_IDs otherwise)
-  const lineItemsForPanel = hasLineGroups ? lineGroupsForDate.map((g) => g.lineName) : visibleLineIds
+  // Line 컬럼에 표시할 항목입니다. 설정이 있으면 LINE_NAME, 없으면 LINE_ID를 사용합니다.
+  // 한 line_name이 여러 line_id에 걸칠 수 있어(override는 line_id 무관) 중복 제거해 하나로 표시.
+  const lineItemsForPanel = hasLineGroups
+    ? sortedValues(new Set(lineGroupsForDate.map((g) => g.lineName)))
+    : visibleLineIds
 
-  // Selected items in Line column panel (LINE_NAMEs or LINE_IDs depending on mode)
+  // Line 컬럼 패널의 선택값입니다. 모드에 따라 LINE_NAME 또는 LINE_ID가 들어갑니다.
   const selectedLineItemsForPanel = hasLineGroups
     ? (selection.lineNames ?? new Set())
     : selection.lineIds
 
-  // Needed for edsStep computation below (always LINE_IDs)
+  // 아래 edsStep 계산에는 항상 LINE_ID가 필요합니다.
   const selectedVisibleLineIds = sortedValues(selection.lineIds).filter((lineId) =>
     visibleLineIds.includes(lineId),
   )
 
-  // Allowed process IDs: restricted by lineGroup config (if active), then intersected with availability
+  // 허용 process ID는 lineGroup 설정이 있으면 먼저 제한한 뒤 availability와 교집합을 냅니다.
   const processIds = sortedValues(
     hasLineGroups
       ? new Set(
@@ -195,14 +198,34 @@ export function L3SpiderDataSelector({
   const selectedVisibleProcessIds = sortedValues(selection.processIds).filter((processId) =>
     processIds.includes(processId),
   )
+  // (line_name 모드) 선택된 line_name×process 에서 '실제 존재하는' eds 만 반환.
+  // line_name은 step_seq로 결정되므로(override), (lineId,process)의 모든 eds가 그 line_name에
+  // 있는 게 아니다. procEds(line_name별 유효 eds) ∩ 해당 날짜 availability 로 죽은 옵션을 없앤다.
+  // line_id 모드는 기존대로 availability 사용.
+  const edsStepsFor = (lineNamesSet, lineIdList, processList) => {
+    const out = new Set()
+    if (hasLineGroups) {
+      for (const g of lineGroupsForDate) {
+        if (!lineNamesSet.has(g.lineName)) continue
+        const dateProcEds = availabilityForDate[g.lineId] ?? {}
+        for (const pid of processList) {
+          const valid = new Set(g.procEds?.[pid] ?? [])
+          for (const eds of dateProcEds[pid] ?? []) {
+            if (valid.has(eds)) out.add(eds)
+          }
+        }
+      }
+    } else {
+      for (const lineId of lineIdList) {
+        for (const pid of processList) {
+          for (const eds of availabilityForDate[lineId]?.[pid] ?? []) out.add(eds)
+        }
+      }
+    }
+    return out
+  }
   const edsSteps = sortedValues(
-    new Set(
-      selectedVisibleLineIds.flatMap((lineId) =>
-        selectedVisibleProcessIds.flatMap(
-          (processId) => availabilityForDate[lineId]?.[processId] ?? [],
-        ),
-      ),
-    ),
+    edsStepsFor(selection.lineNames ?? new Set(), selectedVisibleLineIds, selectedVisibleProcessIds),
   )
   const hasDate = Boolean(selection.date && meta.dates?.includes(selection.date))
   const canFetch =
@@ -237,31 +260,19 @@ export function L3SpiderDataSelector({
     const nextProcessIds = new Set(
       sortedValues(selection.processIds).filter((pid) => allowedProcessIds.has(pid)),
     )
+    const validEds = edsStepsFor(lineNames, sortedValues(lineIds), sortedValues(nextProcessIds))
     const nextEdsSteps = new Set(
-      sortedValues(selection.edsSteps).filter((edsStep) =>
-        sortedValues(lineIds)
-          .flatMap((lineId) =>
-            sortedValues(nextProcessIds).flatMap((pid) => availabilityForDate[lineId]?.[pid] ?? []),
-          )
-          .includes(edsStep),
-      ),
+      sortedValues(selection.edsSteps).filter((edsStep) => validEds.has(edsStep)),
     )
     onSelectionChange({ ...selection, lineNames, lineIds, processIds: nextProcessIds, edsSteps: nextEdsSteps })
   }
 
   const changeProcesses = (processIdsNext) => {
+    const validEds = edsStepsFor(
+      selection.lineNames ?? new Set(), selectedVisibleLineIds, sortedValues(processIdsNext),
+    )
     const nextEdsSteps = new Set(
-      sortedValues(selection.edsSteps).filter((edsStep) =>
-        sortedValues(
-          new Set(
-            selectedVisibleLineIds.flatMap((lineId) =>
-              sortedValues(processIdsNext).flatMap(
-                (processId) => availabilityForDate[lineId]?.[processId] ?? [],
-              ),
-            ),
-          ),
-        ).includes(edsStep),
-      ),
+      sortedValues(selection.edsSteps).filter((edsStep) => validEds.has(edsStep)),
     )
     onSelectionChange({ ...selection, processIds: processIdsNext, edsSteps: nextEdsSteps })
   }

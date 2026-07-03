@@ -333,8 +333,8 @@ class L3SpiderServiceTests(SimpleTestCase):
         self.assertEqual(
             meta["lineGroups"],
             [
-                {"lineName": "FabA", "lineId": "L1", "processIds": ["P1"]},
-                {"lineName": "FabB", "lineId": "L2", "processIds": ["P2"]},
+                {"lineName": "FabA", "lineId": "L1", "processIds": ["P1"], "procEds": {"P1": ["EDS_M"]}},
+                {"lineName": "FabB", "lineId": "L2", "processIds": ["P2"], "procEds": {"P2": ["EDS_M"]}},
             ],
         )
         self.assertEqual(stats["stats"]["total"], 1)
@@ -495,15 +495,15 @@ class L3SpiderMailRuleTests(TestCase):
             created_by=user,
         )
 
-    def _write_mail_sample(self, root: Path) -> None:
+    def _write_mail_sample(self, root: Path, *, date: str = "2025-01-15") -> None:
         """메일 발송 후보 이벤트용 Parquet 파일을 생성합니다."""
 
-        target = root / "2025-01-15" / "L1" / "P1" / "EDS_M"
+        target = root / date / "L1" / "P1" / "EDS_M"
         target.mkdir(parents=True)
         frame = pd.DataFrame(
             [
                 {
-                    "tkin_time": pd.Timestamp("2025-01-15 00:00:00"),
+                    "tkin_time": pd.Timestamp(f"{date} 00:00:00"),
                     "step_seq": "S1",
                     "ppid": "PPID_A",
                     "eqc": "EQC_A",
@@ -511,7 +511,7 @@ class L3SpiderMailRuleTests(TestCase):
                     "display_status": "High Risk Chamber",
                 },
                 {
-                    "tkin_time": pd.Timestamp("2025-01-15 01:00:00"),
+                    "tkin_time": pd.Timestamp(f"{date} 01:00:00"),
                     "step_seq": "S1",
                     "ppid": "PPID_A",
                     "eqc": "EQC_B",
@@ -649,9 +649,10 @@ class L3SpiderMailRuleTests(TestCase):
         """테스트 발송은 정기 발송 이력을 소모하지 않고 메일만 전송해야 합니다."""
 
         rule = self._create_rule(user=self.owner, eqpch="EQC_A")
+        today = services._rule_local_today(rule, now=services.timezone.now()).isoformat()
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            self._write_mail_sample(root)
+            self._write_mail_sample(root, date=today)
 
             with override_settings(
                 L3_SPIDER_DATA_ROOT=str(root),
@@ -694,9 +695,10 @@ class L3SpiderMailRuleTests(TestCase):
         """due rule은 High Risk 이벤트를 한 번만 발송 이력으로 남겨야 합니다."""
 
         rule = self._create_rule(user=self.owner, eqpch="EQC_A")
+        today = services._rule_local_today(rule, now=services.timezone.now()).isoformat()
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            self._write_mail_sample(root)
+            self._write_mail_sample(root, date=today)
 
             with override_settings(
                 L3_SPIDER_DATA_ROOT=str(root),
@@ -717,7 +719,7 @@ class L3SpiderMailRuleTests(TestCase):
             mock_send.call_args.kwargs["html_content"],
         )
         html_content = mock_send.call_args.kwargs["html_content"]
-        self.assertIn("date=2025-01-15", html_content)
+        self.assertIn(f"date={today}", html_content)
         self.assertIn("lineId=L1", html_content)
         self.assertIn("processId=P1", html_content)
         self.assertIn("edsStep=EDS_M", html_content)

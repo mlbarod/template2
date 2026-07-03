@@ -48,7 +48,6 @@ const EMPTY_EDIT = {
   ppid: "*",
   eqpch: "*",
   binName: "*",
-  dateFrom: "",
   dateTo: "",
   memo: "",
 }
@@ -103,7 +102,6 @@ function rowToEdit(row) {
     ppid: row.ppid ?? "*",
     eqpch: row.eqpch ?? "*",
     binName: row.binName ?? "*",
-    dateFrom: row.dateFrom ?? "",
     dateTo: row.dateTo ?? "",
     memo: row.memo ?? "",
   }
@@ -118,7 +116,6 @@ function editToPayload(edit) {
     send_time: edit.sendTime || "09:00",
     timezone: "Asia/Seoul",
     is_active: edit.isActive,
-    date_from: edit.dateFrom || null,
     date_to: edit.dateTo || null,
     memo: edit.memo || "",
   }
@@ -133,7 +130,7 @@ function PatternSummary({ row }) {
     .map(({ key, label }) => ({ label, value: row[key] ?? "*" }))
     .filter((item) => item.value !== "*")
 
-  if (!activePatterns.length && !row.dateFrom && !row.dateTo) {
+  if (!activePatterns.length && !row.dateTo) {
     return <span className="text-xs text-muted-foreground">전체</span>
   }
 
@@ -149,9 +146,9 @@ function PatternSummary({ row }) {
           +{activePatterns.length - 5}
         </Badge>
       )}
-      {(row.dateFrom || row.dateTo) && (
+      {row.dateTo && (
         <Badge variant="outline" className="rounded px-1.5 py-0 text-[10px]">
-          {row.dateFrom || "*"} ~ {row.dateTo || "*"}
+          ~ {row.dateTo}
         </Badge>
       )}
     </div>
@@ -253,17 +250,7 @@ function RuleFormDialog({ editTarget, isSaving, error, onClose, onSave }) {
                 </div>
               ))}
               <div className="grid gap-1.5">
-                <Label htmlFor="l3-mail-rule-date-from">날짜 시작</Label>
-                <Input
-                  id="l3-mail-rule-date-from"
-                  type="date"
-                  value={edit.dateFrom}
-                  onChange={(event) => set("dateFrom", event.target.value)}
-                  disabled={isSaving}
-                />
-              </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="l3-mail-rule-date-to">날짜 종료</Label>
+                <Label htmlFor="l3-mail-rule-date-to">발송 종료일</Label>
                 <Input
                   id="l3-mail-rule-date-to"
                   type="date"

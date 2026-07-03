@@ -119,7 +119,6 @@ class L3SpiderMailRuleSerializer(serializers.Serializer):
     ppid = serializers.CharField(max_length=200, default="*")
     eqpch = serializers.CharField(max_length=200, default="*")
     bin_name = serializers.CharField(max_length=200, default="*")
-    date_from = serializers.DateField(required=False, allow_null=True, default=None)
     date_to = serializers.DateField(required=False, allow_null=True, default=None)
     severity_mode = serializers.ChoiceField(
         choices=L3SpiderMailRule.SeverityModes.choices,
@@ -170,11 +169,6 @@ class L3SpiderMailRuleSerializer(serializers.Serializer):
             raise serializers.ValidationError({"receiver_emails": "수신자가 필요합니다."})
         if "receiver_emails" in attrs and not receiver_emails:
             raise serializers.ValidationError({"receiver_emails": "수신자가 필요합니다."})
-
-        date_from = attrs.get("date_from")
-        date_to = attrs.get("date_to")
-        if date_from and date_to and date_from > date_to:
-            raise serializers.ValidationError({"date_to": "종료일은 시작일 이후여야 합니다."})
 
         timezone_value = str(attrs.get("timezone") or "").strip()
         if timezone_value and timezone_value != "Asia/Seoul":
