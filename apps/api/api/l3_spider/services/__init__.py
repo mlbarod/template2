@@ -434,10 +434,10 @@ def _get_raw_file_rows() -> list[dict[str, str]]:
 
 
 def _build_line_groups_from_index() -> list[dict]:
-    """eqp_index + station_master + drone_sop_target 조인으로 lineGroups를 동적 생성합니다.
+    """file_index의 (line_id, process_id, step_seq) 조합 + _meta/line_name_rules.csv
+    규칙으로 lineGroups(line_name 기준)를 동적 생성합니다.
 
-    결과는 TTL 캐시에 보관합니다. station_master/drone_sop_target가 비어있으면
-    빈 리스트를 반환하며, 프론트엔드는 LINE_ID 표시로 자동 fallback합니다.
+    결과는 TTL 캐시에 보관합니다. 규칙 미매칭 조합은 line_id 로 폴백됩니다.
     """
     cached = _line_groups_cache.get(_LINE_GROUPS_KEY)
     if cached is not None:
@@ -456,7 +456,11 @@ def _filter_files_by_line_names(files: list, selection: dict[str, object]) -> li
     """선택된 line_name(들)이 있으면 파일 목록을 line_name 기준으로 필터합니다.
 
     각 파일의 line_name = resolve(line_id, process_id, step_seq) — 전부 경로/파일명에서 얻으므로
-    parquet를 읽지 않습니다. step_seq가 파일마다 고정이라 파일 단위로 line_name이 하나로 정해집니다.
+    parquet를 읽지 않습니다.
+
+    계약: daily_anomaly 파일명은 항상 {step_seq}#{ppid}#{index} 형식이라 step_seq가 파일명에
+    반드시 존재합니다(알고리즘 서버 보장). 따라서 파일 단위로 line_name이 하나로 정해집니다.
+    파일명에서 step_seq를 못 읽으면 계약 위반이므로, 조용히 유실하지 않고 경고 후 제외합니다.
     """
     line_names = {str(v) for v in (selection.get("lineNames") or []) if v}
     if not line_names:
@@ -466,6 +470,7 @@ def _filter_files_by_line_names(files: list, selection: dict[str, object]) -> li
     for path in files:
         parsed = _parse_filename_key(path)
         if not parsed:
+            print(f"[WARN] L3 Spider lineNames 필터: step_seq 없는 파일명(계약 위반) 제외: {path}")
             continue
         step_seq, _ppid = parsed
         parts = path.relative_to(root).parts
@@ -1593,6 +1598,8 @@ def get_structure(selection: dict[str, object], *, user: Any | None = None) -> d
         for path in selectors.iter_data_files(selection):
             parsed = _parse_filename_key(path)
             if not parsed:
+                # 계약상 daily_anomaly 파일명엔 step_seq가 항상 있음. structure는 파일명 스캔만
+                # 하므로(parquet 미읽음) step_seq를 못 읽는 파일은 다룰 수 없어 제외.
                 continue
             step_seq, ppid = parsed
             relative_parts = path.relative_to(root).parts
@@ -1872,8 +1879,170 @@ def _empty_daily_summary() -> dict[str, object]:
     }
 
 
+def _parse_json_list(value: object) -> list[str]:
+    if not value:
+        return []
+    if isinstance(value, list):
+        return [str(x) for x in value]
+    try:
+        parsed = json.loads(value)
+        return [str(x) for x in parsed] if isinstance(parsed, list) else []
+    except Exception:
+        return []
+
+
+def _daily_file_df_from_index(index_rows: list[dict], date: str, root: Path) -> tuple[pd.DataFrame, list[Path]]:
+    """file_index 행 → 파일별 집계 프레임(카운트 있는 파일) + 카운트 NULL 파일 경로 목록."""
+    counted: list[dict] = []
+    uncounted_paths: list[Path] = []
+    for r in index_rows:
+        if r.get("high_risk_cnt") is None:  # 구 데이터 → parquet 폴백 대상
+            uncounted_paths.append(
+                root / date / str(r.get("line_id")) / str(r.get("process_id"))
+                / str(r.get("eds_step")) / Path(str(r.get("filepath"))).name
+            )
+            continue
+        counted.append({
+            "line_id": str(r.get("line_id") or ""),
+            "process_id": str(r.get("process_id") or ""),
+            "eds_step": str(r.get("eds_step") or ""),
+            "step_seq": str(r.get("step_seq") or ""),
+            "ppid": str(r.get("ppid") or ""),
+            "hr": int(r.get("high_risk_cnt") or 0),
+            "wn": int(r.get("warning_cnt") or 0),
+            "row_cnt": int(r.get("row_cnt") or 0),
+            "bins": _parse_json_list(r.get("bin_names")),
+            "hr_eqcs": _parse_json_list(r.get("high_risk_eqcs")),
+        })
+    return pd.DataFrame(counted), uncounted_paths
+
+
+def _daily_file_df_from_parquet(paths: list[Path], rules: list[dict] | None) -> pd.DataFrame:
+    """parquet 파일들을 읽어(제외필터 옵션) 파일별 집계 프레임으로 변환합니다."""
+    if not paths:
+        return pd.DataFrame()
+    frames = _parallel_read(list(paths), _read_daily_summary_file)
+    if not frames:
+        return pd.DataFrame()
+    merged = pd.concat(frames, ignore_index=True)
+    merged = _normalize_display_status(merged)
+    if rules:
+        merged = _apply_exclusion_filters_with_rules(merged, rules)
+    if merged.empty or "display_status" not in merged.columns:
+        return pd.DataFrame()
+    for col in ("line_id", "process_id", "eds_step", "step_seq", "ppid", "bin_name"):
+        if col not in merged.columns:
+            merged[col] = ""
+        merged[col] = merged[col].fillna("").astype(str)
+    if "eqc" not in merged.columns:
+        merged["eqc"] = ""
+    merged["eqc"] = merged["eqc"].fillna("").astype(str)
+    status = merged["display_status"].astype(str)
+    merged["_hr"] = (status == "High Risk Chamber").astype(int)
+    merged["_wn"] = (status == "Warning").astype(int)
+    records: list[dict] = []
+    for (lid, pid, eds, sseq, ppid), group in merged.groupby(
+        ["line_id", "process_id", "eds_step", "step_seq", "ppid"], sort=False
+    ):
+        hr_eqcs = sorted(
+            e for e in group.loc[group["_hr"] == 1, "eqc"].unique().tolist() if e
+        )
+        records.append({
+            "line_id": lid, "process_id": pid, "eds_step": eds, "step_seq": sseq, "ppid": ppid,
+            "hr": int(group["_hr"].sum()), "wn": int(group["_wn"].sum()), "row_cnt": int(len(group)),
+            "bins": sorted(group["bin_name"].dropna().astype(str).unique().tolist()),
+            "hr_eqcs": hr_eqcs,
+        })
+    return pd.DataFrame(records)
+
+
+def _aggregate_daily(file_df: pd.DataFrame, dates: list) -> dict:
+    """파일별 집계 프레임 → 일별 요약(line_name 기준 매트릭스 + 헤드라인)."""
+    if file_df.empty:
+        return {**_empty_daily_summary(), "dates": sorted(dates)}
+    for col in ("line_id", "process_id", "eds_step", "step_seq", "ppid"):
+        if col not in file_df.columns:
+            file_df[col] = ""
+        file_df[col] = file_df[col].fillna("").astype(str)
+    for col in ("hr", "wn", "row_cnt"):
+        if col not in file_df.columns:
+            file_df[col] = 0
+        file_df[col] = file_df[col].fillna(0).astype(int)
+    if "bins" not in file_df.columns:
+        file_df["bins"] = [[] for _ in range(len(file_df))]
+    if "hr_eqcs" not in file_df.columns:
+        file_df["hr_eqcs"] = [[] for _ in range(len(file_df))]
+
+    name_map = {
+        (lid, pid, sseq): line_name_rules.resolve_line_name(lid, pid, sseq)
+        for lid, pid, sseq in file_df[["line_id", "process_id", "step_seq"]].drop_duplicates().itertuples(index=False)
+    }
+    file_df["line_name"] = [
+        name_map[(lid, pid, sseq)]
+        for lid, pid, sseq in zip(file_df["line_id"], file_df["process_id"], file_df["step_seq"])
+    ]
+
+    cells: list[dict] = []
+    for (line_name, pid, eds), group in file_df.groupby(["line_name", "process_id", "eds_step"], sort=True):
+        hr_c = int(group["hr"].sum())
+        wn_c = int(group["wn"].sum())
+        bins: set = set()
+        for bin_list in group["bins"]:
+            if bin_list:
+                bins.update(bin_list)
+        hr_step_seqs = {s for s in group.loc[group["hr"] > 0, "step_seq"] if s}
+        cell_hr_eqcs: set = set()
+        for eqc_list in group["hr_eqcs"]:
+            if eqc_list:
+                cell_hr_eqcs.update(eqc_list)
+        cells.append({
+            "line": line_name, "process": pid, "edsStep": eds,
+            "highRisk": hr_c, "warning": wn_c, "total": hr_c + wn_c, "bins": len(bins),
+            "hrStepSeqs": len(hr_step_seqs),  # High Risk 발생 step_seq 수
+            "hrEqpchs": len(cell_hr_eqcs),    # High Risk 발생 EQPCH 수
+        })
+
+    # 분석 그룹 = 알고리즘이 처리한 distinct (line_name, process, eds, step_seq, bin)
+    # 이상 EQPCH = 그날 High Risk Chamber가 난 distinct eqc(EQPCH)
+    analysis_groups: set = set()
+    hr_eqc_set: set = set()
+    for row in file_df.itertuples(index=False):
+        for bin_name in (row.bins or []):
+            analysis_groups.add((row.line_name, row.process_id, row.eds_step, row.step_seq, bin_name))
+        for eqc in (row.hr_eqcs or []):
+            hr_eqc_set.add(eqc)
+
+    total_hr = int(file_df["hr"].sum())
+    total_wn = int(file_df["wn"].sum())
+    headline = {
+        "groups": len(analysis_groups),  # 분석 그룹: line_name×process×eds×step_seq×bin
+        "binNames": len({t[4] for t in analysis_groups}),
+        "stepSeqs": int(file_df["step_seq"].nunique()),
+        "lines": int(file_df["line_name"].nunique()),
+        "processes": int(file_df["process_id"].nunique()),
+        "edsSteps": int(file_df["eds_step"].nunique()),
+        "ppids": int(file_df["ppid"].nunique()),
+        "lots": 0,
+        "totalRows": int(file_df["row_cnt"].sum()),
+        "anomalies": total_hr + total_wn,
+        "highRisk": total_hr,
+        "warning": total_wn,
+        "anomalyGroups": 0,
+        "anomalyEqpchs": 0,
+        "highRiskEqpchs": len(hr_eqc_set),  # 그날 High Risk 난 distinct EQPCH
+        "warningEqpchs": 0,
+    }
+    matrix = {
+        "lines": sorted(file_df["line_name"].unique().tolist()),
+        "processes": sorted(file_df["process_id"].unique().tolist()),
+        "edsSteps": sorted(file_df["eds_step"].unique().tolist()),
+        "cells": cells,
+    }
+    return {"dates": sorted(dates), "headline": headline, "matrix": matrix}
+
+
 def get_daily_summary(selection: dict[str, object], *, user: Any | None = None) -> dict[str, object]:
-    """선택한 날짜 전체의 line×process×eds_step×step_seq 기준 이상감지 요약을 반환합니다.
+    """선택한 날짜 전체의 line_name×process×eds_step 기준 이상감지 요약을 반환합니다.
 
     Chart 조회와 달리 line/process/eds 선택과 무관하게 해당 날짜의 모든 그룹을 집계합니다.
     """
@@ -1888,133 +2057,47 @@ def get_daily_summary(selection: dict[str, object], *, user: Any | None = None) 
     if cached is not None:
         return cached
 
-    # step_seq/ppid 기준 제외필터가 있으면 파일명 파싱이 필요 → 파일별 읽기(정확도 우선).
-    # 없으면 pyarrow.dataset 단일 스캔(속도 우선) — 작은 파일 수백~수천 개에서 수 배 빠름.
-    needs_filename_fields = any(
-        (rule.get("step_seq") or "*") != "*" or (rule.get("ppid") or "*") != "*"
-        for rule in rules
-    )
-
-    def _read_perfile() -> list[pd.DataFrame]:
-        paths: list[Path] = []
-        for date in dates:
-            paths.extend(selectors.iter_date_files(date))
-        return _parallel_read(paths, _read_daily_summary_file)
-
-    def _read_dataset() -> list[pd.DataFrame]:
-        out: list[pd.DataFrame] = []
-        for date in dates:
-            frame = selectors.read_date_dataset(date, _DAILY_SUMMARY_COLUMNS_SLIM)
-            if not frame.empty:
-                out.append(frame)
-        return out
-
-    frames: list[pd.DataFrame] = []
+    # 제외필터가 있으면 행 단위 정확 필터가 필요 → 전량 parquet.
+    # 없으면 file_index의 상태 카운트로 집계(초고속). 카운트 NULL(구 데이터) 파일만 parquet 폴백.
+    file_frames: list[pd.DataFrame] = []
     try:
-        if needs_filename_fields:
-            frames = _read_perfile()
+        if rules:
+            paths: list[Path] = []
+            for date in dates:
+                paths.extend(selectors.iter_date_files(date))
+            frame = _daily_file_df_from_parquet(paths, rules)
+            if not frame.empty:
+                file_frames.append(frame)
         else:
-            try:
-                frames = _read_dataset()
-            except Exception as exc:
-                # 부분 파일(쓰는 중)/스키마 편차 등으로 dataset 스캔 실패 시
-                # 파일별 읽기(인덱스 기반·파일별 try/except)로 안전 폴백.
-                # 루트 자체가 없으면 폴백도 FileNotFoundError를 던져 바깥에서 404 처리됨.
-                print(f"[WARN] L3 Spider daily summary dataset 스캔 실패 → 파일별 폴백: {exc}")
-                frames = _read_perfile()
+            index_rows_by_date = [(date, selectors.query_date_file_index(date)) for date in dates]
+            all_rows = [r for _, rows in index_rows_by_date for r in rows]
+            # 인덱스로 완전 집계하려면 카운트 + high_risk_eqcs(이상 EQPCH용) 컬럼이 모두 있어야 함
+            index_full = bool(all_rows) and ("high_risk_eqcs" in all_rows[0])
+            if index_full:
+                root = selectors.get_data_root()
+                uncounted_paths: list[Path] = []
+                for date, rows in index_rows_by_date:
+                    counted_df, uncounted = _daily_file_df_from_index(rows, date, root)
+                    if not counted_df.empty:
+                        file_frames.append(counted_df)
+                    uncounted_paths.extend(uncounted)
+                if uncounted_paths:  # 카운트 NULL 파일만 parquet 폴백
+                    frame = _daily_file_df_from_parquet(uncounted_paths, None)
+                    if not frame.empty:
+                        file_frames.append(frame)
+            else:
+                # 인덱스가 카운트/eqc를 완전히 못 주면 전량 parquet(모든 지표 정확)
+                paths = []
+                for date in dates:
+                    paths.extend(selectors.iter_date_files(date))
+                frame = _daily_file_df_from_parquet(paths, None)
+                if not frame.empty:
+                    file_frames.append(frame)
     except (FileNotFoundError, NotADirectoryError) as exc:
         raise L3SpiderServiceError(str(exc), status_code=404) from exc
 
-    if not frames:
-        result = {**_empty_daily_summary(), "dates": sorted(dates)}
-        _daily_summary_cache.set(cache_key, result)
-        return result
-
-    merged = pd.concat(frames, ignore_index=True)
-    merged = _normalize_display_status(merged)
-    merged = _apply_exclusion_filters_with_rules(merged, rules)
-    if merged.empty or "display_status" not in merged.columns:
-        result = {**_empty_daily_summary(), "dates": sorted(dates)}
-        _daily_summary_cache.set(cache_key, result)
-        return result
-
-    # 차원 컬럼 보정 (누락 시 빈 문자열)
-    for col in ("line_id", "process_id", "eds_step", "bin_name", "eqc", "step_seq", "ppid", "lot_id"):
-        if col not in merged.columns:
-            merged[col] = ""
-        merged[col] = merged[col].fillna("").astype(str)
-
-    # line 차원을 규칙 기반 line_name으로 (없으면 line_id 폴백). (line_id, process, step_seq)마다 결정.
-    _name_map = {
-        (lid, pid, sseq): line_name_rules.resolve_line_name(lid, pid, sseq)
-        for lid, pid, sseq in merged[["line_id", "process_id", "step_seq"]]
-        .drop_duplicates()
-        .itertuples(index=False)
-    }
-    merged["line_name"] = [
-        _name_map[(lid, pid, sseq)]
-        for lid, pid, sseq in zip(merged["line_id"], merged["process_id"], merged["step_seq"])
-    ]
-
-    status = merged["display_status"].astype(str)
-    is_hr = status == "High Risk Chamber"
-    is_wn = status == "Warning"
-    is_anom = status.isin(ANOMALY_STATUSES)
-    merged["_hr"] = is_hr.astype(int)
-    merged["_wn"] = is_wn.astype(int)
-
-    # 모니터링 그룹 = line_name × process × eds_step × bin_name 조합수
-    group_cols = ["line_name", "process_id", "eds_step", "bin_name"]
-    group_keys = merged[group_cols].drop_duplicates()
-    anomaly_group_keys = merged.loc[is_anom, group_cols].drop_duplicates()
-
-    headline = {
-        "groups": int(len(group_keys)),
-        "binNames": int(merged["bin_name"].nunique()),
-        "stepSeqs": int(merged["step_seq"].nunique()),
-        "lines": int(merged["line_name"].nunique()),
-        "processes": int(merged["process_id"].nunique()),
-        "edsSteps": int(merged["eds_step"].nunique()),
-        "ppids": int(merged["ppid"].nunique()),
-        "lots": int(merged.loc[merged["lot_id"] != "", "lot_id"].nunique()),
-        "totalRows": int(len(merged)),
-        "anomalies": int(is_anom.sum()),
-        "highRisk": int(is_hr.sum()),
-        "warning": int(is_wn.sum()),
-        "anomalyGroups": int(len(anomaly_group_keys)),
-        "anomalyEqpchs": int(merged.loc[is_anom, "eqc"].nunique()),
-        "highRiskEqpchs": int(merged.loc[is_hr, "eqc"].nunique()),
-        "warningEqpchs": int(merged.loc[is_wn, "eqc"].nunique()),
-    }
-
-    # ── 매트릭스: line_name × process × eds_step (모니터링된 조합 = 이상 0도 포함) ──
-    cells: list[dict[str, object]] = []
-    for (line_name, process_id, eds_step), group in merged.groupby(
-        ["line_name", "process_id", "eds_step"], sort=True
-    ):
-        hr_c = int(group["_hr"].sum())
-        wn_c = int(group["_wn"].sum())
-        cells.append({
-            "line": line_name,
-            "process": process_id,
-            "edsStep": eds_step,
-            "highRisk": hr_c,
-            "warning": wn_c,
-            "total": hr_c + wn_c,
-            "bins": int(group["bin_name"].nunique()),
-        })
-    matrix = {
-        "lines": sorted(merged["line_name"].unique().tolist()),
-        "processes": sorted(merged["process_id"].unique().tolist()),
-        "edsSteps": sorted(merged["eds_step"].unique().tolist()),
-        "cells": cells,
-    }
-
-    result = {
-        "dates": sorted(dates),
-        "headline": headline,
-        "matrix": matrix,
-    }
+    file_df = pd.concat(file_frames, ignore_index=True) if file_frames else pd.DataFrame()
+    result = _aggregate_daily(file_df, dates)
     _daily_summary_cache.set(cache_key, result)
     return result
 

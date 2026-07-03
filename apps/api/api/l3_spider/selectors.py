@@ -339,6 +339,36 @@ def _query_all_line_process_step_legacy() -> list[tuple[str, str, str]]:
     return sorted(combos)
 
 
+def query_date_file_index(date: str) -> list[dict]:
+    """특정 날짜의 file_index 행(파일별 메타 + 상태 카운트)을 반환합니다.
+
+    high_risk_cnt/warning_cnt/normal_cnt 가 있으면 요약을 parquet 없이 집계할 수 있습니다.
+    카운트 컬럼이 없는(구) 인덱스거나 인덱스 자체가 없으면 빈 리스트 → 호출부에서 parquet 폴백.
+    """
+    if not _get_index_db_path().exists():
+        return []
+    conn = _connect_ro()
+    try:
+        available = {r[1] for r in conn.execute("PRAGMA table_info(file_index)")}
+        if "high_risk_cnt" not in available:
+            return []  # 카운트 컬럼 미존재(구 인덱스) → parquet 폴백
+        wanted = [
+            "filepath", "line_id", "process_id", "eds_step", "step_seq", "ppid",
+            "bin_names", "row_cnt", "high_risk_cnt", "warning_cnt", "normal_cnt",
+            "high_risk_eqcs",  # 있으면 이상 EQPCH까지 인덱스로 집계
+        ]
+        cols = [c for c in wanted if c in available]
+        cursor = conn.execute(
+            f"SELECT {', '.join(cols)} FROM file_index WHERE date = ?", (date,)
+        )
+        columns = [c[0] for c in cursor.description]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        conn.close()
+
+
 def query_all_line_process_step() -> list[tuple[str, str, str]]:
     """file_index의 모든 (line_id, process_id, step_seq) 조합을 반환합니다.
 

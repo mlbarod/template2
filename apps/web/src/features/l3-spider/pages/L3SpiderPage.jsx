@@ -57,6 +57,8 @@ export function L3SpiderPage() {
   const [activeTab, setActiveTab] = useState(
     hasCompleteSelection(initialDeepLinkState.selection) ? "chart" : "summary",
   )
+  // Summary 매트릭스에서 선택한 line_name. Chart 탭 왕복에도 유지되도록 페이지에서 보관.
+  const [summaryLine, setSummaryLine] = useState(null)
 
   const metaQuery = useL3SpiderMeta()
   const structureQuery = useL3SpiderStructure(selection)
@@ -80,9 +82,14 @@ export function L3SpiderPage() {
 
   // Summary에서 매트릭스 셀/드릴다운 행 클릭 → 해당 조건으로 Chart 탭 이동(교차필터)
   const handleDrillToChart = ({ line, process, edsStep, stepSeq, ppid, eqc }) => {
+    // 매트릭스의 line 은 line_name → lineGroups로 실제 line_id들로 환원(DataSelector 정상 흐름과 동일).
+    // 매핑이 없으면(폴백으로 line_name==line_id) line 값을 그대로 사용.
+    const groups = (metaQuery.data?.lineGroups ?? []).filter((g) => g.lineName === line)
+    const resolvedLineIds = groups.length ? groups.map((g) => g.lineId) : (line ? [line] : [])
     setSelection({
       date: selection.date,
-      lineIds: new Set(line ? [line] : []),
+      lineNames: new Set(line ? [line] : []),
+      lineIds: new Set(resolvedLineIds),
       processIds: new Set(process ? [process] : []),
       edsSteps: new Set(edsStep ? [edsStep] : []),
     })
@@ -227,7 +234,12 @@ export function L3SpiderPage() {
       ) : null}
 
       {activeTab === "summary" ? (
-        <L3SpiderSummaryView date={selection.date} onDrill={handleDrillToChart} />
+        <L3SpiderSummaryView
+          date={selection.date}
+          onDrill={handleDrillToChart}
+          selectedLine={summaryLine}
+          onSelectLine={setSummaryLine}
+        />
       ) : !isSelectionReady ? (
         <div className="m-6 flex flex-1 items-center justify-center rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground shadow-sm">
           <div className="grid justify-items-center gap-2">
