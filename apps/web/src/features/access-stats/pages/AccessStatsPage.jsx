@@ -5,6 +5,7 @@ import {
   CalendarDays,
   CheckCircle2,
   ClipboardPaste,
+  Crown,
   Download,
   FileSpreadsheet,
   Layers3,
@@ -93,6 +94,13 @@ const CHART_COLOR_OPTIONS = [
 
 const CHART_COLORS = CHART_COLOR_OPTIONS.map((option) => option.value)
 const CHART_BG_CLASSES = CHART_COLOR_OPTIONS.map((option) => option.bgClass)
+const TOP_RANK_CLASSES = [
+  "border-[var(--chart-1)]/40 bg-[var(--chart-1)]/15 text-foreground",
+  "border-[var(--chart-2)]/40 bg-[var(--chart-2)]/15 text-foreground",
+  "border-[var(--chart-3)]/40 bg-[var(--chart-3)]/15 text-foreground",
+  "border-[var(--chart-4)]/40 bg-[var(--chart-4)]/15 text-foreground",
+  "border-[var(--chart-5)]/40 bg-[var(--chart-5)]/15 text-foreground",
+]
 
 const MANUAL_TEMPLATE_HEADERS = [
   "date",
@@ -626,8 +634,8 @@ function ChartPanel({
   onPeriodChange,
 }) {
   const [hiddenAppIds, setHiddenAppIds] = useState(() => new Set())
-  const [chartView, setChartView] = useState("combined")
-  const [chartType, setChartType] = useState("bar")
+  const [chartView, setChartView] = useState("split")
+  const [chartType, setChartType] = useState("line")
   const [chartColorByAppId, setChartColorByAppId] = useState({})
   const chartApps = apps
   const visibleChartApps = chartApps.filter((app) => !hiddenAppIds.has(app.appId))
@@ -1005,10 +1013,11 @@ function AppTable({ apps, isLoading }) {
                       <div className="flex min-w-0 items-center gap-2">
                         <span
                           className={cn(
-                            "inline-flex size-6 shrink-0 items-center justify-center rounded-md border bg-muted text-xs font-medium tabular-nums",
-                            index < 3 && "border-primary/30 bg-primary/10 text-primary"
+                            "inline-flex h-6 min-w-6 shrink-0 items-center justify-center gap-0.5 rounded-md border bg-muted px-1 text-xs font-medium tabular-nums",
+                            TOP_RANK_CLASSES[index]
                           )}
                         >
+                          {index === 0 ? <Crown className="size-3" aria-label="1위" /> : null}
                           {index + 1}
                         </span>
                         <span className="min-w-0 truncate font-medium">{app.appName}</span>

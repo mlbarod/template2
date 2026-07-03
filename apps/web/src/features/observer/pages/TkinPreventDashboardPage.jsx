@@ -3,6 +3,7 @@ import { RefreshCw, RotateCcw, TableProperties } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Tooltip,
   TooltipContent,
@@ -69,7 +70,12 @@ function ErrorPanel({ title, message, onRetry }) {
   );
 }
 
-function EmptyPanel({ ready }) {
+function EmptyPanel({ ready, title, message }) {
+  const fallbackTitle = ready ? "조회 결과가 없습니다" : "조회 조건을 선택하세요";
+  const fallbackMessage = ready
+    ? "선택한 process_id와 step_seq에 해당하는 m_tkin_prevent row가 없습니다."
+    : "Line, user_sdwt_prod, PRC Group, process_id, step_seq를 선택하면 예방 상태 표가 표시됩니다.";
+
   return (
     <div className="flex h-full min-h-0 items-center justify-center p-6">
       <div className="grid max-w-md justify-items-center gap-3 text-center">
@@ -77,12 +83,10 @@ function EmptyPanel({ ready }) {
           <TableProperties className="size-6" />
         </div>
         <div className="text-base font-semibold text-foreground">
-          {ready ? "조회 결과가 없습니다" : "조회 조건을 선택하세요"}
+          {title || fallbackTitle}
         </div>
         <p className="text-sm leading-6 text-muted-foreground">
-          {ready
-            ? "선택한 process_id와 step_seq에 해당하는 m_tkin_prevent row가 없습니다."
-            : "Line, user_sdwt_prod, PRC Group, process_id, step_seq를 선택하면 예방 상태 표가 표시됩니다."}
+          {message || fallbackMessage}
         </p>
       </div>
     </div>
@@ -214,7 +218,11 @@ function getEquipmentDisplayRows(columns) {
   });
 }
 
-function TkinPreventMatrixTable({ matrix }) {
+function isPwqPpid(ppid) {
+  return normalizeOptionValue(ppid).toUpperCase().startsWith("PWQ");
+}
+
+function TkinPreventMatrixTable({ matrix, excludePwqPpid }) {
   const equipmentRows = useMemo(
     () => getEquipmentDisplayRows(matrix?.columns || []),
     [matrix]
@@ -223,14 +231,29 @@ function TkinPreventMatrixTable({ matrix }) {
     () => getUniquePpidColumns(matrix?.rows || []),
     [matrix]
   );
+  const visiblePpidColumns = useMemo(() => {
+    if (!excludePwqPpid) return ppidColumns;
+
+    return ppidColumns.filter((column) => !isPwqPpid(column.ppid));
+  }, [excludePwqPpid, ppidColumns]);
 
   if (!equipmentRows.length || !ppidColumns.length) {
     return <EmptyPanel ready={true} />;
   }
 
+  if (!visiblePpidColumns.length) {
+    return (
+      <EmptyPanel
+        ready={true}
+        title="표시할 PPID가 없습니다"
+        message="PWQ PPID 제외 조건으로 인해 표시할 PPID 컬럼이 없습니다."
+      />
+    );
+  }
+
   return (
-    <div className="h-full min-h-0 min-w-0 overflow-auto">
-      <table className="min-w-full border-separate border-spacing-0 text-sm">
+    <div className="h-full min-h-0 min-w-0 max-w-full overflow-auto">
+      <table className="w-max min-w-full border-separate border-spacing-0 text-sm">
         <thead>
           <tr>
             <th className="sticky left-0 top-0 z-30 w-24 min-w-24 border-b border-r bg-card px-2 py-1 text-left text-xs font-semibold leading-tight text-muted-foreground">
@@ -242,7 +265,7 @@ function TkinPreventMatrixTable({ matrix }) {
             <th className="sticky left-56 top-0 z-30 w-24 min-w-24 border-b border-r bg-card px-2 py-1 text-left text-xs font-semibold leading-tight text-muted-foreground">
               CH
             </th>
-            {ppidColumns.map((ppidColumn) => (
+            {visiblePpidColumns.map((ppidColumn) => (
               <th
                 key={ppidColumn.ppid}
                 className="sticky top-0 z-10 min-w-44 border-b border-r bg-card px-2 py-1 text-left text-xs font-semibold leading-tight text-foreground"
@@ -277,7 +300,7 @@ function TkinPreventMatrixTable({ matrix }) {
                   {equipmentRow.chamberId}
                 </span>
               </th>
-              {ppidColumns.map((ppidColumn) => (
+              {visiblePpidColumns.map((ppidColumn) => (
                 <td
                   key={`${equipmentRow.id}-${ppidColumn.ppid}`}
                   className="min-w-44 border-b border-r px-3 py-2 align-top"
@@ -299,6 +322,7 @@ export default function TkinPreventDashboardPage() {
   const [prcGroup, setPrcGroup] = useState("");
   const [processId, setProcessId] = useState("");
   const [stepSeq, setStepSeq] = useState("");
+  const [excludePwqPpid, setExcludePwqPpid] = useState(false);
 
   const lineSdwtOptionsQuery = useLineDashboardLineSdwtOptionsQuery();
   const userSdwtOptions = useMemo(
@@ -327,6 +351,7 @@ export default function TkinPreventDashboardPage() {
     setPrcGroup("");
     setProcessId("");
     setStepSeq("");
+    setExcludePwqPpid(false);
   };
 
   useEffect(() => {
@@ -372,7 +397,7 @@ export default function TkinPreventDashboardPage() {
     stepSeqsQuery.error;
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4">
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-4">
       <div className="shrink-0 rounded-xl border bg-card px-4 py-3">
         <div className="flex items-start justify-between gap-4">
           <div className="grid gap-1">
@@ -450,6 +475,18 @@ export default function TkinPreventDashboardPage() {
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <Badge variant="outline">PPID {matrix.totalRows ?? 0}</Badge>
             <Badge variant="outline">EQP-CH {matrix.totalColumns ?? 0}</Badge>
+            <label
+              htmlFor="tkin-prevent-exclude-pwq"
+              className="flex h-7 items-center gap-2 rounded-md border px-2.5 text-xs font-medium text-foreground"
+            >
+              <Checkbox
+                id="tkin-prevent-exclude-pwq"
+                checked={excludePwqPpid}
+                onCheckedChange={(checked) => setExcludePwqPpid(checked === true)}
+                aria-label="PWQ로 시작하는 PPID 제외"
+              />
+              PWQ PPID 제외
+            </label>
             {filterError ? (
               <span className="text-destructive">필터 데이터를 불러오지 못했습니다.</span>
             ) : null}
@@ -470,7 +507,10 @@ export default function TkinPreventDashboardPage() {
               onRetry={() => matrixQuery.refetch()}
             />
           ) : matrixReady ? (
-            <TkinPreventMatrixTable matrix={matrix} />
+            <TkinPreventMatrixTable
+              matrix={matrix}
+              excludePwqPpid={excludePwqPpid}
+            />
           ) : (
             <EmptyPanel ready={false} />
           )}

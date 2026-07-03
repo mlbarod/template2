@@ -79,18 +79,36 @@ function mergeLastAccessedAt(left, right) {
   return left > right ? left : right
 }
 
+function normalizeAppIdentityKey(appId, appName) {
+  const rawValue = appId || appName || "unknown"
+  return String(rawValue).trim().toLocaleLowerCase("en-US") || "unknown"
+}
+
+function countUppercaseLetters(value) {
+  return Array.from(String(value || "")).filter((letter) => letter >= "A" && letter <= "Z").length
+}
+
+function resolveDisplayAppName(currentName, nextName, fallback) {
+  const current = String(currentName || "").trim()
+  const next = String(nextName || "").trim()
+  if (!current) return next || fallback
+  if (!next) return current
+  if (current.toLocaleLowerCase("en-US") !== next.toLocaleLowerCase("en-US")) return current
+  return countUppercaseLetters(next) > countUppercaseLetters(current) ? next : current
+}
+
 function mergeAppRows(payloads) {
   const rows = new Map()
   payloads.forEach((payload) => {
     ;(payload?.apps ?? []).forEach((app) => {
-      const key = app.appId || app.appName || "unknown"
+      const key = normalizeAppIdentityKey(app.appId, app.appName)
       const current = rows.get(key) ?? {
         ...app,
         appId: key,
         accessCount: 0,
         uniqueUserCount: 0,
       }
-      current.appName = current.appName || app.appName || key
+      current.appName = resolveDisplayAppName(current.appName, app.appName, key)
       current.accessCount += Number(app.accessCount) || 0
       current.uniqueUserCount += Number(app.uniqueUserCount) || 0
       current.lastAccessedAt = mergeLastAccessedAt(current.lastAccessedAt, app.lastAccessedAt)
@@ -110,13 +128,14 @@ function mergeSeriesRows(payloads) {
   const rows = new Map()
   payloads.forEach((payload) => {
     ;(payload?.series ?? []).forEach((row) => {
-      const key = `${row.date || ""}:${row.appId || row.appName || "unknown"}`
+      const appKey = normalizeAppIdentityKey(row.appId, row.appName)
+      const key = `${row.date || ""}:${appKey}`
       const current = rows.get(key) ?? {
         ...row,
-        appId: row.appId || row.appName || "unknown",
+        appId: appKey,
         accessCount: 0,
       }
-      current.appName = current.appName || row.appName || current.appId
+      current.appName = resolveDisplayAppName(current.appName, row.appName, current.appId)
       current.accessCount += Number(row.accessCount) || 0
       current.sourceType = mergeSourceType(current.sourceType, row.sourceType)
       current.sourceName = mergeSourceName(current.sourceName, row.sourceName)
