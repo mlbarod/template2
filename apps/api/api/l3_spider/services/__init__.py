@@ -1154,6 +1154,9 @@ def _collect_mail_rule_events(rule, *, today: str) -> list[dict[str, object]]:
             column: _safe_string(value)
             for column, value in zip(available_group_columns, key_values)
         }
+        event["line_name"] = line_name_rules.resolve_line_name(
+            event.get("line_id", ""), event.get("process_id", ""), event.get("step_seq", "")
+        )
         if "tkin_time" in group.columns:
             tkin = pd.to_datetime(group["tkin_time"], errors="coerce").dropna()
             event["latest_tkin_time"] = tkin.max().strftime("%Y-%m-%d %H:%M:%S") if not tkin.empty else ""
@@ -1270,6 +1273,7 @@ def _build_l3_mail_body(rule, events: list[dict[str, object]]) -> str:
     for event in events[:_MAIL_DIGEST_PREVIEW_LIMIT]:
         cells = [
             event.get("date"),
+            event.get("line_name"),
             event.get("line_id"),
             event.get("process_id"),
             event.get("eds_step"),
@@ -1280,16 +1284,17 @@ def _build_l3_mail_body(rule, events: list[dict[str, object]]) -> str:
             event.get("display_status"),
             event.get("latest_tkin_time"),
         ]
+        td = 'style="padding:5px 14px;white-space:nowrap;"'
         event_url = _build_l3_spider_event_url(target_url, event)
         action_cell = (
-            f'<td><a href="{html.escape(event_url, quote=True)}" '
+            f'<td {td}><a href="{html.escape(event_url, quote=True)}" '
             'target="_blank" rel="noopener noreferrer">열기</a></td>'
             if event_url
-            else "<td></td>"
+            else f"<td {td}></td>"
         )
         rows.append(
             "<tr>"
-            + "".join(f"<td>{html.escape(_safe_string(value))}</td>" for value in cells)
+            + "".join(f"<td {td}>{html.escape(_safe_string(value))}</td>" for value in cells)
             + action_cell
             + "</tr>"
         )
@@ -1308,18 +1313,20 @@ def _build_l3_mail_body(rule, events: list[dict[str, object]]) -> str:
       </a>
     </p>
 """
+    cell_style = "padding:5px 14px;white-space:nowrap;"
+    th_style = cell_style + "background:#f3f4f6;font-weight:600;"
     return f"""
 <html>
-  <body>
+  <body style="font-family:sans-serif;font-size:13px;">
     <h3>L3 Spider 이상감지 알림</h3>
     <p>규칙: {html.escape(rule.name)}</p>
     <p>조건: {html.escape(rule.severity_mode)}</p>
     {action_html}
-    <table border="1" cellspacing="0" cellpadding="4">
+    <table border="1" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border-color:#d1d5db;">
       <thead>
         <tr>
-          <th>Date</th><th>Line</th><th>Process</th><th>EDS Step</th><th>Step</th>
-          <th>PPID</th><th>EQPCH</th><th>Bin</th><th>Status</th><th>Last TKin</th><th>Link</th>
+          <th style="{th_style}">Date</th><th style="{th_style}">Line Name</th><th style="{th_style}">Line ID</th><th style="{th_style}">Process</th><th style="{th_style}">EDS Step</th><th style="{th_style}">Step</th>
+          <th style="{th_style}">PPID</th><th style="{th_style}">EQPCH</th><th style="{th_style}">Bin</th><th style="{th_style}">Status</th><th style="{th_style}">Last TKin</th><th style="{th_style}">Link</th>
         </tr>
       </thead>
       <tbody>
