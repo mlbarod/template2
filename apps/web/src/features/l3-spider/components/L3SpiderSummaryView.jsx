@@ -294,7 +294,7 @@ function AnomalyMatrix({ matrix, selectedLine, onDrill, metric }) {
   }, [visibleCells])
 
   return (
-    <div className="max-h-[55vh] overflow-auto p-4">
+    <div className="overflow-x-auto p-4">
       <table className="w-auto border-collapse text-xs leading-tight">
         <colgroup>
           <col className="w-24" />
