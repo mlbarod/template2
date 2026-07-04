@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import Plotly from 'plotly.js-dist-min'
 import { CHART_MARKER_SIZE, EQC_TIME_STATUS_MARKER, STATUS_MARKER, STATUS_ORDER } from '../utils/chartStatus'
 import './TrellisChart.css'
@@ -16,8 +16,15 @@ const RISK_TITLE_START_X = 0.16
 const X_JITTER_OFFSET = 0.28
 const MAX_X_TICKS_PER_SUBPLOT = 12
 const MAX_POINTS_PER_SUBPLOT = 900
-const OVERSCAN_ROWS = 1
+const OVERSCAN_ROWS = 3
 const DEFAULT_VIEWPORT_H = 1200
+// idle 스케줄러(정상 마커 fill-in을 유휴 시점으로 미룸). requestIdleCallback 미지원 시 setTimeout 폴백.
+const scheduleIdle = (typeof window !== 'undefined' && window.requestIdleCallback)
+  ? (cb) => window.requestIdleCallback(cb, { timeout: 250 })
+  : (cb) => window.setTimeout(cb, 32)
+const cancelIdle = (typeof window !== 'undefined' && window.cancelIdleCallback)
+  ? (h) => window.cancelIdleCallback(h)
+  : (h) => window.clearTimeout(h)
 const LASSO_KEY_SEPARATOR = '\u0000'
 const HIGHLIGHT_COLOR = '#14DBFF'
 const HIGHLIGHT_GLOW = 'rgba(20, 219, 255, 0.28)'
@@ -487,7 +494,7 @@ function buildSingleEqcTimeChart(key, subData, lassoSelection) {
       yaxis: {
         ...getBaseYAxis(),
         title: { text: getBinNameAxisTitle(subData), font: { size: AXIS_TITLE_FONT_SIZE, color: '#4b5578' }, standoff: 8 },
-        ...(yRange !== null ? { range: yRange, autorange: false } : { autorange: true }),
+        ...(yRange !== null ? { range: yRange.slice(), autorange: false } : { autorange: true }),
       },
       height: SUBPLOT_H_WAFER,
       autosize: true,
@@ -504,6 +511,7 @@ function buildSingleEqcTimeChart(key, subData, lassoSelection) {
 
 function buildSingleStandardChart(key, subData, title, limit, sharedYRange, xAxisMode, lassoSelection) {
   const plotData = []
+  const baseData = []  // 이상(비정상) 트레이스만 — progressive draw의 1단계
   const shapes = []
   const annotations = []
   const hasRisk = subData.some(d => d.displayStatus === 'High Risk Chamber')
@@ -529,7 +537,8 @@ function buildSingleStandardChart(key, subData, title, limit, sharedYRange, xAxi
       `${status}<extra></extra>`
     const customdata = makePointCustomData(pts)
 
-    plotData.push({
+    const isAnomaly = status !== 'Normal (Ref)'
+    const mainTrace = {
       type: 'scatter', mode: 'markers',
       x: pts.map(d => xAxis.xByRow.get(d) ?? 0),
       y: pts.map(d => d.binValue),
@@ -539,15 +548,19 @@ function buildSingleStandardChart(key, subData, title, limit, sharedYRange, xAxi
       legendgroup: status,
       showlegend: false,
       hovertemplate,
-    })
+    }
+    plotData.push(mainTrace)
+    if (isAnomaly) baseData.push(mainTrace)
 
     if (highlightedPts.length > 0) {
       const highlightCustomData = makePointCustomData(highlightedPts)
-      plotData.push(
+      const highlightTraces = [
         makeHighlightTrace(highlightedPts, xAxis, 'x', 'y', highlightCustomData, hovertemplate, 'glow'),
         makeHighlightTrace(highlightedPts, xAxis, 'x', 'y', highlightCustomData, hovertemplate, 'sphere'),
         makeHighlightTrace(highlightedPts, xAxis, 'x', 'y', highlightCustomData, hovertemplate, 'shine'),
-      )
+      ]
+      plotData.push(...highlightTraces)
+      if (isAnomaly) baseData.push(...highlightTraces)
     }
   })
 
@@ -593,12 +606,17 @@ function buildSingleStandardChart(key, subData, title, limit, sharedYRange, xAxi
   return {
     key,
     plotData,
+    // progressive draw: 이상 트레이스가 있고 정상 트레이스도 있을 때만 1단계용 baseData 제공.
+    // (전부 정상이거나 전부 이상이면 나눌 필요 없어 undefined → 전체를 즉시 그림)
+    baseData: (baseData.length > 0 && baseData.length < plotData.length) ? baseData : undefined,
     plotLayout: {
       xaxis: { ...getBaseXAxis(), ...xAxis.axis },
       yaxis: {
         ...getBaseYAxis(),
         title: { text: getBinNameAxisTitle(subData), font: { size: AXIS_TITLE_FONT_SIZE, color: '#4b5578' }, standoff: 8 },
-        ...(sharedYRange !== null ? { range: sharedYRange, autorange: false } : { autorange: true }),
+        // sharedYRange는 모든 subplot이 공유하는 배열이다. Plotly가 layout을 in-place로 변형
+        // (확대 시 range 덮어쓰기)하므로, 복사본을 넘겨 한 차트의 줌이 다른 차트로 새지 않게 한다.
+        ...(sharedYRange !== null ? { range: sharedYRange.slice(), autorange: false } : { autorange: true }),
       },
       height: xAxisMode === 'tkin_time_wafer_id' ? SUBPLOT_H_WAFER : SUBPLOT_H,
       autosize: true,
@@ -613,10 +631,11 @@ function buildSingleStandardChart(key, subData, title, limit, sharedYRange, xAxi
   }
 }
 
-function FacetPlot({ chart, lassoMode, lassoShape, dragMode, onSelected, onPanRequest, onLassoRequest, onModebarNeutralRequest }) {
+const FacetPlot = memo(function FacetPlot({ chart, lassoMode, lassoShape, dragMode, onSelected, onPanRequest, onLassoRequest, onModebarNeutralRequest }) {
   const plotRef = useRef(null)
   const initializedRef = useRef(false)
   const selectedHandlerRef = useRef(null)
+  const deferHandleRef = useRef(0)
   const activeModebarTitle = getActiveModebarTitle(dragMode, lassoMode, lassoShape)
 
   useEffect(() => {
@@ -691,15 +710,31 @@ function FacetPlot({ chart, lassoMode, lassoShape, dragMode, onSelected, onPanRe
       ...(dragMode === 'select' ? { selectdirection: 'd' } : {}),
     }
 
+    // progressive draw는 '최초 그릴 때(newPlot)'에만 적용: 이상 트레이스만 먼저 그리고 정상은
+    // idle에 채운다. 이후 재렌더(모드바/드래그모드/데이터 변경 등)는 전체를 한 번에 그려
+    // 매번 정상점이 사라졌다 다시 생기는 깜빡임을 방지한다.
+    const usePartial = !initializedRef.current && Boolean(chart.baseData)
+    const firstData = usePartial ? chart.baseData : chart.plotData
     plotEl.addEventListener('click', modebarClickHandler, true)
     const plotPromise = initializedRef.current
-      ? Plotly.react(plotEl, chart.plotData, layout, plotConfig)
-      : Plotly.newPlot(plotEl, chart.plotData, layout, plotConfig)
+      ? Plotly.react(plotEl, firstData, layout, plotConfig)
+      : Plotly.newPlot(plotEl, firstData, layout, plotConfig)
 
     initializedRef.current = true
     plotPromise.finally(() => {
       if (disposed) return
       syncActiveModebar()
+      // 2단계: 정상 마커까지 포함한 전체를 idle(유휴) 시점에 채운다. (최초 그릴 때만)
+      // 스크롤/다른 subplot 마운트로 메인스레드가 바쁘면 자연히 뒤로 밀려 fling이 가벼워진다.
+      if (usePartial) {
+        deferHandleRef.current = scheduleIdle(() => {
+          deferHandleRef.current = 0
+          if (disposed) return
+          Plotly.react(plotEl, chart.plotData, layout, plotConfig).finally(() => {
+            if (!disposed) syncActiveModebar()
+          })
+        })
+      }
       if (selectedHandlerRef.current) {
         plotEl.removeListener?.('plotly_selected', selectedHandlerRef.current)
         selectedHandlerRef.current = null
@@ -714,13 +749,17 @@ function FacetPlot({ chart, lassoMode, lassoShape, dragMode, onSelected, onPanRe
 
     return () => {
       disposed = true
+      if (deferHandleRef.current) {
+        cancelIdle(deferHandleRef.current)
+        deferHandleRef.current = 0
+      }
       plotEl.removeEventListener('click', modebarClickHandler, true)
       if (selectedHandlerRef.current) {
         plotEl.removeListener?.('plotly_selected', selectedHandlerRef.current)
         selectedHandlerRef.current = null
       }
     }
-  }, [chart.plotData, chart.plotLayout, lassoMode, lassoShape, dragMode, activeModebarTitle, onSelected, onPanRequest, onLassoRequest, onModebarNeutralRequest])
+  }, [chart.plotData, chart.baseData, chart.plotLayout, lassoMode, lassoShape, dragMode, activeModebarTitle, onSelected, onPanRequest, onLassoRequest, onModebarNeutralRequest])
 
   useEffect(() => () => {
     const plotEl = plotRef.current
@@ -728,7 +767,7 @@ function FacetPlot({ chart, lassoMode, lassoShape, dragMode, onSelected, onPanRe
   }, [])
 
   return <div ref={plotRef} className="tc-plot" />
-}
+})
 
 const TrellisChart = forwardRef(function TrellisChart({
   data,
@@ -850,6 +889,8 @@ const TrellisChart = forwardRef(function TrellisChart({
 
   useLayoutEffect(() => {
     spacerRef.current?.style.setProperty('--tc-total-height', `${totalHeight}px`)
+    // 스켈레톤 backdrop(빠른 스크롤 시 빈칸 채움)이 행 높이를 알 수 있게 spacer에도 설정
+    spacerRef.current?.style.setProperty('--tc-row-height', `${rowHeight}px`)
     virtualWindowRef.current?.style.setProperty('--tc-virtual-offset', `${virtualOffset}px`)
     plotGridRef.current?.style.setProperty('--tc-chart-columns', String(chartColumns))
     plotGridRef.current?.style.setProperty('--tc-row-height', `${rowHeight}px`)
@@ -866,45 +907,95 @@ const TrellisChart = forwardRef(function TrellisChart({
     [chartPlan.groupedData],
   )
 
-  const visibleCharts = useMemo(() => {
-    if (data.length === 0 || visibleKeys.length === 0) return []
-
-    return visibleKeys.map(key => {
-      const subData = getGroupedRows(key)
-      if (xAxisMode === 'eqc_tkin_time') {
-        return buildSingleEqcTimeChart(key, subData, lassoSelection)
-      }
-      if (trellisBy === 'eqc') {
-        return buildSingleStandardChart(
-          key, subData,
-          `${key} / ${getStepPpidTitle(subData)}`,
-          getLimitInfoFromRows(subData),
-          chartPlan.sharedYRange,
-          xAxisMode,
-          lassoSelection,
-        )
-      }
-      if (trellisBy === 'bin') {
-        return buildSingleStandardChart(
-          key, subData,
-          `${key} / ${getUniqueText(subData.map(d => d.eqc))}`,
-          getLimitInfoFromRows(subData),
-          null,
-          xAxisMode,
-          lassoSelection,
-        )
-      }
-      const [stepSeq, binName] = key.split('|||')
+  // 단일 key의 차트 객체를 빌드. 스크롤(visibleKeys)과 무관하고, 실제 입력
+  // (데이터/축/trellis/공유Y/lasso)이 바뀔 때만 정체성이 바뀐다.
+  const buildChartForKey = useCallback((key) => {
+    const subData = getGroupedRows(key)
+    if (xAxisMode === 'eqc_tkin_time') {
+      return buildSingleEqcTimeChart(key, subData, lassoSelection)
+    }
+    if (trellisBy === 'eqc') {
       return buildSingleStandardChart(
         key, subData,
-        `${stepSeq} / ${getUniqueText(subData.map(d => d.ppid))} / ${binName}`,
+        `${key} / ${getStepPpidTitle(subData)}`,
+        getLimitInfoFromRows(subData),
+        chartPlan.sharedYRange,
+        xAxisMode,
+        lassoSelection,
+      )
+    }
+    if (trellisBy === 'bin') {
+      return buildSingleStandardChart(
+        key, subData,
+        `${key} / ${getUniqueText(subData.map(d => d.eqc))}`,
         getLimitInfoFromRows(subData),
         null,
         xAxisMode,
         lassoSelection,
       )
+    }
+    const [stepSeq, binName] = key.split('|||')
+    return buildSingleStandardChart(
+      key, subData,
+      `${stepSeq} / ${getUniqueText(subData.map(d => d.ppid))} / ${binName}`,
+      getLimitInfoFromRows(subData),
+      null,
+      xAxisMode,
+      lassoSelection,
+    )
+  }, [getGroupedRows, xAxisMode, trellisBy, chartPlan.sharedYRange, lassoSelection])
+
+  // key별 차트 객체 캐시: 스크롤로 visibleKeys가 바뀌어도 이미 만든 key는 같은 객체 참조를
+  // 재사용한다. 그래야 FacetPlot의 plotData/plotLayout 참조가 유지되어 Plotly가 재그리기하지
+  // 않는다(스크롤 시 보이는 차트를 매번 다시 그리던 것이 주 병목이었음).
+  // buildChartForKey 정체성이 바뀌면(실제 입력 변경) 캐시를 비운다.
+  const chartCacheRef = useRef({ build: null, map: new Map() })
+  const visibleCharts = useMemo(() => {
+    if (data.length === 0 || visibleKeys.length === 0) return []
+    const cache = chartCacheRef.current
+    if (cache.build !== buildChartForKey) {
+      cache.build = buildChartForKey
+      cache.map = new Map()
+    }
+    return visibleKeys.map(key => {
+      let chart = cache.map.get(key)
+      if (chart === undefined) {
+        chart = buildChartForKey(key)
+        cache.map.set(key, chart)
+      }
+      return chart
     })
-  }, [data.length, visibleKeys, xAxisMode, trellisBy, getGroupedRows, lassoSelection, chartPlan.sharedYRange])
+  }, [data.length, visibleKeys, buildChartForKey])
+
+  // ④ defer draw: 스크롤 중에는 새로 들어오는 subplot을 그리지 않고 placeholder만 두고,
+  // 스크롤이 멈추면(≈140ms) 실제로 보이는 것만 그린다. 이미 그려진 subplot은 유지한다.
+  // (subplot 행이 많아 viewport 밖에서 계속 새로 마운트되는 경우의 fling 히칭을 줄임)
+  const [isScrolling, setIsScrolling] = useState(false)
+  const prevScrollTopRef = useRef(outerScrollTop)
+  useEffect(() => {
+    if (prevScrollTopRef.current === outerScrollTop) return
+    prevScrollTopRef.current = outerScrollTop
+    setIsScrolling(true)
+    const timer = setTimeout(() => setIsScrolling(false), 140)
+    return () => clearTimeout(timer)
+  }, [outerScrollTop])
+
+  // 실제로 그릴(마운트할) key 집합. 멈춤 상태에선 보이는 것 전부, 스크롤 중엔
+  // 화면 밖으로 나간 것만 제거하고 새 key는 추가하지 않는다(→ 새 것은 placeholder).
+  const [drawnKeys, setDrawnKeys] = useState(() => new Set())
+  useEffect(() => {
+    if (!isScrolling) {
+      setDrawnKeys(new Set(visibleKeys))
+      return
+    }
+    setDrawnKeys(prev => {
+      const visible = new Set(visibleKeys)
+      let changed = false
+      const next = new Set()
+      prev.forEach(k => { if (visible.has(k)) next.add(k); else changed = true })
+      return changed ? next : prev
+    })
+  }, [visibleKeys, isScrolling])
 
   const handleSelectedPoints = useCallback((points) => {
     if (lassoMode === 'off') return
@@ -1106,20 +1197,27 @@ const TrellisChart = forwardRef(function TrellisChart({
               ref={plotGridRef}
               className="tc-plot-grid"
             >
-              {visibleCharts.map(chart => (
-                <div className="tc-plot-cell" key={chart.key}>
-                  <FacetPlot
-                    chart={chart}
-                    lassoMode={lassoMode}
-                    lassoShape={lassoShape}
-                    dragMode={plotDragMode}
-                    onSelected={handleSelectedPoints}
-                    onPanRequest={handleModebarPan}
-                    onLassoRequest={handleModebarLasso}
-                    onModebarNeutralRequest={handleModebarNeutral}
-                  />
-                </div>
-              ))}
+              {visibleCharts.map(chart => {
+                const draw = !isScrolling || drawnKeys.has(chart.key)
+                return (
+                  <div className="tc-plot-cell" key={chart.key}>
+                    {draw ? (
+                      <FacetPlot
+                        chart={chart}
+                        lassoMode={lassoMode}
+                        lassoShape={lassoShape}
+                        dragMode={plotDragMode}
+                        onSelected={handleSelectedPoints}
+                        onPanRequest={handleModebarPan}
+                        onLassoRequest={handleModebarLasso}
+                        onModebarNeutralRequest={handleModebarNeutral}
+                      />
+                    ) : (
+                      <div className="tc-plot-defer" aria-hidden="true" />
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </div>
         </div>

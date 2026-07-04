@@ -397,6 +397,7 @@ def query_date_file_index(date: str) -> list[dict]:
             "filepath", "line_id", "process_id", "eds_step", "step_seq", "ppid",
             "bin_names", "row_cnt", "high_risk_cnt", "warning_cnt", "normal_cnt",
             "high_risk_eqcs",  # 있으면 이상 EQPCH까지 인덱스로 집계
+            "total_bin_cnt",   # 있으면 이상 여부 무관 전체 bin 수(= 분석 그룹)까지 인덱스로 집계
         ]
         cols = [c for c in wanted if c in available]
         cursor = conn.execute(
@@ -406,6 +407,69 @@ def query_date_file_index(date: str) -> list[dict]:
         return [dict(zip(columns, row)) for row in cursor.fetchall()]
     except sqlite3.OperationalError:
         return []
+    finally:
+        conn.close()
+
+
+def query_trend_data() -> list[dict]:
+    """모든 날짜의 (date, line_id, process_id, step_seq, hr, wn) 집계를 반환합니다.
+
+    file_index의 카운트 컬럼으로 날짜별·라인별 트렌드 집계용. 인덱스 없거나 카운트
+    컬럼 없으면 빈 리스트 반환.
+    """
+    if not _get_index_db_path().exists():
+        return []
+    conn = _connect_ro()
+    try:
+        available = {r[1] for r in conn.execute("PRAGMA table_info(file_index)")}
+        if "high_risk_cnt" not in available:
+            return []
+        sql = (
+            "SELECT date, line_id, process_id, step_seq, "
+            "SUM(COALESCE(high_risk_cnt, 0)) AS hr, "
+            "SUM(COALESCE(warning_cnt, 0)) AS wn "
+            "FROM file_index "
+            "GROUP BY date, line_id, process_id, step_seq "
+            "ORDER BY date"
+        )
+        rows = conn.execute(sql).fetchall()
+        return [
+            {"date": str(r[0]), "line_id": str(r[1]), "process_id": str(r[2]),
+             "step_seq": str(r[3]), "hr": int(r[4] or 0), "wn": int(r[5] or 0)}
+            for r in rows
+        ]
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        conn.close()
+
+
+def query_completed_dates() -> Optional[set[str]]:
+    """알고리즘 런이 '완전히' 끝난 날짜 집합을 반환합니다.
+
+    인덱스 DB의 run_status 테이블(status='completed')을 읽습니다. 알고리즘 서버가
+    해당 날짜의 마지막 그룹까지 저장한 뒤 한 번만 'completed'로 표시하는 것을 전제로 합니다.
+
+    반환:
+      - None : run_status 테이블/DB가 없음(알고리즘 서버 미구현) → 호출부는 게이트를 적용하지
+               않고 기존처럼 전체 날짜를 노출합니다(하위호환).
+      - set  : 완료된 날짜 집합. 비어 있으면 '아직 완료된 날짜 없음'.
+    """
+    if not _get_index_db_path().exists():
+        return None
+    conn = _connect_ro()
+    try:
+        tables = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )}
+        if "run_status" not in tables:
+            return None
+        rows = conn.execute(
+            "SELECT date FROM run_status WHERE status = 'completed'"
+        ).fetchall()
+        return {str(r[0]) for r in rows}
+    except sqlite3.OperationalError:
+        return None
     finally:
         conn.close()
 

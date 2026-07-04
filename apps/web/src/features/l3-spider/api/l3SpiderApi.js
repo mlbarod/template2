@@ -53,6 +53,10 @@ export function fetchL3SpiderDailySummary(payload) {
   return postJson("/daily-summary", payload)
 }
 
+export function fetchL3SpiderTrend() {
+  return request("/trend")
+}
+
 export function fetchL3SpiderData(selection) {
   return postJson("/data", selection).then(({ cols, colData }) => {
     if (!cols?.length || !colData?.length) return { rows: [] }

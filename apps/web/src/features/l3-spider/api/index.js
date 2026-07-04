@@ -8,6 +8,7 @@ export {
   fetchExclusionFilters,
   fetchL3SpiderDailySummary,
   fetchL3SpiderData,
+  fetchL3SpiderTrend,
   fetchL3SpiderFilterCandidates,
   fetchL3SpiderMeta,
   fetchL3SpiderStats,

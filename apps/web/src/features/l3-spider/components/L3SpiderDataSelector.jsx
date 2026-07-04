@@ -1,5 +1,6 @@
-import { Activity, AlertTriangle, Check, CircleHelp, Gauge, RefreshCw } from "lucide-react"
-import { useMemo, useState } from "react"
+import { Check, CircleHelp, Loader2, RefreshCw } from "lucide-react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { motion } from "framer-motion"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -8,8 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
-import { EMPTY_SELECTION, sortedValues, toggleSetValue } from "../utils/selection"
-import { formatNumber } from "../utils/format"
+import { EMPTY_SELECTION, sortedValues, sortLineNames, toggleSetValue } from "../utils/selection"
 
 function MultiSelectColumnCard({ title, badge, disabled, placeholder, items, selected, onChange }) {
   const [query, setQuery] = useState("")
@@ -109,28 +109,6 @@ function MultiSelectColumnCard({ title, badge, disabled, placeholder, items, sel
   )
 }
 
-function InlineStats({ stats }) {
-  return (
-    <div className="flex items-center gap-5 border-l pl-5">
-      <div className="flex items-center gap-1.5">
-        <AlertTriangle className="size-3.5 shrink-0 text-chart-4" aria-hidden="true" />
-        <span className="text-sm font-semibold tabular-nums text-chart-4">{formatNumber(stats?.anomalySteps)}</span>
-        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Anomaly Steps</span>
-      </div>
-      <div className="flex items-center gap-1.5">
-        <Activity className="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
-        <span className="text-sm font-semibold tabular-nums text-destructive">{formatNumber(stats?.highRiskEqpchs)}</span>
-        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">High Risk EQPCH</span>
-      </div>
-      <div className="flex items-center gap-1.5">
-        <Gauge className="size-3.5 shrink-0" aria-hidden="true" />
-        <span className="text-sm font-semibold tabular-nums">{formatNumber(stats?.total)}</span>
-        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Total Rows</span>
-      </div>
-    </div>
-  )
-}
-
 function SelectionStatus({ canFetch, date, isLoading, noData, selection }) {
   if (isLoading) return <span className="text-xs italic text-muted-foreground">로딩 중…</span>
   if (noData) return <span className="text-xs font-semibold text-destructive">불러올 데이터가 없습니다</span>
@@ -151,8 +129,7 @@ export function L3SpiderDataSelector({
   onSelectionChange,
   isLoading,
   onRefresh,
-  stats,
-  showStats,
+  dateLoading,
   rightContent,
   headerExtra,
   tabsSlot,
@@ -171,7 +148,7 @@ export function L3SpiderDataSelector({
 
   // Items shown in the Line column (LINE_NAMEs when configured, LINE_IDs otherwise)
   const lineItemsForPanel = hasLineGroups
-    ? sortedValues(Object.keys(lnaForDate))
+    ? sortLineNames(Object.keys(lnaForDate))
     : visibleLineIds
 
   // Selected items in Line column panel (LINE_NAMEs or LINE_IDs depending on mode)
@@ -230,10 +207,26 @@ export function L3SpiderDataSelector({
     selection.processIds.size > 0 &&
     selection.edsSteps.size > 0
   const noData = Boolean(selection.date && visibleLineIds.length === 0)
+  // date의 데이터 로딩이 끝나 ✓가 뜨는 순간 = Summary/Chart 선택을 유도할 시점
+  const dateReady = hasDate && !dateLoading
 
   const changeDate = (date) => {
     onSelectionChange({ ...EMPTY_SELECTION, date })
   }
+
+  // ✓가 새 날짜에 대해 처음 뜰 때마다 탭을 한 번 흔들어 주목을 끈다.
+  const [wiggleKey, setWiggleKey] = useState(0)
+  const lastWiggledDateRef = useRef(null)
+  useEffect(() => {
+    if (!hasDate) {
+      lastWiggledDateRef.current = null
+      return
+    }
+    if (dateReady && lastWiggledDateRef.current !== selection.date) {
+      lastWiggledDateRef.current = selection.date
+      setWiggleKey((k) => k + 1)
+    }
+  }, [dateReady, hasDate, selection.date])
 
   const changeLines = (selectedLineItems) => {
     let lineNames, lineIds, allowedProcessIds
@@ -324,17 +317,34 @@ export function L3SpiderDataSelector({
         {selection.date && !hasDate ? (
           <span className="text-xs font-medium text-destructive">해당 날짜에 데이터 없음</span>
         ) : hasDate ? (
-          <span className="text-xs font-medium text-chart-2">✓ {selection.date}</span>
+          <div className="flex items-center gap-3">
+            {dateLoading ? (
+              <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" aria-label="데이터 로딩 중" />
+            ) : (
+              <Check className="size-4 shrink-0 text-chart-2" aria-label="선택 완료" />
+            )}
+            {tabsSlot ? (
+              <motion.div
+                key={wiggleKey}
+                animate={{ x: [0, -5, 5, -4, 4, -2, 2, 0] }}
+                transition={{ duration: 0.6, ease: "easeInOut" }}
+                className="flex items-center"
+              >
+                {tabsSlot}
+              </motion.div>
+            ) : null}
+          </div>
         ) : null}
-        {showStats && stats && <InlineStats stats={stats} />}
         <div className="ml-auto flex items-center gap-3">
-          <SelectionStatus
-            canFetch={canFetch}
-            date={selection.date}
-            isLoading={isLoading}
-            noData={noData}
-            selection={selection}
-          />
+          {showBody ? (
+            <SelectionStatus
+              canFetch={canFetch}
+              date={selection.date}
+              isLoading={isLoading}
+              noData={noData}
+              selection={selection}
+            />
+          ) : null}
           {headerExtra}
           <Button
             type="button"
@@ -368,7 +378,6 @@ export function L3SpiderDataSelector({
           </Tooltip>
         </div>
       </div>
-      {tabsSlot ? <div className="border-t px-6 py-1.5">{tabsSlot}</div> : null}
       {showBody ? (
         rightContent ? (
           <div className="flex min-h-0 items-stretch gap-4 border-t px-6 py-2">
