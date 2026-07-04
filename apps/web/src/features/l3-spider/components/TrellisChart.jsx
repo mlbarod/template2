@@ -636,6 +636,7 @@ const FacetPlot = memo(function FacetPlot({ chart, lassoMode, lassoShape, dragMo
   const initializedRef = useRef(false)
   const selectedHandlerRef = useRef(null)
   const deferHandleRef = useRef(0)
+  const axisSigRef = useRef(null)
   const activeModebarTitle = getActiveModebarTitle(dragMode, lassoMode, lassoShape)
 
   useEffect(() => {
@@ -708,6 +709,28 @@ const FacetPlot = memo(function FacetPlot({ chart, lassoMode, lassoShape, dragMo
       ...chart.plotLayout,
       dragmode: dragMode,
       ...(dragMode === 'select' ? { selectdirection: 'd' } : {}),
+    }
+
+    // 사용자 줌 보존: 축 기준(xaxis 구성 + yaxis range)이 그대로인 재렌더(라쏘 선택/모드바 등)에서는
+    // 현재 그래프의 실제 축 범위를 유지해 줌이 풀리지 않게 한다. 축 기준 자체가 바뀌면(데이터/xAxis
+    // 모드 변경 등) chart.plotLayout의 기본 범위를 그대로 적용(리셋).
+    const axisSig = JSON.stringify([
+      chart.plotLayout.xaxis,
+      chart.plotLayout.yaxis?.range ?? null,
+      chart.plotLayout.yaxis?.autorange ?? null,
+    ])
+    const axisBaseChanged = axisSigRef.current !== axisSig
+    axisSigRef.current = axisSig
+    if (initializedRef.current && !axisBaseChanged && plotEl.layout) {
+      const cur = plotEl.layout
+      if (cur.yaxis) {
+        layout.yaxis = { ...layout.yaxis, autorange: cur.yaxis.autorange }
+        if (cur.yaxis.range) layout.yaxis.range = cur.yaxis.range.slice()
+      }
+      if (cur.xaxis) {
+        layout.xaxis = { ...layout.xaxis, autorange: cur.xaxis.autorange }
+        if (cur.xaxis.range) layout.xaxis.range = cur.xaxis.range.slice()
+      }
     }
 
     // progressive draw는 '최초 그릴 때(newPlot)'에만 적용: 이상 트레이스만 먼저 그리고 정상은
@@ -1033,6 +1056,9 @@ const TrellisChart = forwardRef(function TrellisChart({
   }, [data, keySignature, chartPlan.keys.length])
 
   useEffect(() => {
+    // 줌/팬으로 빠져나갈 때(lassoMode='off')는 하이라이트를 유지한다. 새 라쏘 모드로
+    // 들어갈 때만 이전 선택을 초기화(새 선택 시작).
+    if (lassoMode === 'off') return
     setLassoSelection(null)
   }, [lassoMode])
 
