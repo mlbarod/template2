@@ -17,6 +17,7 @@ from .views import (
     DroneNotificationTargetMappingView,
     DroneNotificationTargetView,
     DroneSopInstantInformView,
+    DroneSopTargetAdminView,
     DroneSopPop3IngestTriggerView,
     DroneSopPipelinePrecheckView,
     DroneSopPipelineTriggerView,
@@ -38,6 +39,11 @@ urlpatterns = [
         "notification-targets",
         DroneNotificationTargetView.as_view(),
         name="line-dashboard-notification-targets",
+    ),
+    path(
+        "admin/drone-targets",
+        DroneSopTargetAdminView.as_view(),
+        name="line-dashboard-admin-drone-targets",
     ),
     path(
         "notification-target-mappings",

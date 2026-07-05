@@ -47,7 +47,7 @@ function LineDashboardShellContent({ contentMaxWidthClass, scrollAreaClassName }
     }
   }, [isError, error])
 
-  const navigation = buildNavigationConfig()
+  const navigation = buildNavigationConfig({ includeSuperuser: Boolean(user?.is_superuser) })
 
   return (
     <DepartmentProvider>

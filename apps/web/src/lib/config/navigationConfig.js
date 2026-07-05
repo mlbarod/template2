@@ -2,6 +2,7 @@
 import {
   Activity,
   BarChart3,
+  Database,
   Mail,
   Send,
   Settings,
@@ -52,6 +53,13 @@ const LINE_DASHBOARD_GROUP = Object.freeze({
       url: "/ESOP_Dashboard/overview",
       icon: BarChart3,
       scope: "global",
+    },
+    {
+      title: "Target 관리",
+      url: "/ESOP_Dashboard/admin/drone-targets",
+      icon: Database,
+      scope: "global",
+      superuserOnly: true,
     },
   ],
 })
@@ -159,9 +167,26 @@ export const NAVIGATION_CONFIG = Object.freeze({
   ],
 })
 
-export function buildNavigationConfig({ mailbox, disableEmailMembers = false } = {}) {
+function filterSuperuserItems(items, includeSuperuser) {
+  return (Array.isArray(items) ? items : [])
+    .filter((item) => includeSuperuser || !item?.superuserOnly)
+    .map((item) => {
+      if (!Array.isArray(item?.items)) return item
+      return {
+        ...item,
+        items: filterSuperuserItems(item.items, includeSuperuser),
+      }
+    })
+}
+
+export function buildNavigationConfig({ mailbox, disableEmailMembers = false, includeSuperuser = false } = {}) {
   const trimmedMailbox = normalizeMailbox(mailbox)
-  if (!trimmedMailbox) return NAVIGATION_CONFIG
+  if (!trimmedMailbox) {
+    return {
+      ...NAVIGATION_CONFIG,
+      navMain: filterSuperuserItems(NAVIGATION_CONFIG.navMain, includeSuperuser),
+    }
+  }
 
   const inboxUrl = buildMailboxUrl(trimmedMailbox)
   const membersUrl = buildMembersUrl(trimmedMailbox)
@@ -181,8 +206,11 @@ export function buildNavigationConfig({ mailbox, disableEmailMembers = false } =
 
   return {
     ...NAVIGATION_CONFIG,
-    navMain: NAVIGATION_CONFIG.navMain.map((item) =>
-      item?.key === EMAILS_GROUP_BASE.key ? emailsGroup : item,
+    navMain: filterSuperuserItems(
+      NAVIGATION_CONFIG.navMain.map((item) =>
+        item?.key === EMAILS_GROUP_BASE.key ? emailsGroup : item,
+      ),
+      includeSuperuser,
     ),
   }
 }

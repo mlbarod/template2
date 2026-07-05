@@ -31,6 +31,7 @@ from api.drone.models import (
     DroneEarlyInform,
     DroneSOP,
     DroneSopDelivery,
+    DroneSopNeedToSendRule,
     DroneSopTarget,
     DroneSopTargetChannelConfig,
     DroneSopTargetDispatch,
@@ -3862,6 +3863,140 @@ class DroneSopTargetRecipientTests(TestCase):
                 user=no_knox_user,
             ).exists()
         )
+
+
+class DroneSopTargetAdminTests(TestCase):
+    """superuser 전용 DroneSopTarget 관리 API를 검증합니다."""
+
+    def setUp(self) -> None:
+        """테스트용 superuser와 일반 사용자를 준비합니다."""
+
+        User = get_user_model()
+        self.superuser = User.objects.create_superuser(
+            sabun="S72000",
+            password="test-password",
+            knox_id="knox-72000",
+        )
+        self.user = User.objects.create_user(
+            sabun="S72001",
+            password="test-password",
+            knox_id="knox-72001",
+        )
+        self.endpoint = reverse("line-dashboard-admin-drone-targets")
+
+    def _json(self, payload: dict[str, object]) -> str:
+        """JSON 요청 본문을 생성합니다."""
+
+        return json.dumps(payload)
+
+    def test_admin_drone_targets_requires_superuser(self) -> None:
+        """target 관리 API가 superuser만 허용되는지 확인합니다."""
+
+        response = self.client.get(self.endpoint)
+        self.assertEqual(response.status_code, 401)
+
+        self.client.force_login(self.user)
+        response = self.client.get(self.endpoint)
+        self.assertEqual(response.status_code, 403)
+
+    def test_admin_drone_targets_crud_flow(self) -> None:
+        """target 생성, 조회, 수정, 삭제 흐름이 동작하는지 확인합니다."""
+
+        self.client.force_login(self.superuser)
+        response = self.client.post(
+            self.endpoint,
+            data=self._json({"lineId": "L1", "targetUserSdwtProd": "TARGET_A"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        created = response.json()["target"]
+        self.assertEqual(created["lineId"], "L1")
+        self.assertEqual(created["targetUserSdwtProd"], "TARGET_A")
+
+        response = self.client.patch(
+            self.endpoint,
+            data=self._json(
+                {
+                    "id": created["id"],
+                    "lineId": "L2",
+                    "targetUserSdwtProd": "TARGET_B",
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        updated = response.json()["target"]
+        self.assertEqual(updated["lineId"], "L2")
+        self.assertEqual(updated["targetUserSdwtProd"], "TARGET_B")
+
+        response = self.client.get(self.endpoint)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["rowCount"], 1)
+        self.assertEqual(response.json()["targets"][0]["targetUserSdwtProd"], "TARGET_B")
+
+        response = self.client.delete(
+            self.endpoint,
+            data=self._json({"id": created["id"]}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["deleted"])
+        self.assertFalse(DroneSopTarget.objects.filter(id=created["id"]).exists())
+
+    def test_admin_drone_targets_rejects_duplicate_target(self) -> None:
+        """target 이름 중복을 대소문자 비구분으로 차단하는지 확인합니다."""
+
+        DroneSopTarget.objects.create(line_id="L1", target_user_sdwt_prod="TARGET_A")
+        self.client.force_login(self.superuser)
+
+        response = self.client.post(
+            self.endpoint,
+            data=self._json({"lineId": "L2", "targetUserSdwtProd": "target_a"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"], "target already exists")
+
+    def test_admin_drone_targets_returns_related_counts(self) -> None:
+        """target 관리 목록이 연결 설정 count를 함께 반환하는지 확인합니다."""
+
+        target = DroneSopTarget.objects.create(line_id="L1", target_user_sdwt_prod="TARGET_A")
+        DroneSopTargetMapping.objects.create(sdwt_prod="SDWT_A", user_sdwt_prod="USER_A", target=target)
+        DroneSopTargetChannelConfig.objects.create(target=target, channel=DroneSopTargetChannelConfig.Channels.JIRA)
+        DroneSopNeedToSendRule.objects.create(target=target, enabled=True, comment_keyword="go")
+        DroneSopTargetRecipient.objects.create(
+            target=target,
+            channel=DroneSopTargetRecipient.Channels.MAIL,
+            user=self.user,
+        )
+        sop = DroneSOP.objects.create(
+            line_id="L1",
+            target_user_sdwt_prod="TARGET_A",
+            eqp_id="EQP-A",
+            chamber_ids="CH-A",
+            lot_id="LOT-A",
+            main_step="STEP-A",
+        )
+        DroneSopTargetDispatch.objects.create(
+            sop=sop,
+            target=target,
+            target_code_snapshot="TARGET_A",
+        )
+
+        self.client.force_login(self.superuser)
+        response = self.client.get(self.endpoint)
+
+        self.assertEqual(response.status_code, 200)
+        row = response.json()["targets"][0]
+        self.assertEqual(row["mappingCount"], 1)
+        self.assertEqual(row["recipientCount"], 1)
+        self.assertEqual(row["channelConfigCount"], 1)
+        self.assertEqual(row["dispatchCount"], 1)
+        self.assertTrue(row["hasNeedToSendRule"])
 
 
 class DroneSopJsonTargetSeedTests(TestCase):

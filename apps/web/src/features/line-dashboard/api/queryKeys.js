@@ -8,6 +8,7 @@ export const lineDashboardQueryKeys = {
   all: ROOT_KEY,
   lineOptions: () => [...ROOT_KEY, "line-options"],
   lineSdwtOptions: () => [...ROOT_KEY, "line-sdwt-options"],
+  droneTargetAdmin: () => [...ROOT_KEY, "admin", "drone-targets"],
   jiraUserSdwtProds: () => [...ROOT_KEY, "jira-user-sdwt-prods"],
   summary: (lineId) => [...ROOT_KEY, "summary", lineId ?? null],
   history: (lineId, range = {}) => [

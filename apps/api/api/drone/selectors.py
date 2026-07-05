@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence
 
 from django.db import connection
-from django.db.models import Exists, OuterRef, Q, QuerySet
+from django.db.models import Count, Exists, OuterRef, Q, QuerySet
 from django.db.models.functions import Lower
 
 import api.account.selectors as account_selectors
@@ -943,6 +943,66 @@ def list_drone_sop_notification_targets_for_line(*, line_id: str) -> list[dict[s
             str(item.get("targetUserSdwtProd") or "").casefold(),
         ),
     )
+
+
+def _serialize_drone_sop_target_admin_row(target: DroneSopTarget) -> dict[str, object]:
+    """DroneSopTarget admin row를 API 응답 형태로 변환합니다."""
+
+    return {
+        "id": target.id,
+        "lineId": normalize_text(target.line_id) or "",
+        "targetUserSdwtProd": normalize_text(target.target_user_sdwt_prod) or "",
+        "mappingCount": int(getattr(target, "mapping_count", 0) or 0),
+        "recipientCount": int(getattr(target, "recipient_count", 0) or 0),
+        "channelConfigCount": int(getattr(target, "channel_config_count", 0) or 0),
+        "dispatchCount": int(getattr(target, "dispatch_count", 0) or 0),
+        "hasNeedToSendRule": bool(getattr(target, "needtosend_rule_count", 0) or 0),
+        "createdAt": target.created_at.isoformat() if target.created_at else None,
+        "updatedAt": target.updated_at.isoformat() if target.updated_at else None,
+    }
+
+
+def _drone_sop_target_admin_queryset() -> QuerySet[DroneSopTarget]:
+    """admin target 목록용 annotation queryset을 구성합니다."""
+
+    return DroneSopTarget.objects.annotate(
+        mapping_count=Count("mappings", distinct=True),
+        recipient_count=Count("recipients", distinct=True),
+        channel_config_count=Count("channel_configs", distinct=True),
+        dispatch_count=Count("sop_dispatches", distinct=True),
+        needtosend_rule_count=Count("needtosend_rule", distinct=True),
+    )
+
+
+def list_drone_sop_target_admin_rows() -> list[dict[str, object]]:
+    """superuser 관리 화면용 Drone SOP target 목록을 반환합니다.
+
+    반환:
+        target row와 관련 설정 count 목록.
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+    """
+
+    rows = _drone_sop_target_admin_queryset().order_by("line_id", "target_user_sdwt_prod", "id")
+    return [_serialize_drone_sop_target_admin_row(row) for row in rows]
+
+
+def get_drone_sop_target_admin_row(*, target_id: int) -> dict[str, object] | None:
+    """target id 기준 superuser 관리 화면용 row를 반환합니다.
+
+    인자:
+        target_id: DroneSopTarget PK.
+
+    반환:
+        row dict 또는 None.
+
+    부작용:
+        없음. 읽기 전용 조회입니다.
+    """
+
+    target = _drone_sop_target_admin_queryset().filter(id=target_id).first()
+    return _serialize_drone_sop_target_admin_row(target) if target is not None else None
 
 
 def affiliation_exists_for_user_sdwt_prod(*, user_sdwt_prod: str) -> bool:

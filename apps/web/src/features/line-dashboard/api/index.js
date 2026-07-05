@@ -8,6 +8,12 @@ export { instantInformDroneSop } from "./instantInform"
 export { retryDroneSopChannel } from "./retryChannel"
 export { lineDashboardQueryKeys } from "./queryKeys"
 export {
+  createDroneTargetAdminRow,
+  deleteDroneTargetAdminRow,
+  fetchDroneTargetAdminRows,
+  updateDroneTargetAdminRow,
+} from "./droneTargetAdmin"
+export {
   createLineSetting,
   deleteLineSetting,
   fetchLineSettings,

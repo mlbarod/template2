@@ -144,6 +144,18 @@ def _ensure_authenticated(request: HttpRequest) -> JsonResponse | None:
     return None
 
 
+def _ensure_superuser(request: HttpRequest) -> JsonResponse | None:
+    """superuser 권한을 확인하고 실패 시 JsonResponse를 반환합니다."""
+
+    auth_response = _ensure_authenticated(request)
+    if auth_response is not None:
+        return auth_response
+    user = getattr(request, "user", None)
+    if not bool(getattr(user, "is_superuser", False)):
+        return JsonResponse({"error": "forbidden"}, status=403)
+    return None
+
+
 def _json_error(message: str, status: int = 400) -> JsonResponse:
     """에러 응답(JsonResponse)을 구성합니다.
 
@@ -887,6 +899,128 @@ class DroneNotificationTargetView(DroneAuthenticatedView):
                 "updated": updated,
             }
         )
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class DroneSopTargetAdminView(DroneAuthenticatedView):
+    """superuser 전용 DroneSopTarget 관리 엔드포인트입니다."""
+
+    @staticmethod
+    def _authorize_superuser(request: HttpRequest) -> JsonResponse | None:
+        """superuser 권한을 확인합니다."""
+
+        return _ensure_superuser(request)
+
+    @staticmethod
+    def _response_row(*, target_id: int) -> dict[str, object]:
+        """변경된 target row를 admin 응답 형태로 조회합니다."""
+
+        row = selectors.get_drone_sop_target_admin_row(target_id=target_id)
+        if row is None:
+            raise services.DroneSopTargetAdminNotFoundError("target not found")
+        return row
+
+    def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """DroneSopTarget 목록을 반환합니다.
+
+        예시 요청:
+        - GET /api/v1/line-dashboard/admin/drone-targets
+        """
+
+        auth_response = self._authorize_superuser(request)
+        if auth_response is not None:
+            return auth_response
+
+        targets = selectors.list_drone_sop_target_admin_rows()
+        return JsonResponse({"targets": targets, "rowCount": len(targets)})
+
+    def post(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """DroneSopTarget row를 생성합니다."""
+
+        auth_response = self._authorize_superuser(request)
+        if auth_response is not None:
+            return auth_response
+        payload, error_response = _parse_json_body_or_error(request)
+        if error_response is not None:
+            return error_response
+
+        try:
+            target = services.create_drone_sop_target_admin_row(
+                line_id=payload.get("lineId"),
+                target_user_sdwt_prod=payload.get("targetUserSdwtProd"),
+            )
+            row = self._response_row(target_id=target.id)
+        except services.DroneSopTargetAdminDuplicateError as exc:
+            return JsonResponse({"error": str(exc)}, status=409)
+        except ValueError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
+
+        set_activity_summary(request, "Create drone_sop_target admin row")
+        set_activity_new_state(request, row)
+        return JsonResponse({"target": row, "created": True}, status=201)
+
+    def patch(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """DroneSopTarget row를 수정합니다."""
+
+        auth_response = self._authorize_superuser(request)
+        if auth_response is not None:
+            return auth_response
+        payload, error_response = _parse_json_body_or_error(request)
+        if error_response is not None:
+            return error_response
+
+        try:
+            target_id = int(payload.get("id"))
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "id is required"}, status=400)
+
+        try:
+            previous_row = selectors.get_drone_sop_target_admin_row(target_id=target_id)
+            target = services.update_drone_sop_target_admin_row(
+                target_id=target_id,
+                line_id=payload.get("lineId"),
+                target_user_sdwt_prod=payload.get("targetUserSdwtProd"),
+            )
+            row = self._response_row(target_id=target.id)
+        except services.DroneSopTargetAdminDuplicateError as exc:
+            return JsonResponse({"error": str(exc)}, status=409)
+        except services.DroneSopTargetAdminNotFoundError as exc:
+            return JsonResponse({"error": str(exc)}, status=404)
+        except ValueError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
+
+        set_activity_summary(request, "Update drone_sop_target admin row")
+        set_activity_previous_state(request, previous_row or {})
+        set_activity_new_state(request, row)
+        return JsonResponse({"target": row, "updated": True})
+
+    def delete(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """DroneSopTarget row를 삭제합니다."""
+
+        auth_response = self._authorize_superuser(request)
+        if auth_response is not None:
+            return auth_response
+        payload, error_response = _parse_json_body_or_error(request)
+        if error_response is not None:
+            return error_response
+
+        try:
+            target_id = int(payload.get("id"))
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "id is required"}, status=400)
+
+        try:
+            previous_row = selectors.get_drone_sop_target_admin_row(target_id=target_id)
+            services.delete_drone_sop_target_admin_row(target_id=target_id)
+        except services.DroneSopTargetAdminNotFoundError as exc:
+            return JsonResponse({"error": str(exc)}, status=404)
+        except ValueError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
+
+        set_activity_summary(request, "Delete drone_sop_target admin row")
+        set_activity_previous_state(request, previous_row or {})
+        set_activity_new_state(request, {"deleted": True})
+        return JsonResponse({"deleted": True, "target": previous_row})
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -2245,6 +2379,7 @@ __all__ = [
     "DroneSopPipelinePrecheckView",
     "DroneSopPipelineTriggerView",
     "DroneSopPop3IngestTriggerView",
+    "DroneSopTargetAdminView",
     "DroneTableUpdateView",
     "DroneTablesView",
     "LineHistoryView",

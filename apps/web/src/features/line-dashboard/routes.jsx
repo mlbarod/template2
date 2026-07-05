@@ -2,6 +2,7 @@
 // 라인 대시보드에서 제공하는 페이지 라우트 정의를 모아둡니다.
 import {
   LineDashboardEntryPage,
+  LineDashboardDroneTargetAdminPage,
   LineDashboardHistoryPage,
   LineDashboardNotificationSettingsPage,
   LineDashboardOverviewPage,
@@ -50,6 +51,11 @@ export const lineDashboardRoutes = [
         path: "overview",
         caseSensitive: false,
         element: <LineDashboardOverviewPage />,
+      },
+      {
+        path: "admin/drone-targets",
+        caseSensitive: false,
+        element: <LineDashboardDroneTargetAdminPage />,
       },
     ],
   },
