@@ -9,6 +9,7 @@ import {
   fetchL3SpiderStats,
   fetchL3SpiderStructure,
   fetchL3SpiderSummary,
+  fetchL3SpiderTrend,
   l3SpiderQueryKeys,
 } from "../api"
 import {
@@ -71,6 +72,16 @@ export function useL3SpiderDailySummary(date) {
       }),
     enabled: Boolean(date),
     staleTime: 3 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+  })
+}
+
+// 전체 날짜 × 라인별 이상감지 트렌드 (트렌드 차트용)
+export function useL3SpiderTrend() {
+  return useQuery({
+    queryKey: l3SpiderQueryKeys.trend(),
+    queryFn: fetchL3SpiderTrend,
+    staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
   })
 }

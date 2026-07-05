@@ -112,6 +112,20 @@ export function sortedValues(values) {
   )
 }
 
+function _isEndFab(v) {
+  return String(v).toLowerCase().replace(/[_\s-]/g, "") === "endfab"
+}
+
+export function sortLineNames(values) {
+  return Array.from(values || []).sort((a, b) => {
+    const aEnd = _isEndFab(a)
+    const bEnd = _isEndFab(b)
+    if (aEnd && !bEnd) return 1
+    if (!aEnd && bEnd) return -1
+    return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" })
+  })
+}
+
 export function sameSet(left, right) {
   if (left.size !== right.size) return false
   for (const value of left) {

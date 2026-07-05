@@ -1,16 +1,25 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { Activity, AlertTriangle, Cpu, Gauge, Inbox, Layers, Loader2 } from "lucide-react"
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts"
 
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 
-import { useL3SpiderDailySummary } from "../hooks/useL3SpiderQueries"
+import { useL3SpiderDailySummary, useL3SpiderTrend } from "../hooks/useL3SpiderQueries"
 import { formatNumber } from "../utils/format"
+import { sortLineNames } from "../utils/selection"
 
 const shortProcess = (value) => String(value ?? "").replace(/^process_/, "")
-const EMPTY_LIST = []
 
 // High Risk / Warning 분리 표기 (빨강 / 주황)
 function HrWn({ hr, wn }) {
@@ -24,7 +33,7 @@ function HrWn({ hr, wn }) {
   )
 }
 
-// High Risk step_seq 수 / High Risk EQPCH 수 분리 표기 (기본색 / 빨강)
+// High Risk step_seq 수 / High Risk EQPCH 수 분리 표기
 function SsEq({ ss, eq }) {
   if (!ss && !eq) return <span className="text-muted-foreground/40">·</span>
   return (
@@ -36,13 +45,11 @@ function SsEq({ ss, eq }) {
   )
 }
 
-// metric 값에 따라 표시 지표를 전환합니다.
 function MetricVal({ metric, hr, wn, ss, eq }) {
   if (metric === "hrpair") return <SsEq ss={ss} eq={eq} />
   return <HrWn hr={hr} wn={wn} />
 }
 
-// 앱의 L3SpiderSummaryCards 와 동일한 stat 관용구
 const STAT_DEFS = [
   { key: "groups", label: "분석 그룹", icon: Layers, tone: "text-foreground" },
   { key: "highRisk", label: "High Risk", icon: Activity, tone: "text-destructive" },
@@ -78,28 +85,171 @@ function SummaryStats({ h }) {
   )
 }
 
-// 두 표가 공유하는 Line 필터 (선택은 상위로 끌어올려 Chart 탭 왕복에도 유지)
-function LineSelector({ lines, selectedLine, onSelectLine }) {
-  if (lines.length <= 1) return null
+// 라인별 차트 색상 팔레트
+const LINE_COLORS = [
+  { value: "hsl(var(--chart-1))", dotClass: "bg-chart-1" },
+  { value: "hsl(var(--chart-2))", dotClass: "bg-chart-2" },
+  { value: "hsl(var(--chart-3))", dotClass: "bg-chart-3" },
+  { value: "hsl(var(--chart-4))", dotClass: "bg-chart-4" },
+  { value: "hsl(var(--chart-5))", dotClass: "bg-chart-5" },
+  { value: "hsl(var(--primary))", dotClass: "bg-primary" },
+  { value: "hsl(var(--destructive))", dotClass: "bg-destructive" },
+  { value: "hsl(var(--foreground))", dotClass: "bg-foreground" },
+]
+
+const DONUT_META = {
+  hr:    { title: "High Risk 분포",          center: "High Risk" },
+  wn:    { title: "Warning 분포",            center: "Warning" },
+  total: { title: "이상 건수 분포 (HR+WN)", center: "이상 건수" },
+}
+
+// SVG 도넛 차트 — metric: "hr" | "wn" | "total"
+// focusLine 선택 시 해당 라인의 process_id별 집계로 전환
+function DonutChartCard({ lineSummary, cells, metric, focusLine }) {
+  const { arcs, total, C, R } = useMemo(() => {
+    const R = 44
+    const C = 2 * Math.PI * R
+    const getValue = (row) => metric === "hr" ? row.hr : metric === "wn" ? row.wn : row.hr + row.wn
+
+    let rows
+    if (focusLine) {
+      // 선택된 라인의 process별 집계
+      const byProcess = new Map()
+      for (const c of (cells ?? [])) {
+        if (c.line !== focusLine) continue
+        const key = c.process
+        const cur = byProcess.get(key) ?? { key, hr: 0, wn: 0 }
+        cur.hr += c.highRisk
+        cur.wn += c.warning
+        byProcess.set(key, cur)
+      }
+      rows = [...byProcess.values()]
+        .sort((a, b) => String(a.key).localeCompare(String(b.key), undefined, { numeric: true }))
+        .filter((r) => getValue(r) > 0)
+        .map((r) => ({ ...r, label: shortProcess(r.key) }))
+    } else {
+      rows = lineSummary
+        .filter((r) => getValue(r) > 0)
+        .map((r) => ({ ...r, key: r.line, label: r.line }))
+    }
+
+    const total = rows.reduce((s, r) => s + getValue(r), 0)
+    const GAP = rows.length > 1 ? 1.5 : 0
+    let off = 0
+    const arcs = rows.map((r, i) => {
+      const val = getValue(r)
+      const fullLen = total > 0 ? (val / total) * C : 0
+      const len = Math.max(0, fullLen - GAP)
+      const color = LINE_COLORS[i % LINE_COLORS.length]
+      const seg = { key: r.key, label: r.label, val, color: color.value, dotClass: color.dotClass, len, off: off + GAP / 2 }
+      off += fullLen
+      return seg
+    })
+    return { arcs, total, C, R }
+  }, [lineSummary, cells, metric, focusLine])
+
+  const SW = 16
+  const { title, center } = DONUT_META[metric] ?? DONUT_META.total
 
   return (
-    <div className="flex min-w-0 items-center gap-2 rounded-md border bg-muted/30 px-2 py-1.5">
-      <span className="shrink-0 text-xs font-medium text-muted-foreground">Line</span>
-      <div className="flex min-w-0 flex-wrap items-center gap-1">
-        {lines.map((line) => (
-          <Button
-            key={line}
-            type="button"
-            variant={selectedLine === line ? "default" : "outline"}
-            size="sm"
-            className="h-7 px-2.5 text-xs"
-            aria-pressed={selectedLine === line}
-            onClick={() => onSelectLine?.(line)}
-          >
-            {line}
-          </Button>
-        ))}
-      </div>
+    <Card className="flex flex-col overflow-hidden rounded-lg py-0">
+      <CardHeader className="shrink-0 border-b bg-muted/50 px-4 py-2.5">
+        <CardTitle className="text-sm">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-4 py-4">
+        <svg width="120" height="120" viewBox="0 0 120 120" aria-label={`${center} ${total}`}>
+          <g transform="rotate(-90 60 60)">
+            {total === 0 ? (
+              <circle cx="60" cy="60" r={R} fill="none" stroke="hsl(var(--muted))" strokeWidth={SW} />
+            ) : arcs.map((arc) => (
+              <circle
+                key={arc.key}
+                cx="60" cy="60" r={R} fill="none"
+                stroke={arc.color} strokeWidth={SW}
+                strokeDasharray={`${arc.len} ${C}`}
+                strokeDashoffset={-arc.off}
+                strokeLinecap="butt"
+              />
+            ))}
+          </g>
+          <text x="60" y="55" textAnchor="middle" fontSize="16" fontWeight="700"
+            fill="hsl(var(--foreground))">{formatNumber(total)}</text>
+          <text x="60" y="70" textAnchor="middle" fontSize="8" fontWeight="600"
+            fill="hsl(var(--muted-foreground))">{center}</text>
+        </svg>
+        {/* 범례 */}
+        <div className="grid w-full grid-cols-2 gap-x-3 gap-y-1 text-xs">
+          {arcs.map((arc) => (
+            <span key={arc.key} className="flex min-w-0 items-center gap-1">
+              <span className={cn("size-2 shrink-0 rounded-full", arc.dotClass)} aria-hidden="true" />
+              <span className="min-w-0 truncate text-muted-foreground">{arc.label}</span>
+              <span className="ml-auto shrink-0 tabular-nums font-semibold">{formatNumber(arc.val)}</span>
+            </span>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// 전 라인 요약 테이블 — 이상감지 없는 라인도 포함, 클릭 시 매트릭스 필터
+function LineTable({ rows, selectedLine, onSelectLine }) {
+  return (
+    <div className="min-h-0 overflow-y-auto">
+      <table className="w-full border-collapse text-xs">
+        <thead className="sticky top-0 z-10 bg-card">
+          <tr className="border-b">
+            <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Line</th>
+            <th className="px-3 py-2 text-center font-semibold text-destructive">HR</th>
+            <th className="px-3 py-2 text-center font-semibold text-chart-4">WN</th>
+            <th className="px-3 py-2 text-center font-semibold text-muted-foreground">합계</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const isSelected = r.line === selectedLine
+            const total = r.hr + r.wn
+            return (
+              <tr
+                key={r.line}
+                onClick={() => onSelectLine?.(isSelected ? null : r.line)}
+                className={cn(
+                  "border-b transition-colors cursor-pointer",
+                  isSelected
+                    ? "bg-primary/10 hover:bg-primary/15"
+                    : "hover:bg-muted/40",
+                  !r.active && "opacity-40",
+                )}
+              >
+                <td className={cn(
+                  "px-3 py-1.5 font-mono font-semibold",
+                  isSelected ? "text-primary" : "text-foreground",
+                )}>
+                  {r.line}
+                  {!r.active && (
+                    <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">(이상 없음)</span>
+                  )}
+                </td>
+                <td className="px-3 py-1.5 text-center tabular-nums">
+                  {r.hr > 0
+                    ? <span className="font-bold text-destructive">{formatNumber(r.hr)}</span>
+                    : <span className="text-muted-foreground/40">·</span>}
+                </td>
+                <td className="px-3 py-1.5 text-center tabular-nums">
+                  {r.wn > 0
+                    ? <span className="font-semibold text-chart-4">{formatNumber(r.wn)}</span>
+                    : <span className="text-muted-foreground/40">·</span>}
+                </td>
+                <td className="px-3 py-1.5 text-center tabular-nums font-medium">
+                  {total > 0
+                    ? <span className="text-foreground">{formatNumber(total)}</span>
+                    : <span className="text-muted-foreground/40">·</span>}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
     </div>
   )
 }
@@ -109,8 +259,8 @@ function LegendDot({ className }) {
 }
 
 function AnomalyMatrix({ matrix, selectedLine, onDrill, metric }) {
-  const { edsSteps = EMPTY_LIST, cells = EMPTY_LIST } = matrix ?? {}
-  const lines = matrix?.lines ?? EMPTY_LIST
+  const { edsSteps = [], cells = [] } = matrix ?? {}
+  const lines = matrix?.lines ?? []
 
   const visibleLines = useMemo(
     () => selectedLine ? lines.filter((line) => line === selectedLine) : lines,
@@ -150,7 +300,7 @@ function AnomalyMatrix({ matrix, selectedLine, onDrill, metric }) {
   }, [visibleCells])
 
   return (
-    <div className="max-h-[70vh] overflow-auto p-4">
+    <div className="overflow-x-auto p-4">
       <table className="w-auto border-collapse text-xs leading-tight">
         <colgroup>
           <col className="w-24" />
@@ -253,11 +403,11 @@ function AnomalyMatrix({ matrix, selectedLine, onDrill, metric }) {
   )
 }
 
-// 매트릭스 표 카드 (헤더 + 범례 + 매트릭스). 두 지표(count / hrpair)에 재사용
+// 매트릭스 카드 (헤더 + 범례 + 테이블)
 function MatrixCard({ title, legend, rows, cells, matrix, metric, selectedLine, onDrill }) {
   return (
     <Card className="flex min-w-0 flex-1 flex-col gap-0 overflow-hidden rounded-lg py-0">
-      <CardHeader className="border-b bg-muted/50 px-4 py-2.5">
+      <CardHeader className="shrink-0 border-b bg-muted/50 px-4 py-2.5">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <CardTitle className="text-sm">{title}</CardTitle>
           {rows != null ? <Badge variant="outline">{formatNumber(rows)} rows</Badge> : null}
@@ -268,31 +418,265 @@ function MatrixCard({ title, legend, rows, cells, matrix, metric, selectedLine, 
           </span>
         </div>
       </CardHeader>
-      <CardContent className="p-0">
+      <CardContent className="min-h-0 p-0">
         <AnomalyMatrix matrix={matrix} metric={metric} selectedLine={selectedLine} onDrill={onDrill} />
       </CardContent>
     </Card>
   )
 }
 
-export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine }) {
+// 날짜 "2026-06-20" → "06-20"
+const fmtDate = (d) => String(d ?? "").slice(5)
+
+// startStr~endStr 사이 모든 날짜(UTC 기준) 배열 반환
+function makeDateRange(startStr, endStr) {
+  const dates = []
+  const cur = new Date(startStr + "T00:00:00Z")
+  const end = new Date(endStr + "T00:00:00Z")
+  while (+cur <= +end) {
+    dates.push(cur.toISOString().slice(0, 10))
+    cur.setUTCDate(cur.getUTCDate() + 1)
+  }
+  return dates
+}
+
+const RANGE_OPTIONS = [
+  { label: "7일", value: 7 },
+  { label: "14일", value: 14 },
+  { label: "30일", value: 30 },
+  { label: "90일", value: 90 },
+  { label: "전체", value: 0 },
+]
+
+// 트렌드 바 차트 카드 — recharts BarChart
+function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
+  const [metric, setMetric] = useState("hr")     // "hr" | "total"
+  const [grouping, setGrouping] = useState("sum") // "sum" | "perLine"
+  const [rangeDays, setRangeDays] = useState(7)   // 0 = 전체
+
+  // focusLine 선택 시 해당 라인만, 아니면 전체
+  const scopedPoints = useMemo(
+    () => focusLine ? (trendPoints ?? []).filter((p) => p.lineName === focusLine) : (trendPoints ?? []),
+    [trendPoints, focusLine],
+  )
+
+  // focusLine 선택 시 seriesKeys를 해당 라인만으로 좁힘
+  const effectiveLineNames = useMemo(
+    () => focusLine ? [focusLine] : allLineNames,
+    [focusLine, allLineNames],
+  )
+
+  // 날짜 범위 필터 — 전체 데이터에서 최신 기준 N일치만
+  const filteredPoints = useMemo(() => {
+    if (!scopedPoints.length) return []
+    if (rangeDays === 0) return scopedPoints
+    const allDates = [...new Set(scopedPoints.map((p) => p.date))].sort()
+    const cutoff = allDates[Math.max(0, allDates.length - rangeDays)]
+    return scopedPoints.filter((p) => p.date >= cutoff)
+  }, [scopedPoints, rangeDays])
+
+  // 데이터 변환: [{date, lineName, hr, wn}] → recharts용 [{date, ...series}]
+  const { chartData, seriesKeys } = useMemo(() => {
+    if (!filteredPoints.length) return { chartData: [], seriesKeys: [] }
+    const getValue = (p) => metric === "hr" ? p.hr : p.hr + p.wn
+
+    if (grouping === "sum") {
+      const byDate = new Map()
+      for (const p of filteredPoints) {
+        byDate.set(p.date, (byDate.get(p.date) ?? 0) + getValue(p))
+      }
+      // 이상감지 없는 날짜는 0으로 채워 연속 time-series 유지
+      const sortedKeys = [...byDate.keys()].sort()
+      if (sortedKeys.length > 1) {
+        for (const d of makeDateRange(sortedKeys[0], sortedKeys[sortedKeys.length - 1])) {
+          if (!byDate.has(d)) byDate.set(d, 0)
+        }
+      }
+      const chartData = [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, value]) => ({ date: fmtDate(date), value }))
+      return { chartData, seriesKeys: ["value"] }
+    }
+
+    // perLine: pivot — 날짜 갭은 0으로 채움
+    const dateSet = new Set()
+    for (const p of filteredPoints) dateSet.add(p.date)
+    const rawDates = [...dateSet].sort()
+    const dates = rawDates.length > 1
+      ? makeDateRange(rawDates[0], rawDates[rawDates.length - 1])
+      : rawDates
+
+    const byDateLine = new Map()
+    for (const p of filteredPoints) {
+      if (!byDateLine.has(p.date)) byDateLine.set(p.date, {})
+      byDateLine.get(p.date)[p.lineName] = (byDateLine.get(p.date)[p.lineName] ?? 0) + getValue(p)
+    }
+    const chartData = dates.map((d) => {
+      const lineValues = byDateLine.get(d) ?? {}
+      const row = { date: fmtDate(d) }
+      for (const ln of effectiveLineNames) row[ln] = lineValues[ln] ?? 0
+      return row
+    })
+    return { chartData, seriesKeys: effectiveLineNames }
+  }, [filteredPoints, metric, grouping, effectiveLineNames])
+
+  return (
+    <Card className="flex flex-col overflow-hidden rounded-lg py-0">
+      <CardHeader className="shrink-0 border-b bg-muted/50 px-4 py-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <CardTitle className="text-sm">일자별 이상감지 트렌드</CardTitle>
+          {focusLine && (
+            <Badge variant="secondary" className="text-[11px]">{focusLine}</Badge>
+          )}
+          {/* 기간 선택 */}
+          <div className="flex items-center rounded border bg-background p-0.5 text-xs">
+            {RANGE_OPTIONS.map((opt) => (
+              <button key={opt.value} type="button" onClick={() => setRangeDays(opt.value)}
+                className={cn("rounded px-2 py-0.5 font-medium transition-colors",
+                  rangeDays === opt.value ? "bg-muted text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          {/* Y축 토글 */}
+          <div className="flex items-center rounded border bg-background p-0.5 text-xs">
+            <button type="button" onClick={() => setMetric("hr")}
+              className={cn("rounded px-2 py-0.5 font-medium transition-colors",
+                metric === "hr" ? "bg-destructive/10 text-destructive" : "text-muted-foreground hover:text-foreground")}>
+              HR
+            </button>
+            <button type="button" onClick={() => setMetric("total")}
+              className={cn("rounded px-2 py-0.5 font-medium transition-colors",
+                metric === "total" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground")}>
+              HR+WN
+            </button>
+          </div>
+          {/* 계열 토글 */}
+          <div className="flex items-center rounded border bg-background p-0.5 text-xs">
+            <button type="button" onClick={() => setGrouping("sum")}
+              className={cn("rounded px-2 py-0.5 font-medium transition-colors",
+                grouping === "sum" ? "bg-background text-foreground shadow-sm ring-1 ring-border" : "text-muted-foreground hover:text-foreground")}>
+              전체 합산
+            </button>
+            <button type="button" onClick={() => setGrouping("perLine")}
+              className={cn("rounded px-2 py-0.5 font-medium transition-colors",
+                grouping === "perLine" ? "bg-background text-foreground shadow-sm ring-1 ring-border" : "text-muted-foreground hover:text-foreground")}>
+              라인별
+            </button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="min-h-0 flex-1 p-4">
+        {chartData.length === 0 ? (
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+            트렌드 데이터가 없습니다.
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 4 }} barCategoryGap="30%">
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+              <XAxis
+                dataKey="date"
+                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                tickLine={false}
+                axisLine={false}
+                interval="preserveStartEnd"
+              />
+              <YAxis
+                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                tickLine={false}
+                axisLine={false}
+                width={40}
+                tickFormatter={(v) => formatNumber(v)}
+              />
+              <Tooltip
+                contentStyle={{
+                  background: "hsl(var(--card))",
+                  border: "1px solid hsl(var(--border))",
+                  borderRadius: "6px",
+                  fontSize: 12,
+                }}
+                formatter={(value, name) => [formatNumber(value), name === "value" ? (metric === "hr" ? "High Risk" : "이상 건수") : name]}
+                labelFormatter={(label) => `날짜: ${label}`}
+                cursor={{ fill: "hsl(var(--muted))", opacity: 0.5 }}
+              />
+              <Legend
+                iconType="square"
+                iconSize={8}
+                wrapperStyle={{ fontSize: 11, paddingTop: 4 }}
+              />
+              {grouping === "sum" ? (
+                <Bar
+                  dataKey="value"
+                  name={metric === "hr" ? "전체 High Risk" : "전체 이상 건수 (HR+WN)"}
+                  fill={metric === "hr" ? "hsl(var(--destructive))" : "hsl(var(--chart-4))"}
+                  radius={[3, 3, 0, 0]}
+                  maxBarSize={48}
+                />
+              ) : (seriesKeys.length <= 20 ? seriesKeys : seriesKeys.slice(0, 20)).map((key, i) => (
+                <Bar
+                  key={key}
+                  dataKey={key}
+                  name={key}
+                  stackId="a"
+                  fill={LINE_COLORS[i % LINE_COLORS.length].value}
+                  radius={i === seriesKeys.length - 1 ? [3, 3, 0, 0] : [0, 0, 0, 0]}
+                  maxBarSize={48}
+                />
+              ))}
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine, lineGroups }) {
   const query = useL3SpiderDailySummary(date)
+  const trendQuery = useL3SpiderTrend()
   const data = query.data
   const h = data?.headline
   const hasData = Boolean(h && h.totalRows > 0)
-  const lineOptions = useMemo(
-    () => [...(data?.matrix?.lines ?? [])].sort((a, b) =>
-      String(a).localeCompare(String(b), undefined, { numeric: true }),
-    ),
+
+  // 오늘 이상감지가 있는 라인 (활성)
+  const activeLineOptions = useMemo(
+    () => sortLineNames(data?.matrix?.lines ?? []),
     [data?.matrix?.lines],
   )
-  // 상위(page)가 보관한 선택값이 유효하면 그대로, 아니면 첫 라인으로 폴백(파생값이라 탭 왕복에도 안전)
-  const activeLine = selectedLine && lineOptions.includes(selectedLine)
-    ? selectedLine
-    : (lineOptions[0] ?? null)
-  const visibleCellCount = useMemo(
-    () => (data?.matrix?.cells ?? []).filter((cell) => cell.line === activeLine).length,
-    [activeLine, data?.matrix?.cells],
+  // 전체 알려진 라인 (lineGroups 기반, end_fab 마지막)
+  const allLineOptions = useMemo(() => {
+    const fromGroups = sortLineNames([...new Set((lineGroups ?? []).map((g) => g.lineName))])
+    const base = fromGroups.length ? fromGroups : []
+    const baseSet = new Set(base)
+    const extras = activeLineOptions.filter((l) => !baseSet.has(l))
+    return extras.length ? sortLineNames([...base, ...extras]) : base.length ? base : activeLineOptions
+  }, [lineGroups, activeLineOptions])
+
+  // 선택된 라인 — 활성/비활성 모두 허용 (트렌드 필터링 등)
+  const activeLine = selectedLine ?? null
+
+  // 라인별 이상감지 롤업 — 모든 알려진 라인 포함
+  const lineSummary = useMemo(() => {
+    const totals = new Map()
+    for (const c of data?.matrix?.cells ?? []) {
+      const cur = totals.get(c.line) ?? { hr: 0, wn: 0 }
+      cur.hr += c.highRisk
+      cur.wn += c.warning
+      totals.set(c.line, cur)
+    }
+    const activeSet = new Set(activeLineOptions)
+    return allLineOptions.map((line) => ({
+      line,
+      hr: totals.get(line)?.hr ?? 0,
+      wn: totals.get(line)?.wn ?? 0,
+      active: activeSet.has(line),
+    }))
+  }, [data?.matrix?.cells, allLineOptions, activeLineOptions])
+
+  // 트렌드 차트용 line_name 목록 (트렌드 데이터에 등장하는 라인, end_fab 마지막 정렬)
+  const trendLineNames = useMemo(
+    () => sortLineNames([...new Set((trendQuery.data?.points ?? []).map((p) => p.lineName))]),
+    [trendQuery.data?.points],
   )
 
   if (!date || query.isLoading || query.error || !hasData) {
@@ -326,40 +710,93 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine 
     )
   }
 
+  const countLegend = (
+    <>
+      <LegendDot className="bg-destructive" />High Risk
+      <span className="text-muted-foreground/40">/</span>
+      <LegendDot className="bg-chart-4" />Warning
+    </>
+  )
+  const hrpairLegend = (
+    <>
+      <LegendDot className="bg-foreground" />step_seq 수
+      <span className="text-muted-foreground/40">/</span>
+      <LegendDot className="bg-destructive" />EQPCH 수
+    </>
+  )
+
+  const matrixCells = data?.matrix?.cells?.length ?? 0
+  const matrixRows = data?.matrix?.lines?.length ?? 0
+
   return (
     <main className="grid gap-5 px-6 pb-6 pt-4">
+      {/* 집계 카드 */}
       <SummaryStats h={h} />
-      <LineSelector lines={lineOptions} selectedLine={activeLine} onSelectLine={onSelectLine} />
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+
+      {/* col1=1fr(라인테이블 2행span), col2=1.4fr(도넛2개+트렌드) */}
+      <div className="grid min-h-[520px] grid-cols-[1fr_1.4fr] grid-rows-[auto_1fr] gap-5">
+        {/* col1 row1+2: 라인별 현황 테이블 */}
+        <Card
+          className="col-start-1 row-span-2 row-start-1 flex min-h-0 flex-col overflow-hidden rounded-lg py-0"
+        >
+          <CardHeader className="shrink-0 border-b bg-muted/50 px-4 py-2.5">
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-sm">라인별 현황</CardTitle>
+              <Badge variant="outline" className="text-[11px]">{allLineOptions.length}개</Badge>
+              {activeLine && (
+                <button
+                  type="button"
+                  onClick={() => onSelectLine?.(null)}
+                  className="ml-auto text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                >
+                  해제
+                </button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="min-h-0 flex-1 overflow-y-auto p-0">
+            <LineTable rows={lineSummary} selectedLine={activeLine} onSelectLine={onSelectLine} />
+          </CardContent>
+        </Card>
+
+        {/* col2 row1: 도넛 차트 3개 나란히 */}
+        <div className="col-start-2 row-start-1 grid grid-cols-3 gap-3">
+          <DonutChartCard lineSummary={lineSummary} cells={data?.matrix?.cells ?? []} metric="hr" focusLine={activeLine} />
+          <DonutChartCard lineSummary={lineSummary} cells={data?.matrix?.cells ?? []} metric="wn" focusLine={activeLine} />
+          <DonutChartCard lineSummary={lineSummary} cells={data?.matrix?.cells ?? []} metric="total" focusLine={activeLine} />
+        </div>
+
+        {/* col2 row2: 트렌드 바 차트 */}
+        <TrendChartCard
+          trendPoints={trendQuery.data?.points ?? []}
+          allLineNames={trendLineNames}
+          focusLine={activeLine ?? undefined}
+        />
+      </div>
+
+      {/* 매트릭스 헤더 */}
+      {activeLine && (
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">매트릭스</span>
+          <Badge variant="secondary" className="text-[11px]">{activeLine} 필터 중</Badge>
+        </div>
+      )}
+
+      {/* 매트릭스 나란히 */}
+      <div className="grid grid-cols-2 gap-5">
         <MatrixCard
-          title="Anomaly Summary — High Risk / Warning"
-          rows={h.totalRows}
-          cells={visibleCellCount}
-          legend={(
-            <span className="inline-flex items-center gap-1.5">
-              <LegendDot className="bg-destructive" />
-              High Risk
-              <span className="text-muted-foreground/40">/</span>
-              <LegendDot className="bg-chart-4" />
-              Warning
-            </span>
-          )}
+          title="Anomaly Summary"
+          legend={countLegend}
+          rows={matrixRows}
+          cells={matrixCells}
           matrix={data.matrix}
           metric="count"
           selectedLine={activeLine}
           onDrill={onDrill}
         />
         <MatrixCard
-          title="High Risk 발생 — step_seq 수 / EQPCH 수"
-          legend={(
-            <span className="inline-flex items-center gap-1.5">
-              <LegendDot className="bg-foreground" />
-              step_seq 수
-              <span className="text-muted-foreground/40">/</span>
-              <LegendDot className="bg-destructive" />
-              EQPCH 수
-            </span>
-          )}
+          title="High Risk 발생"
+          legend={hrpairLegend}
           matrix={data.matrix}
           metric="hrpair"
           selectedLine={activeLine}

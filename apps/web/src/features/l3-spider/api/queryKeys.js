@@ -12,4 +12,5 @@ export const l3SpiderQueryKeys = {
   dailySummary: (dateKey) => ["l3-spider", "daily-summary", dateKey],
   data: (selectionKey, filterKey) => ["l3-spider", "data", selectionKey, filterKey],
   filterCandidates: (key) => ["l3-spider", "filter-candidates", key],
+  trend: () => ["l3-spider", "trend"],
 }

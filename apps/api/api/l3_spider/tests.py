@@ -5,7 +5,7 @@
 # =============================================================================
 from __future__ import annotations
 
-from datetime import time as datetime_time
+from datetime import time as datetime_time, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -695,6 +695,10 @@ class L3SpiderMailRuleTests(TestCase):
         """due rule은 High Risk 이벤트를 한 번만 발송 이력으로 남겨야 합니다."""
 
         rule = self._create_rule(user=self.owner, eqpch="EQC_A")
+        L3SpiderMailRule.objects.filter(pk=rule.pk).update(
+            created_at=services.timezone.now() - timedelta(days=1),
+        )
+        rule.refresh_from_db()
         today = services._rule_local_today(rule, now=services.timezone.now()).isoformat()
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

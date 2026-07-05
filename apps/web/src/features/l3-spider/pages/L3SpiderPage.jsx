@@ -12,6 +12,7 @@ import { L3SpiderFilterPanel } from "../components/L3SpiderFilterPanel"
 import { L3SpiderMailRuleSheet } from "../components/L3SpiderMailRuleSheet"
 import { L3SpiderSummaryView } from "../components/L3SpiderSummaryView"
 import {
+  useL3SpiderDailySummary,
   useL3SpiderData,
   useL3SpiderFilterCandidates,
   useL3SpiderMeta,
@@ -22,6 +23,7 @@ import {
   createLeafSelectionFromSearchParams,
   createSelectionFromSearchParams,
   EMPTY_META,
+  EMPTY_SELECTION,
   hasCompleteSelection,
 } from "../utils/selection"
 
@@ -38,6 +40,10 @@ export function L3SpiderPage() {
   const pageRef = useRef(null)
   const appliedUrlSearchRef = useRef(urlSearchKey)
   const [pageScrollTop, setPageScrollTop] = useState(0)
+  // 스크롤 상태 갱신을 rAF로 코얼레싱: 매 스크롤 이벤트마다 setState 하지 않고
+  // 프레임당 1회만 반영해 리렌더 폭풍(차트 가상화 재계산)을 막는다.
+  const scrollRafRef = useRef(0)
+  const latestScrollTopRef = useRef(0)
   const [pageViewportHeight, setPageViewportHeight] = useState(0)
   const [selection, setSelection] = useState(initialDeepLinkState.selection)
   const [checkedStep, setCheckedStep] = useState(initialDeepLinkState.leafSelection.checkedStep)
@@ -63,6 +69,8 @@ export function L3SpiderPage() {
   const metaQuery = useL3SpiderMeta()
   const structureQuery = useL3SpiderStructure(selection)
   const statsQuery = useL3SpiderStats(selection)
+  // date의 daily summary 로딩 상태를 DataSelector의 ✓/스피너 표시에 사용(캐시 공유).
+  const dailySummaryQuery = useL3SpiderDailySummary(selection.date)
 
   const meta = metaQuery.data ?? EMPTY_META
   const isSelectionReady = hasCompleteSelection(selection)
@@ -112,6 +120,27 @@ export function L3SpiderPage() {
     setCheckedBin(nextLeafSelection.checkedBin)
     setAnalysisMode(nextLeafSelection.analysisMode)
   }, [searchParams, urlSearchKey])
+  // l3_spider 진입 시 날짜가 선택돼 있지 않으면 가장 최근(완료된) 날짜를 자동 선택한다.
+  // 딥링크로 날짜가 이미 있으면 건드리지 않고, 최초 1회만 적용한다.
+  const autoSelectedDateRef = useRef(false)
+  useEffect(() => {
+    if (autoSelectedDateRef.current) return
+    if (selection.date) {
+      autoSelectedDateRef.current = true
+      return
+    }
+    const dates = meta.dates
+    if (dates && dates.length) {
+      autoSelectedDateRef.current = true
+      // handleSelectionChange와 동일 동작이지만 안정적 setter만 사용해 effect 의존성을 최소화.
+      setSelection({ ...EMPTY_SELECTION, date: dates[dates.length - 1] })
+      setCheckedStep(null)
+      setCheckedPpid(null)
+      setCheckedEqc(null)
+      setCheckedBin(null)
+      setAnalysisMode("eqpch")
+    }
+  }, [meta.dates, selection.date])
   useEffect(() => {
     const page = pageRef.current
     if (!page) return undefined
@@ -164,8 +193,16 @@ export function L3SpiderPage() {
   )
   const rows = dataQuery.data?.rows ?? []
   const handlePageScroll = (event) => {
-    setPageScrollTop(event.currentTarget.scrollTop)
+    latestScrollTopRef.current = event.currentTarget.scrollTop
+    if (scrollRafRef.current) return
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = 0
+      setPageScrollTop(latestScrollTopRef.current)
+    })
   }
+  useEffect(() => () => {
+    if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current)
+  }, [])
   const handleScrollToTop = () => {
     pageRef.current?.scrollTo({ top: 0, behavior: "smooth" })
   }
@@ -187,18 +224,15 @@ export function L3SpiderPage() {
         onSelectionChange={handleSelectionChange}
         isLoading={metaQuery.isFetching}
         onRefresh={() => metaQuery.refetch()}
-        stats={statsQuery.data?.stats}
-        showStats={isSelectionReady && activeTab === "chart"}
+        dateLoading={dailySummaryQuery.isLoading}
         showBody={activeTab === "chart"}
         tabsSlot={(
-          <div className="flex min-w-0 flex-wrap items-center gap-3">
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList>
-                <TabsTrigger value="summary">Summary</TabsTrigger>
-                <TabsTrigger value="chart">Chart</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList>
+              <TabsTrigger value="summary">Summary</TabsTrigger>
+              <TabsTrigger value="chart">Chart</TabsTrigger>
+            </TabsList>
+          </Tabs>
         )}
         headerExtra={(
           <>
@@ -239,6 +273,7 @@ export function L3SpiderPage() {
           onDrill={handleDrillToChart}
           selectedLine={summaryLine}
           onSelectLine={setSummaryLine}
+          lineGroups={meta.lineGroups}
         />
       ) : !isSelectionReady ? (
         <div className="m-6 flex flex-1 items-center justify-center rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground shadow-sm">

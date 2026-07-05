@@ -484,8 +484,8 @@ def _build_line_name_availability(rules: list) -> dict:
 def _filter_files_by_line_names(files: list, selection: dict[str, object]) -> list:
     """선택된 line_name(들)이 있으면 파일 목록을 line_name 기준으로 필터합니다.
 
-    각 파일의 line_name = resolve(line_id, process_id, step_seq)입니다.
-    필요한 값은 전부 경로/파일명에서 얻으므로 Parquet를 읽지 않습니다.
+    각 파일의 line_name = resolve(line_id, process_id, step_seq) — 전부 경로/파일명에서 얻으므로
+    parquet를 읽지 않습니다.
 
     계약: daily_anomaly 파일명은 항상 {step_seq}#{ppid}#{index} 형식이라 step_seq가 파일명에
     반드시 존재합니다(알고리즘 서버 보장). 따라서 파일 단위로 line_name이 하나로 정해집니다.
@@ -558,6 +558,11 @@ def get_meta(*, user: Any | None = None) -> dict[str, object]:
     else:
         df = pd.DataFrame(columns=["date", "line_id", "process_id", "eds_step"])
 
+    # 완결성 게이트: 알고리즘 런이 완료된 날짜만 노출한다. 오늘(진행 중)은 완료 마커가
+    # 없으므로 셀렉터에서 제외되어, 사용자는 자동으로 마지막 완료 날짜(어제)를 보게 된다.
+    # None(알고리즘 서버 미구현)이면 게이트를 적용하지 않는다(하위호환).
+    completed_dates = selectors.query_completed_dates()
+
     dates: set[str] = set()
     line_ids: set[str] = set()
     process_ids: set[str] = set()
@@ -565,6 +570,8 @@ def get_meta(*, user: Any | None = None) -> dict[str, object]:
     availability: dict[str, dict[str, dict[str, set[str]]]] = {}
 
     for row in df.itertuples(index=False):
+        if completed_dates is not None and row.date not in completed_dates:
+            continue
         dates.add(row.date)
         line_ids.add(row.line_id)
         process_ids.add(row.process_id)
@@ -1200,6 +1207,23 @@ def _rule_local_today(rule, *, now: dt_datetime) -> "date":
     return now.astimezone(tz).date()
 
 
+def _mail_rule_target_date(rule, *, now: dt_datetime) -> str:
+    """메일에 담을 데이터 날짜(ISO 문자열)를 반환합니다.
+
+    run_status(완료 마커)가 있으면 '오늘 이하에서 가장 최근 완료된 날짜'를 사용한다.
+    즉 오늘 알고리즘이 아직 완료되지 않았으면 직전 완료 날짜(보통 어제)를 발송한다
+    — 대시보드의 완결성 게이트와 동일 기준. run_status가 없거나(알고리즘 서버 미반영)
+    완료 날짜가 없으면 캘린더 오늘로 폴백(하위호환).
+    """
+    local_today = _rule_local_today(rule, now=now).isoformat()
+    completed = selectors.query_completed_dates()
+    if completed:
+        candidates = [d for d in completed if d <= local_today]
+        if candidates:
+            return max(candidates)
+    return local_today
+
+
 def _is_mail_rule_due(rule, *, now: dt_datetime) -> bool:
     """현재 시각 기준으로 rule 발송 시간이 되었는지 판단합니다."""
 
@@ -1216,6 +1240,13 @@ def _is_mail_rule_due(rule, *, now: dt_datetime) -> bool:
         return False
     checked_at = rule.last_checked_at or rule.last_sent_at
     if not checked_at:
+        # 한 번도 발송하지 않은 rule. 오늘 발송 슬롯(send_time)이 rule 생성 전에 이미
+        # 지났다면 오늘은 건너뛰고 다음 날 슬롯부터 발송한다.
+        # (예: 09:00 설정을 13:00에 만들면 오늘 13:05 트리거에서 당일 발송하지 않음)
+        created_local = rule.created_at.astimezone(tz)
+        todays_slot = dt_datetime.combine(local_today, rule.send_time, tzinfo=tz)
+        if created_local > todays_slot:
+            return False
         return True
     return checked_at.astimezone(tz).date() < local_today
 
@@ -1421,8 +1452,10 @@ def _process_mail_rule(rule, *, now: dt_datetime) -> dict[str, object]:
     if not _is_mail_rule_due(rule, now=now):
         return {"ruleId": rule.id, "status": "not_due", "claimed": 0, "sent": 0}
 
-    today = _rule_local_today(rule, now=now).isoformat()
-    events = _collect_mail_rule_events(rule, today=today)
+    # 발송 시점 기준 '최신 완료 날짜' 데이터를 담는다(오늘 미완이면 어제). 스케줄(하루 1회
+    # 발송) 자체는 _is_mail_rule_due가 캘린더 오늘 기준으로 판단하므로 영향 없다.
+    target_date = _mail_rule_target_date(rule, now=now)
+    events = _collect_mail_rule_events(rule, today=target_date)
     if not events:
         _mark_mail_rule_checked(rule)
         return {"ruleId": rule.id, "status": "no_events", "claimed": 0, "sent": 0}
@@ -1596,10 +1629,10 @@ def _apply_exclusion_filters(merged: pd.DataFrame, *, user: Any | None = None) -
 
 
 def get_structure(selection: dict[str, object], *, user: Any | None = None) -> dict[str, object]:
-    """파일명 스캔만으로 edsStepSeqs·edsStepPpids를 즉시 반환합니다 (Parquet 읽기 없음).
+    """파일명 스캔만으로 edsStepSeqs·edsStepPpids를 즉시 반환합니다 (parquet 읽기 없음).
 
     제외 필터의 경로 필드(line_id, process_id, eds_step, step_seq, ppid)를 적용합니다.
-    EQPCH·bin_name 기준 규칙은 Parquet 데이터 없이 판단 불가하므로 자동으로 무시됩니다.
+    eqpch·bin_name 기준 규칙은 parquet 데이터 없이 판단 불가하므로 자동으로 무시됩니다.
     """
     empty: dict[str, object] = {"edsStepSeqs": {}, "edsStepPpids": {}}
     if not _has_required_selection(selection):
@@ -1614,7 +1647,7 @@ def get_structure(selection: dict[str, object], *, user: Any | None = None) -> d
 
     line_names = {str(v) for v in (selection.get("lineNames") or []) if v}
 
-    # 파일명 스캔만으로 처리(Parquet 읽기 없음). line_name은 (line_id, process_id, step_seq)로
+    # 파일명 스캔만으로 처리(parquet 읽기 없음). line_name은 (line_id, process_id, step_seq)로
     # 파일마다 결정되므로 스캔 중 바로 필터합니다.
     root = selectors.get_data_root()
     file_rows: list[dict[str, str]] = []
@@ -1623,7 +1656,7 @@ def get_structure(selection: dict[str, object], *, user: Any | None = None) -> d
             parsed = _parse_filename_key(path)
             if not parsed:
                 # 계약상 daily_anomaly 파일명엔 step_seq가 항상 있음. structure는 파일명 스캔만
-                # 하므로(Parquet 미읽음) step_seq를 못 읽는 파일은 다룰 수 없어 제외.
+                # 하므로(parquet 미읽음) step_seq를 못 읽는 파일은 다룰 수 없어 제외.
                 continue
             step_seq, ppid = parsed
             relative_parts = path.relative_to(root).parts
@@ -1669,7 +1702,7 @@ def get_structure(selection: dict[str, object], *, user: Any | None = None) -> d
 
 
 def get_stats(selection: dict[str, object], *, user: Any | None = None) -> dict[str, object]:
-    """슬림 Parquet 읽기로 stats + PPID별 last_tkin_time을 반환합니다."""
+    """slim parquet 읽기로 stats + PPID별 last_tkin_time을 반환합니다."""
     empty: dict[str, object] = {"stats": _empty_stats(), "ppidLastTkinTime": {}}
     if not _has_required_selection(selection):
         return empty
@@ -1937,12 +1970,19 @@ def _daily_file_df_from_index(index_rows: list[dict], date: str, root: Path) -> 
             "row_cnt": int(r.get("row_cnt") or 0),
             "bins": _parse_json_list(r.get("bin_names")),
             "hr_eqcs": _parse_json_list(r.get("high_risk_eqcs")),
+            # 분석 그룹용: 알고리즘이 처리한 전체 bin 수(이상 여부 무관).
+            # 알고리즘 서버가 total_bin_cnt를 아직 안 주면 이상 bin 수(len(bins))로 폴백.
+            "total_bins": (
+                int(r["total_bin_cnt"])
+                if r.get("total_bin_cnt") is not None
+                else len(_parse_json_list(r.get("bin_names")))
+            ),
         })
     return pd.DataFrame(counted), uncounted_paths
 
 
 def _daily_file_df_from_parquet(paths: list[Path], rules: list[dict] | None) -> pd.DataFrame:
-    """Parquet 파일들을 읽어(제외필터 옵션) 파일별 집계 프레임으로 변환합니다."""
+    """parquet 파일들을 읽어(제외필터 옵션) 파일별 집계 프레임으로 변환합니다."""
     if not paths:
         return pd.DataFrame()
     frames = _parallel_read(list(paths), _read_daily_summary_file)
@@ -1971,11 +2011,14 @@ def _daily_file_df_from_parquet(paths: list[Path], rules: list[dict] | None) -> 
         hr_eqcs = sorted(
             e for e in group.loc[group["_hr"] == 1, "eqc"].unique().tolist() if e
         )
+        all_bins = group["bin_name"].dropna().astype(str).unique().tolist()
         records.append({
             "line_id": lid, "process_id": pid, "eds_step": eds, "step_seq": sseq, "ppid": ppid,
             "hr": int(group["_hr"].sum()), "wn": int(group["_wn"].sum()), "row_cnt": int(len(group)),
-            "bins": sorted(group["bin_name"].dropna().astype(str).unique().tolist()),
+            "bins": sorted(all_bins),
             "hr_eqcs": hr_eqcs,
+            # parquet에는 정상 포함 전체 행이 있으므로 distinct bin 수 = 분석 그룹용 total_bins
+            "total_bins": int(len(all_bins)),
         })
     return pd.DataFrame(records)
 
@@ -1996,6 +2039,10 @@ def _aggregate_daily(file_df: pd.DataFrame, dates: list) -> dict:
         file_df["bins"] = [[] for _ in range(len(file_df))]
     if "hr_eqcs" not in file_df.columns:
         file_df["hr_eqcs"] = [[] for _ in range(len(file_df))]
+    # 분석 그룹용 전체 bin 수. 없으면(구 인덱스/폴백) 이상 bin 수로 대체.
+    if "total_bins" not in file_df.columns:
+        file_df["total_bins"] = [len(b) if b else 0 for b in file_df["bins"]]
+    file_df["total_bins"] = file_df["total_bins"].fillna(0).astype(int)
 
     name_map = {
         (lid, pid, sseq): line_name_rules.resolve_line_name(lid, pid, sseq)
@@ -2026,21 +2073,23 @@ def _aggregate_daily(file_df: pd.DataFrame, dates: list) -> dict:
             "hrEqpchs": len(cell_hr_eqcs),    # High Risk 발생 EQPCH 수
         })
 
-    # 분석 그룹 = 알고리즘이 처리한 distinct (line_name, process, eds, step_seq, bin)
-    # 이상 EQPCH = 그날 High Risk Chamber가 난 고유 EQC(EQPCH)
-    analysis_groups: set = set()
+    # 이상 bin 조합(차트/이상 지표용) 및 이상 EQPCH 집계.
+    # 주의: bins(=bin_names)는 알고리즘 서버가 '이상 bin만' 인덱싱하므로 이상 조합만 담긴다.
+    anomaly_bin_groups: set = set()
     hr_eqc_set: set = set()
     for row in file_df.itertuples(index=False):
         for bin_name in (row.bins or []):
-            analysis_groups.add((row.line_name, row.process_id, row.eds_step, row.step_seq, bin_name))
+            anomaly_bin_groups.add((row.line_name, row.process_id, row.eds_step, row.step_seq, bin_name))
         for eqc in (row.hr_eqcs or []):
             hr_eqc_set.add(eqc)
 
     total_hr = int(file_df["hr"].sum())
     total_wn = int(file_df["wn"].sum())
     headline = {
-        "groups": len(analysis_groups),  # 분석 그룹: line_name×process×eds×step_seq×bin
-        "binNames": len({t[4] for t in analysis_groups}),
+        # 분석 그룹 = 알고리즘이 처리한 전체 (파일=line·process·eds·step_seq·ppid) × bin 수.
+        # 이상 여부와 무관한 total_bins(=total_bin_cnt)의 합. 이상 조합만 세던 기존값과 다르다.
+        "groups": int(file_df["total_bins"].sum()),
+        "binNames": len({t[4] for t in anomaly_bin_groups}),
         "stepSeqs": int(file_df["step_seq"].nunique()),
         "lines": int(file_df["line_name"].nunique()),
         "processes": int(file_df["process_id"].nunique()),
@@ -2074,6 +2123,14 @@ def get_daily_summary(selection: dict[str, object], *, user: Any | None = None) 
     if not dates:
         return _empty_daily_summary()
 
+    # 완결성 게이트(방어): 완료되지 않은 날짜는 부분 데이터이므로 요약 대상에서 제외한다.
+    # get_meta가 이미 미완료 날짜를 노출하지 않지만, 직접 API 호출로 우회하는 경우까지 막는다.
+    completed_dates = selectors.query_completed_dates()
+    if completed_dates is not None:
+        dates = [d for d in dates if d in completed_dates]
+        if not dates:
+            return _empty_daily_summary()
+
     rules = _get_exclusion_rules(user=user)
     rules_hash = str(hash(tuple(sorted(str(r) for r in rules))))
     cache_key = f"{rules_hash}:{json.dumps(sorted(dates))}"
@@ -2081,8 +2138,8 @@ def get_daily_summary(selection: dict[str, object], *, user: Any | None = None) 
     if cached is not None:
         return cached
 
-    # 제외필터가 있으면 행 단위 정확 필터가 필요 → 전량 Parquet.
-    # 없으면 file_index의 상태 카운트로 집계(초고속). 카운트 NULL(구 데이터) 파일만 Parquet 폴백.
+    # 제외필터가 있으면 행 단위 정확 필터가 필요 → 전량 parquet.
+    # 없으면 file_index의 상태 카운트로 집계(초고속). 카운트 NULL(구 데이터) 파일만 parquet 폴백.
     file_frames: list[pd.DataFrame] = []
     try:
         if rules:
@@ -2105,12 +2162,12 @@ def get_daily_summary(selection: dict[str, object], *, user: Any | None = None) 
                     if not counted_df.empty:
                         file_frames.append(counted_df)
                     uncounted_paths.extend(uncounted)
-                if uncounted_paths:  # 카운트 NULL 파일만 Parquet 폴백
+                if uncounted_paths:  # 카운트 NULL 파일만 parquet 폴백
                     frame = _daily_file_df_from_parquet(uncounted_paths, None)
                     if not frame.empty:
                         file_frames.append(frame)
             else:
-                # 인덱스가 카운트/EQC를 완전히 못 주면 전량 Parquet(모든 지표 정확)
+                # 인덱스가 카운트/eqc를 완전히 못 주면 전량 parquet(모든 지표 정확)
                 paths = []
                 for date in dates:
                     paths.extend(selectors.iter_date_files(date))
@@ -2223,6 +2280,54 @@ def get_data(selection: dict[str, object], *, user: Any | None = None) -> dict[s
 
     # ── 컬럼 기반 직렬화 (JSON 크기 ~60% 절감 + orjson 인코딩) ───────────────
     return _dataframe_to_columnar(merged)
+
+
+_trend_cache = _SimpleCache(ttl=300.0)
+
+
+def get_trend(*, user: Any | None = None) -> dict[str, object]:
+    """날짜별·라인별 이상감지 건수 트렌드를 반환합니다.
+
+    반환: {"points": [{"date": str, "lineName": str, "hr": int, "wn": int}, ...]}
+    날짜 오름차순, 라인명 오름차순 정렬.
+    """
+    cached = _trend_cache.get("all")
+    if cached is not None:
+        return cached
+
+    rows = selectors.query_trend_data()
+    if not rows:
+        result: dict[str, object] = {"points": []}
+        _trend_cache.set("all", result)
+        return result
+
+    completed_dates = selectors.query_completed_dates()
+
+    combos = {(r["line_id"], r["process_id"], r["step_seq"]) for r in rows}
+    name_map = {
+        (lid, pid, sseq): line_name_rules.resolve_line_name(lid, pid, sseq)
+        for lid, pid, sseq in combos
+    }
+
+    agg: dict[tuple[str, str], dict[str, int]] = {}
+    for r in rows:
+        date = r["date"]
+        if completed_dates is not None and date not in completed_dates:
+            continue
+        line_name = name_map.get((r["line_id"], r["process_id"], r["step_seq"]), r["line_id"])
+        key = (date, line_name)
+        cur = agg.get(key, {"hr": 0, "wn": 0})
+        cur["hr"] += r["hr"]
+        cur["wn"] += r["wn"]
+        agg[key] = cur
+
+    points = [
+        {"date": date, "lineName": line_name, "hr": v["hr"], "wn": v["wn"]}
+        for (date, line_name), v in sorted(agg.items())
+    ]
+    result = {"points": points}
+    _trend_cache.set("all", result)
+    return result
 
 
 def get_filter_candidates(selection: dict[str, object], *, user: Any | None = None) -> dict[str, object]:

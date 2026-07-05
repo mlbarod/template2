@@ -44,12 +44,25 @@
   min-width: 0;
   min-height: 0;
   height: 100%;
+  /* 화면 밖 셀은 렌더(paint/layout)를 건너뛴다 — DOM/데이터는 그대로 두고 스크롤 시
+     보이지 않는 subplot의 SVG 페인트 비용만 제거한다. 'auto'는 한 번 그려진 크기를
+     기억하고, 미측정 시 행 높이로 폴백해 레이아웃 튐을 막는다. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto var(--tc-row-height, 340px);
 }
 
 .tc-plot {
   height: 100%;
   min-height: 0;
   width: 100%;
+}
+
+/* ④ 스크롤 중 아직 안 그린 subplot 자리표시(멈추면 실제 차트로 교체) */
+.tc-plot-defer {
+  height: 100%;
+  width: 100%;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.035);
 }
 
 .tc-plot .modebar {
@@ -97,6 +110,15 @@
   position: relative;
   height: var(--tc-total-height, 300px);
   min-height: 300px;
+  /* 스켈레톤 backdrop: 아직 차트가 그려지지 않은 영역(빠른 스크롤 시)을 빈 흰칸 대신
+     행 단위 회색 카드처럼 보이게 한다. 그려진 플롯은 불투명 흰 배경이라 이를 덮는다. */
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(15, 23, 42, 0.04) 0,
+    rgba(15, 23, 42, 0.04) calc(var(--tc-row-height, 340px) - 14px),
+    transparent calc(var(--tc-row-height, 340px) - 14px),
+    transparent var(--tc-row-height, 340px)
+  );
 }
 
 .tc-virtual-window {

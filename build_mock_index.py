@@ -89,18 +89,47 @@ def ensure_index_schema(conn: sqlite3.Connection) -> None:
             bin_names     TEXT NOT NULL,
             row_cnt       INTEGER,
             has_high_risk INTEGER DEFAULT 0,
+            high_risk_cnt INTEGER,
+            warning_cnt   INTEGER,
+            normal_cnt    INTEGER,
+            high_risk_eqcs TEXT,
+            total_bin_cnt INTEGER,
             saved_at      TEXT
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_date_line ON file_index(date, line_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_date_hr   ON file_index(date, has_high_risk)")
+    # 날짜별 알고리즘 런 완료 상태. 대시보드는 status='completed' 날짜만 노출한다.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS run_status (
+            date         TEXT PRIMARY KEY,
+            status       TEXT NOT NULL,   -- 'running' | 'completed'
+            completed_at TEXT
+        )
+    """)
 
 
 def upsert_file_group(conn: sqlite3.Connection, files: list[Path], meta: dict, df: pd.DataFrame, root: Path) -> None:
     eqp_ids     = sorted(df["eqp_id"].astype(str).unique().tolist())
     chamber_ids = sorted(df["chamber_id"].astype(str).unique().tolist())
     bin_names   = sorted(df["bin_name"].astype(str).unique().tolist())
-    has_hr      = bool((df["display_status"] == "High Risk Chamber").any())
+    # 상태 정규화(대시보드와 동일): 'Single Spike' → 'Warning'
+    status = df["display_status"].astype(str).replace({"Single Spike": "Warning"})
+    has_hr      = bool((status == "High Risk Chamber").any())
+    # 상태별 카운트: 이게 있어야 대시보드가 parquet 재읽기 없이 인덱스만으로 요약을 집계함(수백배 빠름).
+    high_risk_cnt = int((status == "High Risk Chamber").sum())
+    warning_cnt   = int((status == "Warning").sum())
+    normal_cnt    = int((status == "Normal (Ref)").sum())
+    # High Risk가 난 distinct EQPCH(eqc) 목록 — 이상 EQPCH 지표용
+    if "eqc" in df.columns:
+        high_risk_eqcs = sorted(
+            e for e in df.loc[status == "High Risk Chamber", "eqc"].dropna().astype(str).unique().tolist() if e
+        )
+    else:
+        high_risk_eqcs = []
+    # 분석 그룹용: 이상 여부와 무관하게 이 파일에서 처리된 전체 고유 bin 수.
+    # (mock parquet은 정상 포함 전체 행을 담고 있어 nunique = 전체 bin 수)
+    total_bin_cnt = int(df["bin_name"].astype(str).nunique())
     saved_at    = datetime.now().isoformat(timespec="seconds")
 
     for f in files:
@@ -109,20 +138,27 @@ def upsert_file_group(conn: sqlite3.Connection, files: list[Path], meta: dict, d
         conn.execute("""
             INSERT INTO file_index
                 (filepath, date, line_id, process_id, eds_step, step_seq, ppid,
-                 eqp_ids, chamber_ids, bin_names, row_cnt, has_high_risk, saved_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 eqp_ids, chamber_ids, bin_names, row_cnt, has_high_risk,
+                 high_risk_cnt, warning_cnt, normal_cnt, high_risk_eqcs, total_bin_cnt, saved_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(filepath) DO UPDATE SET
-                eqp_ids       = excluded.eqp_ids,
-                chamber_ids   = excluded.chamber_ids,
-                bin_names     = excluded.bin_names,
-                row_cnt       = excluded.row_cnt,
-                has_high_risk = excluded.has_high_risk,
-                saved_at      = excluded.saved_at
+                eqp_ids        = excluded.eqp_ids,
+                chamber_ids    = excluded.chamber_ids,
+                bin_names      = excluded.bin_names,
+                row_cnt        = excluded.row_cnt,
+                has_high_risk  = excluded.has_high_risk,
+                high_risk_cnt  = excluded.high_risk_cnt,
+                warning_cnt    = excluded.warning_cnt,
+                normal_cnt     = excluded.normal_cnt,
+                high_risk_eqcs = excluded.high_risk_eqcs,
+                total_bin_cnt  = excluded.total_bin_cnt,
+                saved_at       = excluded.saved_at
         """, (
             rel_path, meta["save_date"], meta["line_id"], meta["process_id"],
             meta["eds_step"], meta["step_seq"], meta["ppid"],
             json.dumps(eqp_ids), json.dumps(chamber_ids), json.dumps(bin_names),
-            len(df), int(has_hr), saved_at,
+            len(df), int(has_hr),
+            high_risk_cnt, warning_cnt, normal_cnt, json.dumps(high_risk_eqcs), total_bin_cnt, saved_at,
         ))
 
 
@@ -154,6 +190,7 @@ def build_index(root: Path, db_path: Path) -> None:
     ensure_index_schema(conn)
 
     ok, fail = 0, 0
+    seen_dates: set[str] = set()
     with conn:
         conn.execute("DELETE FROM file_index")
         for key, group_files in groups.items():
@@ -169,7 +206,17 @@ def build_index(root: Path, db_path: Path) -> None:
                 fail += 1
                 continue
             upsert_file_group(conn, group_files, meta, df, root)
+            seen_dates.add(meta["save_date"])
             ok += 1
+
+        # mock 데이터의 모든 날짜는 완료된 것으로 표시(실제 알고리즘 서버는 런 종료 시 기록).
+        conn.execute("DELETE FROM run_status")
+        completed_at = datetime.now().isoformat(timespec="seconds")
+        for d in sorted(seen_dates):
+            conn.execute(
+                "INSERT INTO run_status (date, status, completed_at) VALUES (?, 'completed', ?)",
+                (d, completed_at),
+            )
 
     conn.close()
     print(f"\n✓ 인덱스 생성 완료: 성공 {ok} / 실패 {fail} (DB: {db_path})")

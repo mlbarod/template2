@@ -22,6 +22,7 @@ from .views import (
     L3SpiderStatsView,
     L3SpiderStructureView,
     L3SpiderSummaryView,
+    L3SpiderTrendView,
 )
 
 urlpatterns = [
@@ -39,4 +40,5 @@ urlpatterns = [
     path("mail-rules/<int:pk>/permissions", L3SpiderMailRulePermissionView.as_view(), name="l3-spider-mail-rule-permissions"),
     path("mail-rules/<int:pk>/test-send", L3SpiderMailRuleTestSendView.as_view(), name="l3-spider-mail-rule-test-send"),
     path("mail-rules/<int:pk>", L3SpiderMailRuleDetailView.as_view(), name="l3-spider-mail-rule-detail"),
+    path("trend", L3SpiderTrendView.as_view(), name="l3-spider-trend"),
 ]

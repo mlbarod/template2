@@ -309,3 +309,15 @@ class L3SpiderFilterCandidatesView(APIView):
             )
         except services.L3SpiderServiceError as error:
             return _error_response(error)
+
+
+class L3SpiderTrendView(APIView):
+    """날짜별·라인별 이상감지 건수 트렌드 조회 (GET)."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs) -> Response:
+        try:
+            return Response(services.get_trend(user=request.user))
+        except Exception as exc:
+            return _error_response(exc)
