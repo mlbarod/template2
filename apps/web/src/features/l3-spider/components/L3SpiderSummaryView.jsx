@@ -85,16 +85,11 @@ function SummaryStats({ h }) {
   )
 }
 
-// 라인별 차트 색상 팔레트
+// 라인별 고유 색상 팔레트
 const LINE_COLORS = [
-  { value: "hsl(var(--chart-1))", dotClass: "bg-chart-1" },
-  { value: "hsl(var(--chart-2))", dotClass: "bg-chart-2" },
-  { value: "hsl(var(--chart-3))", dotClass: "bg-chart-3" },
-  { value: "hsl(var(--chart-4))", dotClass: "bg-chart-4" },
-  { value: "hsl(var(--chart-5))", dotClass: "bg-chart-5" },
-  { value: "hsl(var(--primary))", dotClass: "bg-primary" },
-  { value: "hsl(var(--destructive))", dotClass: "bg-destructive" },
-  { value: "hsl(var(--foreground))", dotClass: "bg-foreground" },
+  "#4f86f7", "#34c77b", "#f59e0b", "#a855f7", "#ec4899",
+  "#06b6d4", "#10b981", "#6366f1", "#f43f5e", "#8b5cf6",
+  "#14b8a6", "#f97316", "#84cc16", "#e879f9", "#38bdf8",
 ]
 
 const DONUT_META = {
@@ -140,8 +135,7 @@ function DonutChartCard({ lineSummary, cells, metric, focusLine }) {
       const val = getValue(r)
       const fullLen = total > 0 ? (val / total) * C : 0
       const len = Math.max(0, fullLen - GAP)
-      const color = LINE_COLORS[i % LINE_COLORS.length]
-      const seg = { key: r.key, label: r.label, val, color: color.value, dotClass: color.dotClass, len, off: off + GAP / 2 }
+      const seg = { key: r.key, label: r.label, val, color: LINE_COLORS[i % LINE_COLORS.length], len, off: off + GAP / 2 }
       off += fullLen
       return seg
     })
@@ -181,7 +175,7 @@ function DonutChartCard({ lineSummary, cells, metric, focusLine }) {
         <div className="grid w-full grid-cols-2 gap-x-3 gap-y-1 text-xs">
           {arcs.map((arc) => (
             <span key={arc.key} className="flex min-w-0 items-center gap-1">
-              <span className={cn("size-2 shrink-0 rounded-full", arc.dotClass)} aria-hidden="true" />
+              <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: arc.color }} aria-hidden="true" />
               <span className="min-w-0 truncate text-muted-foreground">{arc.label}</span>
               <span className="ml-auto shrink-0 tabular-nums font-semibold">{formatNumber(arc.val)}</span>
             </span>
@@ -608,7 +602,7 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
                 <Bar
                   dataKey="value"
                   name={metric === "hr" ? "전체 High Risk" : "전체 이상 건수 (HR+WN)"}
-                  fill={metric === "hr" ? "hsl(var(--destructive))" : "hsl(var(--chart-4))"}
+                  fill={metric === "hr" ? "#ef4444" : "#f97316"}
                   radius={[3, 3, 0, 0]}
                   maxBarSize={48}
                 />
@@ -618,7 +612,7 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
                   dataKey={key}
                   name={key}
                   stackId="a"
-                  fill={LINE_COLORS[i % LINE_COLORS.length].value}
+                  fill={LINE_COLORS[i % LINE_COLORS.length]}
                   radius={i === seriesKeys.length - 1 ? [3, 3, 0, 0] : [0, 0, 0, 0]}
                   maxBarSize={48}
                 />
@@ -649,7 +643,15 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
     const base = fromGroups.length ? fromGroups : []
     const baseSet = new Set(base)
     const extras = activeLineOptions.filter((l) => !baseSet.has(l))
-    return extras.length ? sortLineNames([...base, ...extras]) : base.length ? base : activeLineOptions
+    const merged = extras.length ? sortLineNames([...base, ...extras]) : base.length ? base : activeLineOptions
+    // TEMP: 15개까지 더미 비활성 라인으로 채우기 (UI 테스트용)
+    const mergedSet = new Set(merged)
+    const dummies = [
+      "TestLine_A", "TestLine_B", "TestLine_C", "TestLine_D", "TestLine_E",
+      "TestLine_F", "TestLine_G", "TestLine_H", "TestLine_I", "TestLine_J",
+      "TestLine_K", "TestLine_L",
+    ].filter((d) => !mergedSet.has(d)).slice(0, Math.max(0, 15 - merged.length))
+    return dummies.length ? sortLineNames([...merged, ...dummies]) : merged
   }, [lineGroups, activeLineOptions])
 
   // 선택된 라인 — 활성/비활성 모두 허용 (트렌드 필터링 등)
@@ -734,10 +736,11 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
       <SummaryStats h={h} />
 
       {/* col1=1fr(라인테이블 2행span), col2=1.4fr(도넛2개+트렌드) */}
-      <div className="grid min-h-[520px] grid-cols-[1fr_1.4fr] grid-rows-[auto_1fr] gap-5">
+      <div className="gap-5" style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gridTemplateRows: "auto 1fr", minHeight: 520 }}>
         {/* col1 row1+2: 라인별 현황 테이블 */}
         <Card
-          className="col-start-1 row-span-2 row-start-1 flex min-h-0 flex-col overflow-hidden rounded-lg py-0"
+          className="flex min-h-0 flex-col overflow-hidden rounded-lg py-0"
+          style={{ gridColumn: 1, gridRow: "1 / span 2" }}
         >
           <CardHeader className="shrink-0 border-b bg-muted/50 px-4 py-2.5">
             <div className="flex items-center gap-2">
@@ -760,7 +763,7 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
         </Card>
 
         {/* col2 row1: 도넛 차트 3개 나란히 */}
-        <div className="col-start-2 row-start-1 grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-3" style={{ gridColumn: 2, gridRow: 1 }}>
           <DonutChartCard lineSummary={lineSummary} cells={data?.matrix?.cells ?? []} metric="hr" focusLine={activeLine} />
           <DonutChartCard lineSummary={lineSummary} cells={data?.matrix?.cells ?? []} metric="wn" focusLine={activeLine} />
           <DonutChartCard lineSummary={lineSummary} cells={data?.matrix?.cells ?? []} metric="total" focusLine={activeLine} />
