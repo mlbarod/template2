@@ -66,7 +66,7 @@ def _build_comment_row(
     return row
 
 
-def _build_openwebui_session(reply: str = "[시간 미상] 점검") -> Mock:
+def _build_openwebui_session(reply: str = "[2026-06-19 13:44] 점검") -> Mock:
     """OpenWebUI 응답을 흉내 내는 requests session mock을 생성합니다."""
 
     response = Mock()
@@ -112,6 +112,32 @@ class CtProcessCommentStructureTests(SimpleTestCase):
 
         self.assertTrue(field.null)
         self.assertTrue(field.blank)
+
+    def test_build_summary_prompt_groups_contents_by_comment_timestamp(self) -> None:
+        """comment header 다음 내용은 다음 header 전까지 같은 시간 이벤트로 묶습니다."""
+
+        messages = summary_module.build_summary_prompt(
+            "\n".join(
+                [
+                    "[ 2026-06-19 13:44 / 홍길동 ]",
+                    "점검 시작",
+                    "알람 확인",
+                    "",
+                    "[ 2026-06-19 18:37 / john ]",
+                    "조치 완료",
+                ]
+            )
+        )
+
+        system_prompt = messages[0]["content"]
+        user_prompt = messages[1]["content"]
+        self.assertNotIn("시간 미상", system_prompt)
+        self.assertNotIn("최대 3줄", system_prompt)
+        self.assertIn("입력 이벤트는 모두 출력", system_prompt)
+        self.assertIn("입력 이벤트끼리 합치거나 누락하지 마세요", system_prompt)
+        self.assertIn("timestamped_events:", user_prompt)
+        self.assertIn("[2026-06-19 13:44] 점검 시작 알람 확인", user_prompt)
+        self.assertIn("[2026-06-19 18:37] 조치 완료", user_prompt)
 
     def test_parse_source_file_name_extracts_timestamp(self) -> None:
         """파일명에서 timestamp를 추출하는지 확인합니다."""
@@ -260,11 +286,20 @@ class CtProcessCommentSummaryTests(TestCase):
 
         comment = CtProcessComment.objects.create(
             workorder_id="WO1",
-            contents_text="2026-01-01 10:00 점검 시작, 2026-01-01 11:00 조치 완료",
+            contents_text="\n".join(
+                [
+                    "[ 2026-01-01 10:00 / 홍길동 ]",
+                    "점검 시작",
+                    "알람 확인",
+                    "",
+                    "[ 2026-01-01 11:00 / john ]",
+                    "조치 완료",
+                ]
+            ),
             update_flag="Y",
         )
         session = _build_openwebui_session(
-            reply="시간순 요약: 10:00 점검 시작, 11:00 조치 완료\n원인: 확인 불가\n조치사항: 조치 완료\n결과: 확인 불가"
+            reply="시간순 요약: 2026-01-01 10:00 점검 시작, 2026-01-01 11:00 조치 완료\n원인: 확인 불가\n조치사항: 조치 완료\n결과: 확인 불가"
         )
 
         run_summary = summary_module.summarize_pending_ct_process_comments(
@@ -276,13 +311,18 @@ class CtProcessCommentSummaryTests(TestCase):
         comment.refresh_from_db()
         self.assertEqual(run_summary.success_count, 1)
         self.assertEqual(comment.update_flag, "N")
-        self.assertEqual(comment.llm_summary, "[10:00] 점검 시작\n[11:00] 조치 완료")
+        self.assertEqual(comment.llm_summary, "[2026-01-01 10:00] 점검 시작\n[2026-01-01 11:00] 조치 완료")
         request_kwargs = session.post.call_args.kwargs
+        request_messages = request_kwargs["json"]["messages"]
         self.assertEqual(request_kwargs["json"]["temperature"], 0.0)
         self.assertEqual(request_kwargs["json"]["model"], "test-model")
         self.assertEqual(request_kwargs["headers"]["Authorization"], "Bearer test-token")
-        self.assertIn("절대로 추정하거나 생성하지 마세요", request_kwargs["json"]["messages"][0]["content"])
-        self.assertIn("[시간] 이벤트", request_kwargs["json"]["messages"][0]["content"])
+        self.assertIn("절대로 추정하거나 생성하지 마세요", request_messages[0]["content"])
+        self.assertIn("[YYYY-MM-DD HH:MM] 이벤트", request_messages[0]["content"])
+        self.assertNotIn("시간 미상", request_messages[0]["content"])
+        self.assertNotIn("최대 3줄", request_messages[0]["content"])
+        self.assertIn("입력 이벤트는 모두 출력", request_messages[0]["content"])
+        self.assertIn("[2026-01-01 10:00] 점검 시작 알람 확인", request_messages[1]["content"])
 
     def test_summarize_keeps_update_flag_when_openwebui_fails(self) -> None:
         """OpenWebUI 요청 실패 시 update_flag를 Y로 유지합니다."""

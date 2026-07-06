@@ -23,28 +23,31 @@ SUMMARY_STATUS_SUCCESS = "success"
 SUMMARY_STATUS_FAILED = "failed"
 SUMMARY_STATUS_SKIPPED = "skipped"
 SUMMARY_STATUS_DRY_RUN = "dry_run"
+CONTENTS_EVENT_HEADER_PATTERN = re.compile(
+    r"^\[\s*(?P<time>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})\s*/\s*(?P<author>[^\]]+?)\s*\]\s*$"
+)
 SUMMARY_SECTION_PREFIX_PATTERN = re.compile(r"^(원인|조치사항|결과)\s*:")
 SUMMARY_TIME_LINE_PATTERN = re.compile(
     r"^(?P<time>(?:\d{4}[-/.]\d{2}[-/.]\d{2}\s+)?\d{1,2}:\d{2}(?::\d{2})?)\s+(?P<event>.+)$"
 )
 
 SUMMARY_SYSTEM_PROMPT = """당신은 설비 점검 이력 요약기입니다.
-입력으로 제공된 contents_text에 실제로 포함된 사실만 사용하세요.
+입력으로 제공된 이벤트 목록에 실제로 포함된 사실만 사용하세요.
 입력에 없는 원인, 조치사항, 결과, 시간, 장비 상태를 절대로 추정하거나 생성하지 마세요.
 
 작업:
 1. 설비 점검 이력을 확인 가능한 시간 순서대로 정리하세요.
-2. 핵심 이벤트만 최대 3줄로 짧게 요약하세요.
-3. 각 줄은 반드시 "[시간] 이벤트" 형식으로 쓰세요.
+2. 입력 이벤트는 모두 출력하되, 각 시간 이벤트의 내용만 한 줄로 짧게 요약하세요.
+3. 각 줄은 반드시 "[YYYY-MM-DD HH:MM] 이벤트" 형식으로 쓰세요.
 4. 한 줄에는 하나의 이벤트만 쓰고, 이벤트 사이에는 줄바꿈만 사용하세요.
-5. 명확한 시간이 없으면 "[시간 미상]"으로 쓰세요.
-6. 같은 의미의 중복 이벤트는 합치되, 핵심 사실은 누락하지 마세요.
-7. 원인, 조치사항, 결과 같은 별도 제목 항목은 쓰지 마세요.
+5. 대괄호 안 시간은 입력 이벤트의 시간을 그대로 사용하세요.
+6. 입력 이벤트끼리 합치거나 누락하지 마세요.
+7. 같은 시간 이벤트 안에서 같은 의미의 중복 내용만 합치세요.
 8. 출력 형식 외의 설명, 추론 과정, 사과문, 안내문은 쓰지 마세요.
 
 출력 형식:
-[07/06 10:00] 점검 시작
-[07/06 11:00] 조치 완료"""
+[2026-06-19 13:44] 점검 시작
+[2026-06-19 18:37] 조치 완료"""
 
 
 class OpenWebUIConfigError(RuntimeError):
@@ -161,8 +164,41 @@ def _build_headers(config: OpenWebUISummaryConfig) -> dict[str, str]:
     return headers
 
 
+def _build_timestamped_event_text(contents_text: str) -> str:
+    """comment header 기준으로 내용 block을 timestamp 확정 이벤트로 변환합니다."""
+
+    events: list[str] = []
+    current_time = ""
+    current_lines: list[str] = []
+
+    def flush_current_event() -> None:
+        if not current_time or not current_lines:
+            return
+        event_text = " ".join(" ".join(current_lines).split())
+        if event_text:
+            events.append(f"[{current_time}] {event_text}")
+
+    for raw_line in contents_text.splitlines():
+        line = raw_line.strip()
+        match = CONTENTS_EVENT_HEADER_PATTERN.match(line)
+        if match:
+            flush_current_event()
+            current_time = match.group("time")
+            current_lines = []
+            continue
+        if current_time and line:
+            current_lines.append(line)
+
+    flush_current_event()
+    return "\n".join(events)
+
+
 def build_summary_prompt(contents_text: str) -> list[dict[str, str]]:
     """OpenWebUI chat completions용 고정 message 목록을 생성합니다."""
+
+    timestamped_events = _build_timestamped_event_text(contents_text)
+    prompt_source = timestamped_events or contents_text
+    source_label = "timestamped_events:" if timestamped_events else "contents_text:"
 
     return [
         {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
@@ -170,9 +206,9 @@ def build_summary_prompt(contents_text: str) -> list[dict[str, str]]:
             "role": "user",
             "content": "\n".join(
                 [
-                    "contents_text:",
+                    source_label,
                     "<<<",
-                    contents_text,
+                    prompt_source,
                     ">>>",
                 ]
             ),
