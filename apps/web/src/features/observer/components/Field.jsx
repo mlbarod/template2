@@ -1,4 +1,4 @@
-// src/features/observer/components/logDetail/Field.jsx
+// Observer log detail의 label/value 표시 컴포넌트입니다.
 import React from "react";
 import StreamingText from "./StreamingText";
 
@@ -11,6 +11,17 @@ function formatDetailDateTime(value) {
   if (!match) return value;
 
   return `${match[1]} ${match[2]}`;
+}
+
+function FieldLabel({ label, className = "" }) {
+  return (
+    <div
+      className={`grid grid-cols-[minmax(0,1fr)_max-content] gap-x-1 font-semibold text-foreground ${className}`}
+    >
+      <span className="min-w-0">{label}</span>
+      <span>:</span>
+    </div>
+  );
 }
 
 /**
@@ -29,26 +40,18 @@ export default function Field({
 
   if (fullWidth) {
     return (
-      <div
-        className={`col-span-4 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1 ${className}`}
-      >
-        <div className="font-semibold text-foreground">
-          {label}
-        </div>
-        <div className={`min-w-0 break-words ${valueClassName}`}>
+      <>
+        <FieldLabel label={label} className={className} />
+        <div className={`col-span-3 min-w-0 break-words ${valueClassName}`}>
           {content}
         </div>
-      </div>
+      </>
     );
   }
 
   return (
     <>
-      <div
-        className={`font-semibold text-foreground ${className}`}
-      >
-        {label}
-      </div>
+      <FieldLabel label={label} className={className} />
       <div className={`min-w-0 break-words ${valueClassName}`}>
         {content}
       </div>

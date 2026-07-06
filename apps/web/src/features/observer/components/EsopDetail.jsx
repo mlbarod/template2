@@ -150,13 +150,15 @@ function DefectMapLinks({ maps }) {
     <Field
       label="Defect Map"
       value={(
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-wrap items-center gap-x-1 gap-y-1">
           {maps.map((item, index) => (
-            <DefectMapLink
-              key={`${item.url}-${index}`}
-              item={item}
-              index={index}
-            />
+            <React.Fragment key={`${item.url}-${index}`}>
+              {index > 0 ? <span className="text-muted-foreground">/</span> : null}
+              <DefectMapLink
+                item={item}
+                index={index}
+              />
+            </React.Fragment>
           ))}
         </div>
       )}
@@ -175,8 +177,8 @@ export default function EsopDetail({ log }) {
       <Field label="Operator" value={log.operator} />
       <Field label="Line" value={log.lineId} />
       <Field label="EQP-CB" value={log.eqpCb} />
-      <Field label="Comment" value={log.comment} fullWidth />
       <DefectMapLinks maps={log.defectMaps} />
+      <Field label="Comment" value={log.comment} fullWidth />
     </>
   );
 }
