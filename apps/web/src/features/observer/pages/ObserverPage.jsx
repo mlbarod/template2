@@ -56,6 +56,7 @@ export default function ObserverPage() {
     logErrors,
     refetchFailedLogs,
   } = logs;
+  const isCtttmLogSelected = selectedLog?.logType === "CTTTM";
 
   // 검증 중일 때 로딩 표시
   if (isValidating) {
@@ -113,8 +114,22 @@ export default function ObserverPage() {
           />
 
           <section className="grid min-h-0 grid-rows-[auto_1fr] gap-2 rounded-xl border border-border bg-card p-3 shadow-sm">
-            <div className="flex items-center justify-between">
-              <h2 className="text-md font-bold text-foreground">📝 Log Detail</h2>
+            <div className="flex min-w-0 items-center justify-between gap-3">
+              <h2 className="min-w-0 text-md font-bold text-foreground">📝 Log Detail</h2>
+              {isCtttmLogSelected && (
+                <div
+                  className="flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-bold ring-1 ring-ring/20"
+                  aria-label="Powered by Qwen"
+                >
+                  <span>Powered by Qwen AI</span>
+                  <img
+                    src="/icons/qwen-ai-logo.png"
+                    alt=""
+                    className="size-4 rounded-sm object-cover object-left"
+                    aria-hidden="true"
+                  />
+                </div>
+              )}
             </div>
             <div className="min-h-0 overflow-y-auto">
               <LogDetailSection log={selectedLog} />
