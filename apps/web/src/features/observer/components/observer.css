@@ -40,12 +40,12 @@
 
   --observer-selected: var(--observer-palette-accent);
   --observer-selected-soft: color-mix(in hsl, var(--observer-selected) 20%, transparent);
-  --observer-eqp-run: var(--observer-palette-active);
+  --observer-eqp-run: color-mix(in hsl, var(--observer-palette-active) 28%, var(--observer-surface) 72%);
   --observer-eqp-idle: color-mix(in hsl, var(--observer-palette-maintenance) 85%, var(--observer-surface) 15%);
   --observer-eqp-pm: color-mix(in hsl, var(--observer-palette-caution) 90%, transparent);
   --observer-eqp-down: var(--observer-palette-critical);
-  --observer-eqp-local: color-mix(in hsl, var(--observer-palette-neutral) 65%, var(--observer-surface) 35%);
-  --observer-tip-open: var(--observer-palette-accent);
+  --observer-eqp-local: color-mix(in hsl, var(--muted-foreground) 34%, var(--observer-surface) 66%);
+  --observer-tip-open: hsl(123, 78%, 62%);
   --observer-tip-close: var(--observer-palette-critical);
   --observer-racb-alarm: var(--observer-palette-critical);
   --observer-racb-warn: var(--observer-palette-caution);
@@ -182,7 +182,7 @@ html.dark {
 .observer-legend-dot.observer-color-eqp-run {
   background-color: var(--observer-eqp-run) !important;
   border-color: var(--observer-eqp-run) !important;
-  color: var(--observer-foreground-strong);
+  color: var(--observer-text);
 }
 
 .observer .vis-item.observer-color-eqp-idle,
