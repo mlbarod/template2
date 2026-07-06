@@ -372,7 +372,74 @@ class CtProcessCommentSummaryTests(TestCase):
         self.assertIn("[2026-01-01 10:00] 점검 시작 알람 확인", event_request_messages[1]["content"])
         self.assertIn("핵심 요약:", core_request_messages[0]["content"])
         self.assertIn("1~3문장", core_request_messages[0]["content"])
+        self.assertIn("입력에 명시된 경우에만", core_request_messages[0]["content"])
+        self.assertIn("해결되었다고 추정하지 마세요", core_request_messages[0]["content"])
+        self.assertIn("NO_CORE_SUMMARY", core_request_messages[0]["content"])
         self.assertIn("[2026-01-01 10:00] 점검 시작", core_request_messages[1]["content"])
+
+    def test_summarize_leaves_core_summary_empty_when_event_summary_is_too_short(self) -> None:
+        """시간순 요약 정보량이 부족하면 핵심요약 호출 없이 core summary를 비워 둡니다."""
+
+        comment = CtProcessComment.objects.create(
+            workorder_id="WO1",
+            contents_text="[ 2026-01-01 10:00 / 홍길동 ]\n점검",
+            update_flag="Y",
+        )
+        session = _build_openwebui_session(replies=["[2026-01-01 10:00] 점검"])
+
+        run_summary = summary_module.summarize_pending_ct_process_comments(
+            limit=10,
+            session=session,
+            config=_build_openwebui_config(),
+        )
+
+        comment.refresh_from_db()
+        self.assertEqual(run_summary.success_count, 1)
+        self.assertEqual(comment.update_flag, "N")
+        self.assertEqual(comment.llm_summary, "[2026-01-01 10:00] 점검")
+        self.assertIsNone(comment.llm_core_summary)
+        self.assertEqual(session.post.call_count, 1)
+
+    def test_request_summary_maps_no_core_summary_sentinel_to_empty_core_summary(self) -> None:
+        """LLM이 NO_CORE_SUMMARY를 반환하면 core summary를 비워 둡니다."""
+
+        session = _build_openwebui_session(
+            replies=[
+                "[2026-01-01 10:00] TMP 센서 알람 발생\n"
+                "[2026-01-01 11:00] 엔지니어 조치 진행 내용 공유",
+                "NO_CORE_SUMMARY",
+            ]
+        )
+
+        generated = summary_module.request_summary(
+            session=session,
+            config=_build_openwebui_config(),
+            contents_text="[ 2026-01-01 10:00 / 홍길동 ]\nTMP 센서 알람 발생",
+        )
+
+        self.assertIsNone(generated.core_summary)
+        self.assertIn("[2026-01-01 10:00] TMP 센서 알람 발생", generated.event_summary)
+        self.assertEqual(session.post.call_count, 2)
+
+    def test_request_summary_maps_generic_core_summary_to_empty_core_summary(self) -> None:
+        """LLM이 범용 핵심요약을 반환하면 core summary를 비워 둡니다."""
+
+        session = _build_openwebui_session(
+            replies=[
+                "[2026-01-01 10:00] TMP 센서 알람 발생\n"
+                "[2026-01-01 11:00] 엔지니어 조치 진행 내용 공유",
+                "핵심 요약: 확인 불가",
+            ]
+        )
+
+        generated = summary_module.request_summary(
+            session=session,
+            config=_build_openwebui_config(),
+            contents_text="[ 2026-01-01 10:00 / 홍길동 ]\nTMP 센서 알람 발생",
+        )
+
+        self.assertIsNone(generated.core_summary)
+        self.assertEqual(session.post.call_count, 2)
 
     def test_summarize_keeps_update_flag_when_openwebui_fails(self) -> None:
         """OpenWebUI 요청 실패 시 update_flag를 Y로 유지합니다."""

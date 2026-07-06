@@ -24,13 +24,30 @@ SUMMARY_STATUS_SUCCESS = "success"
 SUMMARY_STATUS_FAILED = "failed"
 SUMMARY_STATUS_SKIPPED = "skipped"
 SUMMARY_STATUS_DRY_RUN = "dry_run"
+NO_CORE_SUMMARY_SENTINEL = "NO_CORE_SUMMARY"
+MIN_CORE_SUMMARY_EVENT_COUNT = 2
+MIN_CORE_SUMMARY_COMPACT_LENGTH = 40
 CONTENTS_EVENT_HEADER_PATTERN = re.compile(
     r"^\[\s*(?P<time>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})\s*/\s*(?P<author>[^\]]+?)\s*\]\s*$"
 )
 SUMMARY_SECTION_PREFIX_PATTERN = re.compile(r"^(원인|조치사항|결과)\s*:")
+SUMMARY_TIMESTAMP_PREFIX_PATTERN = re.compile(r"^\[[^\]]+\]\s*")
 SUMMARY_TIME_LINE_PATTERN = re.compile(
     r"^(?P<time>(?:\d{4}[-/.]\d{2}[-/.]\d{2}\s+)?\d{1,2}:\d{2}(?::\d{2})?)\s+(?P<event>.+)$"
 )
+GENERIC_CORE_SUMMARY_PHRASES = {
+    "점검",
+    "점검 시작",
+    "확인",
+    "내용 확인",
+    "알람 확인",
+    "확인 불가",
+    "내용 없음",
+    "특이사항 없음",
+    "해당 없음",
+    "없음",
+}
+GENERIC_CORE_SUMMARY_TOKENS = {"점검", "시작", "확인", "알람", "내용", "없음", "불가", "특이사항", "해당"}
 
 SUMMARY_SYSTEM_PROMPT = """당신은 설비 점검 이력 요약기입니다.
 입력으로 제공된 이벤트 목록에 실제로 포함된 사실만 사용하세요.
@@ -60,12 +77,16 @@ CORE_SUMMARY_SYSTEM_PROMPT = """당신은 설비 점검 이력 핵심 요약기�
 작업:
 1. 입력된 시간순 요약 전체 흐름을 1~3문장으로 매우 짧게 요약하세요.
 2. 완전 핵심만 남기고 세부 시간별 반복 표현은 줄이세요.
-3. 첫 줄은 반드시 "핵심 요약: "으로 시작하세요.
-4. 출력은 핵심 요약 한 줄만 작성하세요.
-5. 설명, 추론 과정, 사과문, 안내문, markdown은 쓰지 마세요.
+3. 문제가 해결, 완료, 정상화, 복구되었다는 표현은 입력에 명시된 경우에만 쓰세요.
+4. 입력에 해결 여부가 명시되지 않았다면 확인된 진행 상황만 있는 그대로 요약하세요.
+5. 단순 점검, 확인, 조치 진행, 알람 확인만으로 문제가 해결되었다고 추정하지 마세요.
+6. 핵심요약할 만큼 의미 있는 진행, 상태, 조치 정보가 부족하면 정확히 "NO_CORE_SUMMARY"만 출력하세요.
+7. 핵심요약을 작성할 때 첫 줄은 반드시 "핵심 요약: "으로 시작하세요.
+8. 출력은 핵심 요약 한 줄 또는 "NO_CORE_SUMMARY"만 작성하세요.
+9. 설명, 추론 과정, 사과문, 안내문, markdown은 쓰지 마세요.
 
 출력 형식:
-핵심 요약: 점검 시작 후 알람을 확인했고 조치가 완료되었습니다."""
+핵심 요약: 점검 시작 후 알람을 확인했고 조치 내용이 기록되었습니다."""
 
 
 class OpenWebUIConfigError(RuntimeError):
@@ -116,7 +137,7 @@ class SummaryRowOutcome:
 class GeneratedSummary:
     """OpenWebUI가 생성한 핵심 요약과 시간순 요약을 분리해 보관합니다."""
 
-    core_summary: str
+    core_summary: str | None
     event_summary: str
 
 
@@ -331,14 +352,61 @@ def _normalize_summary_text(summary: str) -> str:
     return "\n".join(normalized_lines) or summary.strip()
 
 
-def _normalize_core_summary_text(summary: str) -> str:
+def _strip_summary_timestamp(line: str) -> str:
+    """요약 line 앞의 timestamp 표시를 제거합니다."""
+
+    return SUMMARY_TIMESTAMP_PREFIX_PATTERN.sub("", line).strip()
+
+
+def _normalize_generic_text(text: str) -> str:
+    """정보량 판단을 위해 문장부호와 공백을 단순화합니다."""
+
+    return re.sub(r"[\s,./·ㆍ:;()\[\]\-]+", " ", text).strip()
+
+
+def _is_generic_summary_event(text: str) -> bool:
+    """핵심요약을 만들기 어려운 범용 이벤트 표현인지 판단합니다."""
+
+    normalized = _normalize_generic_text(text)
+    compact = normalized.replace(" ", "")
+    if not compact:
+        return True
+    generic_compacts = {phrase.replace(" ", "") for phrase in GENERIC_CORE_SUMMARY_PHRASES}
+    if compact in generic_compacts:
+        return True
+    tokens = normalized.split()
+    return bool(tokens) and all(token in GENERIC_CORE_SUMMARY_TOKENS for token in tokens)
+
+
+def _should_skip_core_summary(event_summary: str) -> bool:
+    """시간순 요약만으로 핵심요약을 만들 정보량이 충분한지 판단합니다."""
+
+    event_texts = [
+        _strip_summary_timestamp(line)
+        for line in event_summary.splitlines()
+        if line.strip()
+    ]
+    if not event_texts:
+        return True
+
+    compact = "".join("".join(_normalize_generic_text(text).split()) for text in event_texts)
+    if len(event_texts) < MIN_CORE_SUMMARY_EVENT_COUNT and len(compact) < MIN_CORE_SUMMARY_COMPACT_LENGTH:
+        return True
+    return all(_is_generic_summary_event(text) for text in event_texts)
+
+
+def _normalize_core_summary_text(summary: str) -> str | None:
     """핵심 요약 응답을 llm_core_summary 저장 형식으로 정규화합니다."""
 
     lines = [line.strip().strip("-• ") for line in summary.splitlines() if line.strip()]
     compact = " ".join(lines).strip()
     if compact.startswith("핵심 요약:"):
         compact = compact.split(":", 1)[1].strip()
-    return compact or "확인 불가"
+    if compact.upper() == NO_CORE_SUMMARY_SENTINEL:
+        return None
+    if _is_generic_summary_event(compact):
+        return None
+    return compact or None
 
 
 def _post_chat_completion(
@@ -401,6 +469,9 @@ def request_summary(
             messages=build_summary_prompt(contents_text, workorder_title=workorder_title),
         )
     )
+    if _should_skip_core_summary(event_summary):
+        return GeneratedSummary(core_summary=None, event_summary=event_summary)
+
     core_summary = _normalize_core_summary_text(
         _post_chat_completion(
             session=session,
