@@ -522,7 +522,7 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
   }, [filteredPoints, metric, grouping, effectiveLineNames])
 
   return (
-    <Card className="flex flex-col overflow-hidden rounded-lg py-0">
+    <Card className="flex min-h-[240px] min-w-0 flex-col overflow-hidden rounded-lg py-0">
       <CardHeader className="shrink-0 border-b bg-muted/50 px-4 py-1.5 !pb-1.5">
         <div className="flex flex-wrap items-center gap-2">
           <CardTitle className="text-sm">일자별 이상감지 트렌드</CardTitle>
@@ -567,7 +567,7 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
           </div>
         </div>
       </CardHeader>
-      <CardContent className="min-h-0 flex-1 p-2">
+      <CardContent className="min-h-[180px] flex-1 p-2">
         {chartData.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             트렌드 데이터가 없습니다.
