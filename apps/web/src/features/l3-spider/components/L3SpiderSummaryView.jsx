@@ -12,7 +12,7 @@ import {
 } from "recharts"
 
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 
 import { useL3SpiderDailySummary, useL3SpiderTrend } from "../hooks/useL3SpiderQueries"
@@ -20,6 +20,7 @@ import { formatNumber } from "../utils/format"
 import { sortLineNames } from "../utils/selection"
 
 const shortProcess = (value) => String(value ?? "").replace(/^process_/, "")
+const EMPTY_ARRAY = []
 
 // High Risk / Warning 분리 표기 (빨강 / 주황)
 function HrWn({ hr, wn }) {
@@ -292,8 +293,8 @@ function LegendDot({ className }) {
 }
 
 function AnomalyMatrix({ matrix, selectedLine, onDrill, metric }) {
-  const { edsSteps = [], cells = [] } = matrix ?? {}
-  const lines = matrix?.lines ?? []
+  const { edsSteps = EMPTY_ARRAY, cells = EMPTY_ARRAY } = matrix ?? {}
+  const lines = matrix?.lines ?? EMPTY_ARRAY
 
   const visibleLines = useMemo(
     () => selectedLine ? lines.filter((line) => line === selectedLine) : lines,
