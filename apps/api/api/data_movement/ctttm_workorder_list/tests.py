@@ -20,6 +20,7 @@ from api.data_movement.ctttm_workorder_list.services.fast_csv import (
     write_fast_selected_deflate_csv,
 )
 from api.data_movement.ctttm_workorder_list.services import loader as loader_module
+from api.data_movement.ctttm_workorder_list import selectors
 from api.data_movement.ctttm_workorder_list.services import spec
 from api.data_movement.ctttm_workorder_list.services.loader import LoadFileOutcome, LoadRunSummary
 
@@ -280,6 +281,31 @@ class CtttmWorkorderListStructureTests(SimpleTestCase):
 @override_settings(DATA_MOVEMENT_FILE_READY_MIN_AGE_SECONDS=0, DATA_MOVEMENT_FILE_READY_STABILITY_SECONDS=0)
 class CtttmWorkorderListLifecycleTests(TestCase):
     """CTTTM workorder 파일 처리 lifecycle을 검증합니다."""
+
+    def test_load_workorder_descriptions_by_ids_returns_latest_description(self) -> None:
+        """workorder_id별 최신 작업 설명을 반환합니다."""
+
+        CtttmWorkorderList.objects.create(
+            source_type="MST",
+            workorder_id="WO1",
+            description="old title",
+            inprg_date="2026-01-01T10:00:00Z",
+        )
+        CtttmWorkorderList.objects.create(
+            source_type="MST",
+            workorder_id="WO1",
+            description="new title",
+            inprg_date="2026-01-01T11:00:00Z",
+        )
+        CtttmWorkorderList.objects.create(
+            source_type="MST",
+            workorder_id="WO2",
+            description="",
+        )
+
+        descriptions = selectors.load_workorder_descriptions_by_ids(workorder_ids=["WO1", "WO2", "WO1"])
+
+        self.assertEqual(descriptions, {"WO1": "new title"})
 
     def test_loader_replaces_source_rows_in_database(self) -> None:
         """실제 COPY 경로로 source_type 단위 기존 row를 교체합니다."""

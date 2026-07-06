@@ -152,6 +152,21 @@ class CtProcessCommentStructureTests(SimpleTestCase):
         self.assertIn("[2026-06-19 13:44] 점검 시작 알람 확인", user_prompt)
         self.assertIn("[2026-06-19 18:37] 조치 완료", user_prompt)
 
+    def test_build_summary_prompt_includes_workorder_title_when_present(self) -> None:
+        """workorder title이 있으면 LLM 입력에 보조 컨텍스트로 포함합니다."""
+
+        messages = summary_module.build_summary_prompt(
+            "[ 2026-06-19 13:44 / 홍길동 ]\n점검 시작",
+            workorder_title="TMP 센서 이상 점검",
+        )
+
+        system_prompt = messages[0]["content"]
+        user_prompt = messages[1]["content"]
+        self.assertIn("workorder_title은 사람이 작성한 작업 제목", system_prompt)
+        self.assertIn("workorder_title:", user_prompt)
+        self.assertIn("TMP 센서 이상 점검", user_prompt)
+        self.assertIn("timestamped_events:", user_prompt)
+
     def test_parse_source_file_name_extracts_timestamp(self) -> None:
         """파일명에서 timestamp를 추출하는지 확인합니다."""
 
@@ -297,6 +312,15 @@ class CtProcessCommentSummaryTests(TestCase):
     def test_summarize_updates_llm_summary_and_turns_flag_off(self) -> None:
         """OpenWebUI 요약 성공 시 summary를 저장하고 update_flag를 N으로 변경합니다."""
 
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO ctttm_workorder_list
+                    (source_type, workorder_id, line_id, eqp_id, work_type, description, inprg_date, comp_date)
+                VALUES
+                    ('MST', 'WO1', 'L1', 'EQP1', 'PM', 'TMP 센서 이상 점검', NULL, NULL)
+                """
+            )
         comment = CtProcessComment.objects.create(
             workorder_id="WO1",
             contents_text="\n".join(
@@ -327,7 +351,7 @@ class CtProcessCommentSummaryTests(TestCase):
         comment.refresh_from_db()
         self.assertEqual(run_summary.success_count, 1)
         self.assertEqual(comment.update_flag, "N")
-        self.assertEqual(comment.llm_core_summary, "핵심 요약: 점검 시작 후 조치가 완료되었습니다.")
+        self.assertEqual(comment.llm_core_summary, "점검 시작 후 조치가 완료되었습니다.")
         self.assertEqual(comment.llm_summary, "[2026-01-01 10:00] 점검 시작\n[2026-01-01 11:00] 조치 완료")
         self.assertEqual(session.post.call_count, 2)
         event_request_kwargs = session.post.call_args_list[0].kwargs
@@ -343,6 +367,8 @@ class CtProcessCommentSummaryTests(TestCase):
         self.assertNotIn("최대 3줄", event_request_messages[0]["content"])
         self.assertIn("입력 이벤트는 모두 출력", event_request_messages[0]["content"])
         self.assertIn("가능하면 35자 이내", event_request_messages[0]["content"])
+        self.assertIn("workorder_title:", event_request_messages[1]["content"])
+        self.assertIn("TMP 센서 이상 점검", event_request_messages[1]["content"])
         self.assertIn("[2026-01-01 10:00] 점검 시작 알람 확인", event_request_messages[1]["content"])
         self.assertIn("핵심 요약:", core_request_messages[0]["content"])
         self.assertIn("1~3문장", core_request_messages[0]["content"])

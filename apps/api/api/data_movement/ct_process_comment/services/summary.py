@@ -15,6 +15,7 @@ from django.utils import timezone
 
 from api.data_movement.ct_process_comment import selectors
 from api.data_movement.ct_process_comment.models import CtProcessComment
+from api.data_movement.ctttm_workorder_list import selectors as ctttm_workorder_selectors
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,8 @@ SUMMARY_TIME_LINE_PATTERN = re.compile(
 
 SUMMARY_SYSTEM_PROMPT = """당신은 설비 점검 이력 요약기입니다.
 입력으로 제공된 이벤트 목록에 실제로 포함된 사실만 사용하세요.
+workorder_title은 사람이 작성한 작업 제목 또는 작업 목적 설명입니다.
+workorder_title이 제공되면 이벤트 의미를 파악하는 보조 정보로 반영하세요.
 입력에 없는 원인, 조치사항, 결과, 시간, 장비 상태를 절대로 추정하거나 생성하지 마세요.
 
 작업:
@@ -216,25 +219,37 @@ def _build_timestamped_event_text(contents_text: str) -> str:
     return "\n".join(events)
 
 
-def build_summary_prompt(contents_text: str) -> list[dict[str, str]]:
+def build_summary_prompt(contents_text: str, workorder_title: str = "") -> list[dict[str, str]]:
     """OpenWebUI chat completions용 고정 message 목록을 생성합니다."""
 
     timestamped_events = _build_timestamped_event_text(contents_text)
     prompt_source = timestamped_events or contents_text
     source_label = "timestamped_events:" if timestamped_events else "contents_text:"
+    content_parts: list[str] = []
+    if workorder_title.strip():
+        content_parts.extend(
+            [
+                "workorder_title:",
+                "<<<",
+                workorder_title.strip(),
+                ">>>",
+                "",
+            ]
+        )
+    content_parts.extend(
+        [
+            source_label,
+            "<<<",
+            prompt_source,
+            ">>>",
+        ]
+    )
 
     return [
         {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
         {
             "role": "user",
-            "content": "\n".join(
-                [
-                    source_label,
-                    "<<<",
-                    prompt_source,
-                    ">>>",
-                ]
-            ),
+            "content": "\n".join(content_parts),
         },
     ]
 
@@ -323,7 +338,7 @@ def _normalize_core_summary_text(summary: str) -> str:
     compact = " ".join(lines).strip()
     if compact.startswith("핵심 요약:"):
         compact = compact.split(":", 1)[1].strip()
-    return f"핵심 요약: {compact}" if compact else "핵심 요약: 확인 불가"
+    return compact or "확인 불가"
 
 
 def _post_chat_completion(
@@ -375,6 +390,7 @@ def request_summary(
     session: requests.Session,
     config: OpenWebUISummaryConfig,
     contents_text: str,
+    workorder_title: str = "",
 ) -> GeneratedSummary:
     """OpenWebUI를 2회 호출해 핵심 요약과 시간순 상세 요약을 분리해 반환합니다."""
 
@@ -382,7 +398,7 @@ def request_summary(
         _post_chat_completion(
             session=session,
             config=config,
-            messages=build_summary_prompt(contents_text),
+            messages=build_summary_prompt(contents_text, workorder_title=workorder_title),
         )
     )
     core_summary = _normalize_core_summary_text(
@@ -413,7 +429,12 @@ def summarize_pending_ct_process_comments(
     active_config = config or OpenWebUISummaryConfig.from_settings()
     outcomes: list[SummaryRowOutcome] = []
 
-    for comment in selectors.list_pending_summary_comments(limit=resolved_limit, workorder_id=workorder_id):
+    pending_comments = list(selectors.list_pending_summary_comments(limit=resolved_limit, workorder_id=workorder_id))
+    workorder_titles = ctttm_workorder_selectors.load_workorder_descriptions_by_ids(
+        workorder_ids=[comment.workorder_id for comment in pending_comments]
+    )
+
+    for comment in pending_comments:
         contents_text = (comment.contents_text or "").strip()
         if not contents_text:
             outcomes.append(
@@ -434,6 +455,7 @@ def summarize_pending_ct_process_comments(
                 session=active_session,
                 config=active_config,
                 contents_text=contents_text,
+                workorder_title=workorder_titles.get(comment.workorder_id, ""),
             )
             with transaction.atomic():
                 updated_count = CtProcessComment.objects.filter(pk=comment.pk, update_flag="Y").update(
