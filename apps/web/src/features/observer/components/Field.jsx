@@ -20,9 +20,27 @@ export default function Field({
   label,
   value,
   className = "",
+  valueClassName = "",
+  fullWidth = false,
   streaming = false,
 }) {
   const displayValue = TIME_FIELD_LABELS.has(label) ? formatDetailDateTime(value) : value;
+  const content = streaming ? <StreamingText text={displayValue || "-"} /> : displayValue || "-";
+
+  if (fullWidth) {
+    return (
+      <div
+        className={`col-span-4 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1 ${className}`}
+      >
+        <div className="font-semibold text-foreground">
+          {label}
+        </div>
+        <div className={`min-w-0 break-words ${valueClassName}`}>
+          {content}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -31,8 +49,8 @@ export default function Field({
       >
         {label}
       </div>
-      <div>
-        {streaming ? <StreamingText text={displayValue || "-"} /> : displayValue || "-"}
+      <div className={`min-w-0 break-words ${valueClassName}`}>
+        {content}
       </div>
     </>
   );

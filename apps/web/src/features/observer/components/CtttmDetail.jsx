@@ -10,15 +10,14 @@ export default function CtttmDetail({ log }) {
       <Field label="Time" value={log.eventTime} />
       <Field label="Operator" value={log.operator} />
       <Field
-        label="Comment"
+        label="Title"
         value={log.comment}
-        className="col-span-2"
-        streaming={true}
+        fullWidth
       />
       <Field
         label="Summary"
         value={log.summary}
-        className="col-span-2"
+        fullWidth
         streaming={true}
       />
     </>

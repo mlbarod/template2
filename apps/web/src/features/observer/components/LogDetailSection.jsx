@@ -34,7 +34,7 @@ export default function LogDetailSection({ log }) {
         return <EsopDetail log={log} />;
       default:
         return (
-          <div className="col-span-2 text-muted-foreground py-2">
+          <div className="col-span-4 text-muted-foreground py-2">
             알 수 없는 로그 타입입니다.
           </div>
         );
@@ -43,7 +43,7 @@ export default function LogDetailSection({ log }) {
 
   return (
     <div
-      className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs
+      className="grid grid-cols-[max-content_minmax(0,1fr)_max-content_minmax(0,1fr)] gap-x-4 gap-y-2 text-xs
        rounded-lg p-2
       text-foreground overflow-auto"
     >

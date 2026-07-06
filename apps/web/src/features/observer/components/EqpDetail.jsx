@@ -12,7 +12,7 @@ export default function EqpDetail({ log }) {
       <Field label="End Time" value={log.endTime} />
       <Field label="Operator" value={log.operator} />
       <Field label="Duration" value={formatDuration(log.duration)} />
-      <Field label="Comment" value={log.comment} className="col-span-2" />
+      <Field label="Comment" value={log.comment} fullWidth />
     </>
   );
 }

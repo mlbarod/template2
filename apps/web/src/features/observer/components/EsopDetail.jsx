@@ -147,20 +147,20 @@ function DefectMapLinks({ maps }) {
   if (!Array.isArray(maps) || maps.length === 0) return null;
 
   return (
-    <>
-      <div className="font-semibold text-foreground col-span-2">
-        Defect Map
-      </div>
-      <div className="col-span-2 flex flex-col gap-1">
-        {maps.map((item, index) => (
-          <DefectMapLink
-            key={`${item.url}-${index}`}
-            item={item}
-            index={index}
-          />
-        ))}
-      </div>
-    </>
+    <Field
+      label="Defect Map"
+      value={(
+        <div className="flex flex-col gap-1">
+          {maps.map((item, index) => (
+            <DefectMapLink
+              key={`${item.url}-${index}`}
+              item={item}
+              index={index}
+            />
+          ))}
+        </div>
+      )}
+    />
   );
 }
 
@@ -175,7 +175,7 @@ export default function EsopDetail({ log }) {
       <Field label="Operator" value={log.operator} />
       <Field label="Line" value={log.lineId} />
       <Field label="EQP-CB" value={log.eqpCb} />
-      <Field label="Comment" value={log.comment} className="col-span-2" />
+      <Field label="Comment" value={log.comment} fullWidth />
       <DefectMapLinks maps={log.defectMaps} />
     </>
   );

@@ -13,7 +13,7 @@ export default function TipDetail({ log }) {
       <Field label="Process" value={log.process} />
       <Field label="Step" value={log.step} />
       <Field label="PPID" value={log.ppid} />
-      <Field label="Comment" value={log.comment} className="col-span-2" />
+      <Field label="Comment" value={log.comment} fullWidth />
     </>
   );
 }

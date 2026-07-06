@@ -11,7 +11,7 @@ export default function RacbDetail({ log }) {
       <Field label="Operator" value={log.operator} />
       <Field label="Line" value={log.lineId} />
       <Field label="EQP" value={log.eqpId} />
-      <Field label="Comment" value={log.comment} className="col-span-2" />
+      <Field label="Comment" value={log.comment} fullWidth />
     </>
   );
 }

@@ -23,7 +23,7 @@ function shouldSkipRangeSync(observer, start, end) {
 
 export const useObserverStore = create((set, get) => ({
   /* —— Observer 전용 상태 —— */
-  showLegend: false,
+  showLegend: true,
   selectedTipGroups: ["__ALL__"],
 
   /* —— Observer 상태 변경 액션 —— */
