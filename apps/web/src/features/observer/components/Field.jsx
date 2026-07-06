@@ -32,10 +32,12 @@ export default function Field({
   value,
   className = "",
   valueClassName = "",
+  valueContainerClassName = "",
   fullWidth = false,
   streaming = false,
   streamingClassName = "",
   streamingScrollClassName = undefined,
+  onStreamingProgress,
 }) {
   const displayValue = TIME_FIELD_LABELS.has(label) ? formatDetailDateTime(value) : value;
   const content = streaming ? (
@@ -43,6 +45,7 @@ export default function Field({
       text={displayValue || "-"}
       className={streamingClassName}
       scrollClassName={streamingScrollClassName}
+      onProgress={onStreamingProgress}
     />
   ) : displayValue || "-";
 
@@ -50,7 +53,7 @@ export default function Field({
     return (
       <>
         <FieldLabel label={label} className={`col-start-1 ${className}`} />
-        <div className={`col-start-2 col-end-5 min-w-0 break-words ${valueClassName}`}>
+        <div className={`col-start-2 col-end-5 min-w-0 break-words ${valueContainerClassName} ${valueClassName}`}>
           {content}
         </div>
       </>
@@ -60,7 +63,7 @@ export default function Field({
   return (
     <>
       <FieldLabel label={label} className={className} />
-      <div className={`min-w-0 break-words ${valueClassName}`}>
+      <div className={`min-w-0 break-words ${valueContainerClassName} ${valueClassName}`}>
         {content}
       </div>
     </>

@@ -11,6 +11,7 @@ export default function StreamingText({
   speed = 8,
   className = "",
   scrollClassName = "max-w-full overflow-x-auto",
+  onProgress,
 }) {
   const [displayedText, setDisplayedText] = useState("");
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -39,6 +40,12 @@ export default function StreamingText({
       streamedTextCache.add(text);
     }
   }, [currentIndex, text, speed]);
+
+  useEffect(() => {
+    if (displayedText) {
+      onProgress?.();
+    }
+  }, [displayedText, onProgress]);
 
   return (
     <span className={`block whitespace-pre break-normal ${scrollClassName} ${className}`}>

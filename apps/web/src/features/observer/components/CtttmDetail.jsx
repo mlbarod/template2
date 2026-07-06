@@ -28,7 +28,11 @@ function formatSummaryTimestamp(text) {
   );
 }
 
-export default function CtttmDetail({ log, summaryStreamingScrollClassName }) {
+export default function CtttmDetail({
+  log,
+  summaryStreamingScrollClassName,
+  onStreamingProgress,
+}) {
   return (
     <>
       <Field label="Log Type" value={log.logType} />
@@ -46,7 +50,13 @@ export default function CtttmDetail({ log, summaryStreamingScrollClassName }) {
       <Field
         label="핵심요약"
         value={log.coreSummary}
+        fullWidth
+        streaming={true}
+        valueContainerClassName="w-full max-w-[calc(100vw-8rem)]"
         valueClassName="whitespace-pre-wrap break-words leading-6"
+        streamingClassName="leading-6"
+        streamingScrollClassName="max-w-full whitespace-pre-wrap break-words overflow-visible"
+        onStreamingProgress={onStreamingProgress}
       />
       <Field
         label="Summary"
@@ -55,6 +65,7 @@ export default function CtttmDetail({ log, summaryStreamingScrollClassName }) {
         streaming={true}
         streamingClassName="leading-6 tabular-nums"
         streamingScrollClassName={summaryStreamingScrollClassName}
+        onStreamingProgress={onStreamingProgress}
       />
     </>
   );

@@ -1,9 +1,24 @@
-import React from "react";
+import React, { useCallback, useRef } from "react";
 import EqpDetail from "./EqpDetail";
 import TipDetail from "./TipDetail";
 import RacbDetail from "./RacbDetail";
 import CtttmDetail from "./CtttmDetail";
 import EsopDetail from "./EsopDetail";
+
+function findScrollableParent(element) {
+  let current = element;
+
+  while (current) {
+    const { overflowY } = window.getComputedStyle(current);
+    const canScroll = /(auto|scroll|overlay)/.test(overflowY) && current.scrollHeight > current.clientHeight;
+    if (canScroll) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+
+  return element;
+}
 
 /**
  * 선택된 로그 상세정보를 보여주는 컴포넌트
@@ -17,6 +32,17 @@ export default function LogDetailSection({
   textSizeClass = "text-xs",
   summaryStreamingScrollClassName,
 }) {
+  const detailRef = useRef(null);
+  const handleStreamingProgress = useCallback(() => {
+    const detailElement = detailRef.current;
+    if (!detailElement) return;
+
+    window.requestAnimationFrame(() => {
+      const scrollContainer = findScrollableParent(detailElement);
+      scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    });
+  }, []);
+
   if (!log) {
     return (
       <div className="text-sm text-muted-foreground text-center py-17">
@@ -39,6 +65,7 @@ export default function LogDetailSection({
           <CtttmDetail
             log={log}
             summaryStreamingScrollClassName={summaryStreamingScrollClassName}
+            onStreamingProgress={handleStreamingProgress}
           />
         );
       case "ESOP":
@@ -54,6 +81,7 @@ export default function LogDetailSection({
 
   return (
     <div
+      ref={detailRef}
       className={`grid grid-cols-[max-content_minmax(0,1fr)_max-content_minmax(0,1fr)] gap-x-4 gap-y-2 ${textSizeClass}
        rounded-lg p-2
       text-foreground ${overflowClassName} ${className}`}
