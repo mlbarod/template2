@@ -85,13 +85,11 @@ function SummaryStats({ h }) {
   )
 }
 
-// 라인별 차트 색상 토큰 팔레트
+// 라인별 고유 색상 팔레트
 const LINE_COLORS = [
-  { stroke: "hsl(var(--chart-1))", dot: "bg-chart-1" },
-  { stroke: "hsl(var(--chart-2))", dot: "bg-chart-2" },
-  { stroke: "hsl(var(--chart-3))", dot: "bg-chart-3" },
-  { stroke: "hsl(var(--chart-4))", dot: "bg-chart-4" },
-  { stroke: "hsl(var(--chart-5))", dot: "bg-chart-5" },
+  "#4f86f7", "#34c77b", "#f59e0b", "#a855f7", "#ec4899",
+  "#06b6d4", "#10b981", "#6366f1", "#f43f5e", "#8b5cf6",
+  "#14b8a6", "#f97316", "#84cc16", "#e879f9", "#38bdf8",
 ]
 
 const DONUT_META = {
@@ -137,8 +135,7 @@ function DonutChartCard({ lineSummary, cells, metric, focusLine }) {
       const val = getValue(r)
       const fullLen = total > 0 ? (val / total) * C : 0
       const len = Math.max(0, fullLen - GAP)
-      const color = LINE_COLORS[i % LINE_COLORS.length]
-      const seg = { key: r.key, label: r.label, val, color, len, off: off + GAP / 2 }
+      const seg = { key: r.key, label: r.label, val, color: LINE_COLORS[i % LINE_COLORS.length], len, off: off + GAP / 2 }
       off += fullLen
       return seg
     })
@@ -162,7 +159,7 @@ function DonutChartCard({ lineSummary, cells, metric, focusLine }) {
               <circle
                 key={arc.key}
                 cx="44" cy="44" r={R} fill="none"
-                stroke={arc.color.stroke} strokeWidth={SW}
+                stroke={arc.color} strokeWidth={SW}
                 strokeDasharray={`${arc.len} ${C}`}
                 strokeDashoffset={-arc.off}
                 strokeLinecap="butt"
@@ -178,7 +175,7 @@ function DonutChartCard({ lineSummary, cells, metric, focusLine }) {
         <div className="grid w-full grid-cols-2 gap-x-2 gap-y-0.5 text-[11px]">
           {arcs.map((arc) => (
             <span key={arc.key} className="flex min-w-0 items-center gap-1">
-              <span className={cn("size-2 shrink-0 rounded-full", arc.color.dot)} aria-hidden="true" />
+              <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: arc.color }} aria-hidden="true" />
               <span className="min-w-0 truncate text-muted-foreground">{arc.label}</span>
               <span className="ml-auto shrink-0 tabular-nums font-semibold">{formatNumber(arc.val)}</span>
             </span>
@@ -257,12 +254,12 @@ function LegendDot({ className }) {
 
 function AnomalyMatrix({ matrix, selectedLine, onDrill, metric }) {
   const { edsSteps = [], cells = [] } = matrix ?? {}
-  const matrixLines = matrix?.lines
+  const lines = matrix?.lines ?? []
 
-  const visibleLines = useMemo(() => {
-    const lines = matrixLines ?? []
-    return selectedLine ? lines.filter((line) => line === selectedLine) : lines
-  }, [matrixLines, selectedLine])
+  const visibleLines = useMemo(
+    () => selectedLine ? lines.filter((line) => line === selectedLine) : lines,
+    [lines, selectedLine],
+  )
   const visibleCells = useMemo(
     () => selectedLine ? cells.filter((cell) => cell.line === selectedLine) : cells,
     [cells, selectedLine],
@@ -613,7 +610,7 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
                 <Bar
                   dataKey="value"
                   name={metric === "hr" ? "전체 High Risk" : "전체 이상 건수 (HR+WN)"}
-                  fill={metric === "hr" ? "hsl(var(--destructive))" : "hsl(var(--chart-4))"}
+                  fill={metric === "hr" ? "#ef4444" : "#f97316"}
                   radius={[3, 3, 0, 0]}
                   maxBarSize={48}
                 />
@@ -739,10 +736,11 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
       <SummaryStats h={h} />
 
       {/* col1=1fr(라인테이블 2행span), col2=1.4fr(도넛2개+트렌드) */}
-      <div className="grid min-h-[400px] grid-cols-[1fr_1.4fr] grid-rows-[auto_1fr] gap-5">
+      <div className="gap-5" style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gridTemplateRows: "auto 1fr", minHeight: 400 }}>
         {/* col1 row1+2: 라인별 현황 테이블 */}
         <Card
-          className="col-start-1 row-span-2 row-start-1 flex min-h-0 flex-col overflow-hidden rounded-lg py-0"
+          className="flex min-h-0 flex-col overflow-hidden rounded-lg py-0"
+          style={{ gridColumn: 1, gridRow: "1 / span 2" }}
         >
           <CardHeader className="shrink-0 border-b bg-muted/50 px-4 py-1.5 !pb-1.5">
             <div className="flex items-center gap-2">
@@ -765,7 +763,7 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
         </Card>
 
         {/* col2 row1: 도넛 차트 3개 나란히 */}
-        <div className="col-start-2 row-start-1 grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-3" style={{ gridColumn: 2, gridRow: 1 }}>
           <DonutChartCard lineSummary={lineSummary} cells={data?.matrix?.cells ?? []} metric="hr" focusLine={activeLine} />
           <DonutChartCard lineSummary={lineSummary} cells={data?.matrix?.cells ?? []} metric="wn" focusLine={activeLine} />
           <DonutChartCard lineSummary={lineSummary} cells={data?.matrix?.cells ?? []} metric="total" focusLine={activeLine} />
