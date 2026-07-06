@@ -12,7 +12,7 @@ from django.views.decorators.csrf import csrf_exempt
 from rest_framework.views import APIView
 
 from api.common.services import ensure_airflow_token, parse_json_body_or_error_when_present
-from api.data_movement.ct_process_comment.services import load_ct_process_comment_files
+from api.data_movement.ct_process_comment.services import load_ct_process_comment_files, summarize_pending_ct_process_comments
 from api.data_movement.ctttm_workorder_list.services import load_ctttm_workorder_list_files
 from api.data_movement.eqp_status_chg.services import load_eqp_status_chg_files
 from api.data_movement.mes_line_mapping_info.services import load_mes_line_mapping_info_files
@@ -80,13 +80,18 @@ def _serialize_summary(*, table_name: str, summary: Any) -> dict[str, Any]:
     """loader summary를 JSON 응답용 dict로 변환합니다."""
 
     outcomes = [_serialize_outcome(outcome) for outcome in summary.outcomes]
-    return {
+    payload = {
         "table_name": table_name,
         "processed_count": summary.processed_count,
         "success_count": summary.success_count,
         "failure_count": summary.failure_count,
         "outcomes": outcomes,
     }
+    if hasattr(summary, "skipped_count"):
+        payload["skipped_count"] = summary.skipped_count
+    if hasattr(summary, "dry_run_count"):
+        payload["dry_run_count"] = summary.dry_run_count
+    return payload
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -129,5 +134,45 @@ class DataMovementLoadTriggerView(APIView):
             return JsonResponse({"error": "data_movement 파일 적재에 실패했습니다."}, status=500)
 
         response_payload = _serialize_summary(table_name=table_name, summary=summary)
+        status_code = 500 if summary.failure_count else 200
+        return JsonResponse(response_payload, status=status_code)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class DataMovementCtProcessCommentSummaryTriggerView(APIView):
+    """Airflow에서 ct_process_comment OpenWebUI 요약을 트리거합니다."""
+
+    permission_classes: tuple = ()
+
+    def post(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """ct_process_comment 요약 batch를 실행합니다."""
+
+        auth_response = ensure_airflow_token(request, require_bearer=True)
+        if auth_response is not None:
+            return auth_response
+
+        payload, payload_error = parse_json_body_or_error_when_present(request)
+        if payload_error is not None:
+            return payload_error
+
+        try:
+            limit = _parse_optional_positive_int(
+                body_value=payload.get("limit"),
+                query_value=request.GET.get("limit"),
+                field_name="limit",
+            )
+            dry_run = _parse_optional_bool(
+                body_value=payload.get("dry_run"),
+                query_value=request.GET.get("dry_run"),
+                field_name="dry_run",
+            )
+            summary = summarize_pending_ct_process_comments(dry_run=dry_run, limit=limit)
+        except ValueError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
+        except Exception:
+            logger.exception("Failed to trigger ct_process_comment summary")
+            return JsonResponse({"error": "ct_process_comment 요약에 실패했습니다."}, status=500)
+
+        response_payload = _serialize_summary(table_name="ct_process_comment", summary=summary)
         status_code = 500 if summary.failure_count else 200
         return JsonResponse(response_payload, status=status_code)

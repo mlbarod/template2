@@ -74,6 +74,7 @@
 | `load_m_tkin_prevent` | `apps/api/api/data_movement/m_tkin_prevent/management/commands/load_m_tkin_prevent.py` | `m_tkin_prevent` deflate CSV 파일 적재 |
 | `load_ctttm_workorder_list` | `apps/api/api/data_movement/ctttm_workorder_list/management/commands/load_ctttm_workorder_list.py` | `ctttm_workorder_list` deflate CSV 파일 적재 |
 | `load_ct_process_comment` | `apps/api/api/data_movement/ct_process_comment/management/commands/load_ct_process_comment.py` | `ct_process_comment` deflate CSV 파일 적재 |
+| `summarize_ct_process_comment` | `apps/api/api/data_movement/ct_process_comment/management/commands/summarize_ct_process_comment.py` | `ct_process_comment` OpenWebUI 요약 |
 | `load_eqp_status_chg` | `apps/api/api/data_movement/eqp_status_chg/management/commands/load_eqp_status_chg.py` | `eqp_status_chg` deflate CSV 파일 적재 |
 | `load_mi_tip_update_hist` | `apps/api/api/data_movement/mi_tip_update_hist/management/commands/load_mi_tip_update_hist.py` | `mi_tip_update_hist` deflate CSV 파일 적재 |
 | `load_racb_list` | `apps/api/api/data_movement/racb_list/management/commands/load_racb_list.py` | `racb_list` deflate CSV 파일 적재 |

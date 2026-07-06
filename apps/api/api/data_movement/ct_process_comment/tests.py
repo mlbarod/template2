@@ -3,20 +3,25 @@
 from __future__ import annotations
 
 import zlib
+from datetime import timedelta
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
+import requests
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db import connection
 from django.test import SimpleTestCase, TestCase, override_settings
+from django.utils import timezone
 
 from api.data_movement.common.services.streaming_csv import write_selected_deflate_csv
 from api.data_movement.ct_process_comment.management.commands.load_ct_process_comment import services
 from api.data_movement.ct_process_comment.models import CtProcessComment, CtProcessCommentLoadJob
+from api.data_movement.ct_process_comment import selectors
 from api.data_movement.ct_process_comment.services import loader as loader_module
+from api.data_movement.ct_process_comment.services import summary as summary_module
 from api.data_movement.ct_process_comment.services import spec
 from api.data_movement.ct_process_comment.services.loader import LoadFileOutcome, LoadRunSummary
 
@@ -59,6 +64,36 @@ def _build_comment_row(
     row[15] = create_date
     row[16] = "part"
     return row
+
+
+def _build_openwebui_session(reply: str = "시간순 요약: 점검\n원인: 확인 불가\n조치사항: 확인 불가\n결과: 확인 불가") -> Mock:
+    """OpenWebUI 응답을 흉내 내는 requests session mock을 생성합니다."""
+
+    response = Mock()
+    response.raise_for_status.return_value = None
+    response.json.return_value = {
+        "choices": [
+            {
+                "message": {
+                    "content": reply,
+                }
+            }
+        ]
+    }
+    session = Mock()
+    session.post.return_value = response
+    return session
+
+
+def _build_openwebui_config() -> summary_module.OpenWebUISummaryConfig:
+    """테스트용 OpenWebUI 설정 객체를 생성합니다."""
+
+    return summary_module.OpenWebUISummaryConfig(
+        url="https://openwebui.example.local/v1/chat/completions",
+        model="test-model",
+        api_token="test-token",
+        timeout_seconds=3,
+    )
 
 
 class CtProcessCommentStructureTests(SimpleTestCase):
@@ -157,6 +192,174 @@ class CtProcessCommentStructureTests(SimpleTestCase):
 
         with self.assertRaises(CommandError):
             call_command("load_ct_process_comment", stdout=StringIO())
+
+    @patch(
+        "api.data_movement.ct_process_comment.management.commands"
+        ".summarize_ct_process_comment.services.summarize_pending_ct_process_comments"
+    )
+    def test_summary_command_passes_options_and_reports_summary(self, summarize_comments) -> None:
+        """요약 command가 옵션을 service로 전달하고 실행 결과를 출력합니다."""
+
+        summarize_comments.return_value = summary_module.SummaryRunSummary(
+            outcomes=[
+                summary_module.SummaryRowOutcome(
+                    workorder_id="WO1",
+                    status=summary_module.SUMMARY_STATUS_DRY_RUN,
+                )
+            ]
+        )
+        stdout = StringIO()
+
+        call_command(
+            "summarize_ct_process_comment",
+            "--limit",
+            "5",
+            "--workorder-id",
+            "WO1",
+            "--dry-run",
+            stdout=stdout,
+        )
+
+        summarize_comments.assert_called_once_with(limit=5, workorder_id="WO1", dry_run=True)
+        self.assertIn("dry_run: workorder_id=WO1", stdout.getvalue())
+        self.assertIn("summary: processed=1", stdout.getvalue())
+
+    def test_summary_command_rejects_invalid_limit(self) -> None:
+        """요약 command limit은 1 이상만 허용합니다."""
+
+        with self.assertRaises(CommandError):
+            call_command("summarize_ct_process_comment", "--limit", "0", stdout=StringIO())
+
+
+class CtProcessCommentSummaryTests(TestCase):
+    """ct_process_comment OpenWebUI 요약 batch를 검증합니다."""
+
+    def test_pending_summary_selector_orders_recent_updates_first(self) -> None:
+        """요약 대상은 최근 updated_at row부터 오래된 row 순서로 반환합니다."""
+
+        older = CtProcessComment.objects.create(workorder_id="WO-OLD", contents_text="old", update_flag="Y")
+        newer = CtProcessComment.objects.create(workorder_id="WO-NEW", contents_text="new", update_flag="Y")
+        newest_same_time = CtProcessComment.objects.create(
+            workorder_id="WO-NEWEST",
+            contents_text="newest",
+            update_flag="Y",
+        )
+        ignored = CtProcessComment.objects.create(workorder_id="WO-DONE", contents_text="done", update_flag="N")
+        base_time = timezone.now()
+        CtProcessComment.objects.filter(pk=older.pk).update(updated_at=base_time - timedelta(hours=2))
+        CtProcessComment.objects.filter(pk=newer.pk).update(updated_at=base_time)
+        CtProcessComment.objects.filter(pk=newest_same_time.pk).update(updated_at=base_time)
+        CtProcessComment.objects.filter(pk=ignored.pk).update(updated_at=base_time + timedelta(hours=1))
+
+        rows = list(selectors.list_pending_summary_comments(limit=10))
+
+        self.assertEqual([row.workorder_id for row in rows], ["WO-NEWEST", "WO-NEW", "WO-OLD"])
+
+    def test_summarize_updates_llm_summary_and_turns_flag_off(self) -> None:
+        """OpenWebUI 요약 성공 시 summary를 저장하고 update_flag를 N으로 변경합니다."""
+
+        comment = CtProcessComment.objects.create(
+            workorder_id="WO1",
+            contents_text="2026-01-01 10:00 점검 시작, 2026-01-01 11:00 조치 완료",
+            update_flag="Y",
+        )
+        session = _build_openwebui_session(
+            reply="시간순 요약: 10:00 점검 시작, 11:00 조치 완료\n원인: 확인 불가\n조치사항: 조치 완료\n결과: 확인 불가"
+        )
+
+        run_summary = summary_module.summarize_pending_ct_process_comments(
+            limit=10,
+            session=session,
+            config=_build_openwebui_config(),
+        )
+
+        comment.refresh_from_db()
+        self.assertEqual(run_summary.success_count, 1)
+        self.assertEqual(comment.update_flag, "N")
+        self.assertIn("시간순 요약", comment.llm_summary)
+        request_kwargs = session.post.call_args.kwargs
+        self.assertEqual(request_kwargs["json"]["temperature"], 0.0)
+        self.assertEqual(request_kwargs["json"]["model"], "test-model")
+        self.assertEqual(request_kwargs["headers"]["Authorization"], "Bearer test-token")
+        self.assertIn("절대로 추정하거나 생성하지 마세요", request_kwargs["json"]["messages"][0]["content"])
+
+    def test_summarize_keeps_update_flag_when_openwebui_fails(self) -> None:
+        """OpenWebUI 요청 실패 시 update_flag를 Y로 유지합니다."""
+
+        comment = CtProcessComment.objects.create(
+            workorder_id="WO1",
+            contents_text="점검 내용",
+            update_flag="Y",
+        )
+        session = Mock()
+        session.post.side_effect = requests.RequestException("network down")
+
+        run_summary = summary_module.summarize_pending_ct_process_comments(
+            limit=10,
+            session=session,
+            config=_build_openwebui_config(),
+        )
+
+        comment.refresh_from_db()
+        self.assertEqual(run_summary.failure_count, 1)
+        self.assertEqual(comment.update_flag, "Y")
+        self.assertIsNone(comment.llm_summary)
+
+    def test_summarize_skips_empty_contents_without_api_call(self) -> None:
+        """contents_text가 비어 있으면 외부 호출 없이 건너뛰고 flag를 유지합니다."""
+
+        comment = CtProcessComment.objects.create(workorder_id="WO1", contents_text="  ", update_flag="Y")
+        session = Mock()
+
+        run_summary = summary_module.summarize_pending_ct_process_comments(
+            limit=10,
+            session=session,
+            config=_build_openwebui_config(),
+        )
+
+        comment.refresh_from_db()
+        self.assertEqual(run_summary.skipped_count, 1)
+        self.assertEqual(comment.update_flag, "Y")
+        session.post.assert_not_called()
+
+    def test_summarize_dry_run_does_not_call_api_or_update_row(self) -> None:
+        """dry-run은 대상만 확인하고 외부 호출과 DB 갱신을 하지 않습니다."""
+
+        comment = CtProcessComment.objects.create(workorder_id="WO1", contents_text="점검 내용", update_flag="Y")
+        session = Mock()
+
+        run_summary = summary_module.summarize_pending_ct_process_comments(
+            limit=10,
+            dry_run=True,
+            session=session,
+            config=_build_openwebui_config(),
+        )
+
+        comment.refresh_from_db()
+        self.assertEqual(run_summary.dry_run_count, 1)
+        self.assertEqual(comment.update_flag, "Y")
+        self.assertIsNone(comment.llm_summary)
+        session.post.assert_not_called()
+
+    def test_summarize_filters_workorder_id(self) -> None:
+        """workorder_id 옵션이 지정되면 해당 row만 요약합니다."""
+
+        target = CtProcessComment.objects.create(workorder_id="WO1", contents_text="대상 점검", update_flag="Y")
+        other = CtProcessComment.objects.create(workorder_id="WO2", contents_text="다른 점검", update_flag="Y")
+        session = _build_openwebui_session()
+
+        run_summary = summary_module.summarize_pending_ct_process_comments(
+            limit=10,
+            workorder_id="WO1",
+            session=session,
+            config=_build_openwebui_config(),
+        )
+
+        target.refresh_from_db()
+        other.refresh_from_db()
+        self.assertEqual(run_summary.success_count, 1)
+        self.assertEqual(target.update_flag, "N")
+        self.assertEqual(other.update_flag, "Y")
 
 
 @override_settings(DATA_MOVEMENT_FILE_READY_MIN_AGE_SECONDS=0, DATA_MOVEMENT_FILE_READY_STABILITY_SECONDS=0)

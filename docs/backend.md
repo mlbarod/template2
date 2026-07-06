@@ -78,6 +78,7 @@
 | `load_m_tkin_prevent` | `api.data_movement.m_tkin_prevent` | `python manage.py load_m_tkin_prevent` |
 | `load_ctttm_workorder_list` | `api.data_movement.ctttm_workorder_list` | `python manage.py load_ctttm_workorder_list` |
 | `load_ct_process_comment` | `api.data_movement.ct_process_comment` | `python manage.py load_ct_process_comment` |
+| `summarize_ct_process_comment` | `api.data_movement.ct_process_comment` | `python manage.py summarize_ct_process_comment` |
 | `load_eqp_status_chg` | `api.data_movement.eqp_status_chg` | `python manage.py load_eqp_status_chg` |
 | `load_mi_tip_update_hist` | `api.data_movement.mi_tip_update_hist` | `python manage.py load_mi_tip_update_hist` |
 | `load_racb_list` | `api.data_movement.racb_list` | `python manage.py load_racb_list` |

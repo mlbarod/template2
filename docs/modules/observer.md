@@ -79,6 +79,7 @@ Observer 기준정보와 로그는 기본 DB의 data movement/업무 테이블�
 - Observer 조회 문제는 `/api/v1/observer/lines` 같은 기준 정보 API와 data movement 적재 상태부터 확인합니다.
 - 기본 조회 기간은 `OBSERVER_QUERY_DAYS`로 조정합니다.
 - 화면이 느리면 로그 API의 `from`, `to`, `limit` 조합과 응답 건수를 먼저 확인합니다.
+- CTTTM 요약이 비어 있으면 `summarize_ct_process_comment` command와 `ct_process_comment.update_flag` 상태를 확인합니다.
 - ESOP 로그가 누락되면 `api.drone` 데이터와 observer 로그 결합 지점을 함께 확인합니다.
 - tkin Prevent matrix가 비어 있으면 `station_master.ch_main`과 `m_tkin_prevent.eqp_id` 매핑부터 확인합니다.
 - tkin Prevent에서 Line은 ESOP Dashboard 선택값을 사용하며, user_sdwt_prod 후보는 `account_affiliation.line/user_sdwt_prod` 기준입니다.

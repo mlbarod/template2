@@ -12,6 +12,9 @@ AIRFLOW_API_BASE_URL = (os.getenv("AIRFLOW_API_BASE_URL") or "http://api:8000").
 AIRFLOW_TRIGGER_TOKEN = os.getenv("AIRFLOW_TRIGGER_TOKEN") or ""
 DATA_MOVEMENT_LOAD_HTTP_TIMEOUT = int(os.getenv("DATA_MOVEMENT_LOAD_HTTP_TIMEOUT") or "1800")
 DATA_MOVEMENT_LOAD_SCHEDULE = os.getenv("DATA_MOVEMENT_LOAD_SCHEDULE") or "*/1 * * * *"
+DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_HTTP_TIMEOUT = int(
+    os.getenv("DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_HTTP_TIMEOUT") or str(DATA_MOVEMENT_LOAD_HTTP_TIMEOUT)
+)
 
 
 def _parse_optional_int(value: Any) -> int | None:
@@ -67,6 +70,39 @@ def run_data_movement_load(*, table_name: str, **_context):
         return {"status_code": response.status_code}
 
 
+def run_ct_process_comment_summary(**_context):
+    """ct_process_comment OpenWebUI 요약 API를 호출합니다."""
+
+    if not AIRFLOW_API_BASE_URL:
+        raise ValueError("AIRFLOW_API_BASE_URL is not set")
+    if not AIRFLOW_TRIGGER_TOKEN:
+        raise ValueError("AIRFLOW_TRIGGER_TOKEN is not set")
+
+    payload: dict[str, object] = {}
+    limit = _parse_optional_int(os.getenv("DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_LIMIT"))
+    if limit is not None:
+        payload["limit"] = limit
+    if _parse_bool(os.getenv("DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_DRY_RUN")):
+        payload["dry_run"] = True
+
+    response = requests.post(
+        f"{AIRFLOW_API_BASE_URL}/api/v1/data-movement/ct_process_comment/summarize/",
+        headers={
+            "Accept": "application/json",
+            "Authorization": f"Bearer {AIRFLOW_TRIGGER_TOKEN}",
+            "X-Forwarded-Proto": "https",
+        },
+        json=payload or None,
+        timeout=DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_HTTP_TIMEOUT,
+    )
+    response.raise_for_status()
+
+    try:
+        return response.json()
+    except ValueError:
+        return {"status_code": response.status_code}
+
+
 default_args = {
     "owner": "airflow",
     "depends_on_past": False,
@@ -99,6 +135,11 @@ with DAG(
         op_kwargs={"table_name": "ct_process_comment"},
     )
 
+    summarize_ct_process_comment = PythonOperator(
+        task_id="summarize_ct_process_comment",
+        python_callable=run_ct_process_comment_summary,
+    )
+
     load_eqp_status_chg = PythonOperator(
         task_id="load_eqp_status_chg",
         python_callable=run_data_movement_load,
@@ -129,4 +170,4 @@ with DAG(
         op_kwargs={"table_name": "station_master"},
     )
 
-    load_ctttm_workorder_list >> load_ct_process_comment
+    load_ctttm_workorder_list >> load_ct_process_comment >> summarize_ct_process_comment

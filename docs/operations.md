@@ -121,6 +121,7 @@ OIDC/운영 환경에서는 자동 소속 변경을 실행하지 않습니다.
 POST /api/v1/data-movement/m_tkin_prevent/load/
 POST /api/v1/data-movement/ctttm_workorder_list/load/
 POST /api/v1/data-movement/ct_process_comment/load/
+POST /api/v1/data-movement/ct_process_comment/summarize/
 POST /api/v1/data-movement/eqp_status_chg/load/
 POST /api/v1/data-movement/mi_tip_update_hist/load/
 POST /api/v1/data-movement/racb_list/load/
@@ -129,6 +130,7 @@ POST /api/v1/data-movement/station_master/load/
 ```
 
 `ct_process_comment`는 workorder 목록을 참조하므로 DAG에서 `ctttm_workorder_list` 이후 실행됩니다.
+`ct_process_comment` 요약은 comment 적재 이후 실행되며, `update_flag='Y'` row를 OpenWebUI로 요약합니다.
 `eqp_status_chg`는 `/data/data_movement/m_eqp_status_chg/incoming/*m_eqp_status_chg*.csv.deflate` 파일을 `eqp_event_key` 기준으로 upsert하고 180일 retention을 적용합니다.
 `mi_tip_update_hist`는 `/data/data_movement/mi_tip_update_hist/incoming/*mi_tip_update_hist*.csv.deflate` 파일을 TIP timeline 조회용 row로 적재합니다.
 `racb_list`는 `/data/data_movement/racb_list/incoming/*racb_list*.csv.deflate` 파일을 `c_racb_id` 최신 row 기준으로 설비별 `eqp_cb` row로 펼쳐 적재합니다.
@@ -141,6 +143,9 @@ DATA_MOVEMENT_LOAD_SCHEDULE=*/1 * * * *
 DATA_MOVEMENT_LOAD_HTTP_TIMEOUT=1800
 DATA_MOVEMENT_LOAD_LIMIT=
 DATA_MOVEMENT_LOAD_DRY_RUN=false
+DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_HTTP_TIMEOUT=1800
+DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_LIMIT=
+DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_DRY_RUN=false
 ```
 
 송신 측에서 최종 파일명으로 직접 전송할 수 있으므로 API loader는 전송 중으로 보이는 파일을 적재 후보에서 제외합니다.

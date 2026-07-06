@@ -40,6 +40,7 @@ Observer API는 설비 Observer 화면에 필요한 라인, SDWT, 공정, 설비
 - PRC/설비 조회는 `drone_target.target_user_sdwt_prod = station_master.sdwt_prod_lookup` 매칭으로 station 데이터를 제한합니다.
 - 기준정보와 로그는 기본 DB의 data movement/업무 테이블을 조회합니다.
 - 로그 조회 API는 공통으로 `from`, `to`, `limit` query를 지원합니다.
+- CTTTM 로그의 `summary`는 `ct_process_comment.llm_summary` 값을 사용합니다.
 - `from`, `to`는 `YYYY-MM-DD` 또는 datetime 문자열을 받습니다.
 - `from`을 생략하면 backend 기본 조회 기간인 최근 60일을 사용합니다.
 - `limit`은 양의 정수만 허용하며 최대 5000건으로 제한됩니다.

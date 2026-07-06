@@ -5,9 +5,17 @@ from api.data_movement.ct_process_comment.services.loader import (
     LoadRunSummary,
     load_ct_process_comment_files,
 )
+from api.data_movement.ct_process_comment.services.summary import (
+    SummaryRowOutcome,
+    SummaryRunSummary,
+    summarize_pending_ct_process_comments,
+)
 
 __all__ = [
     "LoadFileOutcome",
     "LoadRunSummary",
+    "SummaryRowOutcome",
+    "SummaryRunSummary",
     "load_ct_process_comment_files",
+    "summarize_pending_ct_process_comments",
 ]

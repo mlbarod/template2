@@ -61,3 +61,25 @@ POST /api/v1/data-movement/<table_name>/load/
 ```
 
 실패 파일이 하나라도 있으면 응답은 `500`이며, `outcomes`에 파일별 `error_message`가 포함됩니다.
+
+## ct_process_comment 요약 트리거
+
+```http
+POST /api/v1/data-movement/ct_process_comment/summarize/
+```
+
+`update_flag='Y'`인 `ct_process_comment` row를 최근 업데이트 순으로 OpenWebUI에 요약 요청합니다.
+성공한 row는 `llm_summary`를 저장하고 `update_flag='N'`으로 변경합니다.
+실패 row는 `update_flag='Y'`를 유지해 다음 실행에서 재시도합니다.
+
+요청 바디는 선택입니다.
+
+```json
+{
+  "limit": 100,
+  "dry_run": false
+}
+```
+
+응답에는 `processed_count`, `success_count`, `failure_count`, `skipped_count`, `dry_run_count`, `outcomes`가 포함됩니다.
+실패 row가 하나라도 있으면 응답은 `500`입니다.

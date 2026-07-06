@@ -70,6 +70,19 @@ Assistant가 RAG 검색 결과를 LLM에 전달해 답변을 생성합니다.
 - `ASSISTANT_LLM_COMMON_HEADERS`
 - `ASSISTANT_REQUEST_TIMEOUT`
 
+## OpenWebUI 요약
+
+`ct_process_comment` 요약 배치는 OpenWebUI의 OpenAI 호환 chat completions API를 호출해 `contents_text`를 요약합니다.
+
+주요 설정:
+
+- `OPENWEBUI_URL`
+- `OPENWEBUI_API_TOKEN`
+- `OPENWEBUI_MODEL`
+- `OPENWEBUI_COMMON_HEADERS`
+- `OPENWEBUI_TIMEOUT_SECONDS`
+- `OPENWEBUI_SUMMARY_BATCH_SIZE`
+
 ## Mail API
 
 Emails와 Drone이 Knox Mail API를 호출할 수 있습니다.
@@ -128,6 +141,7 @@ Authorization: Bearer <AIRFLOW_TRIGGER_TOKEN>
 | OIDC provider 변경 | `env/api*.env`, `env/web*.env`, `apps/adfs_dummy/adfs_oidc.py`, `docs/api/auth.md` |
 | RAG endpoint/schema 변경 | `env/api*.env`, `apps/adfs_dummy/adfs_rag.py`, `docs/api/assistant.md`, `docs/modules/emails.md` |
 | LLM request/response 변경 | `env/api*.env`, `apps/adfs_dummy/adfs_llm.py`, `docs/modules/assistant.md` |
+| OpenWebUI 요약 request/response 변경 | `env/api*.env`, `apps/adfs_dummy/adfs_llm.py`, `docs/modules/observer.md`, `docs/api/observer.md` |
 | Mail API 변경 | `env/api*.env`, `apps/adfs_dummy/adfs_mail.py`, `docs/modules/emails.md`, `docs/modules/line-dashboard.md` |
 | Jira 변경 | `env/api*.env`, `apps/adfs_dummy/adfs_jira.py`, `docs/modules/line-dashboard.md` |
 | MinIO 변경 | `env/minio.env`, `docs/data-model.md`, `docs/modules/emails.md` |
