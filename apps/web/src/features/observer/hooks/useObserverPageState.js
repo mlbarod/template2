@@ -6,6 +6,8 @@ import {
 import {
   buildLogDateRangeOptions,
   getDefaultLogRange,
+  getLogRangeFromSearchParams,
+  normalizeLogRange,
 } from "../utils/logDateRange";
 import { useObserverSelectionStore } from "../store/useObserverSelectionStore";
 import { useObserverStore } from "../store/useObserverStore";
@@ -44,7 +46,12 @@ export function useObserverPageState(params) {
   // 페이지 로컬 UI 상태
   const [typeFilters, setTypeFilters] = useState({ ...DEFAULT_TYPE_FILTERS });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [logRange, setLogRange] = useState(() => getDefaultLogRange());
+  const [logRange, setLogRange] = useState(() => {
+    const initialRange = getLogRangeFromSearchParams(
+      new URLSearchParams(location.search)
+    );
+    return initialRange || getDefaultLogRange();
+  });
   const logQueryOptions = useMemo(
     () => buildLogDateRangeOptions(logRange),
     [logRange]
@@ -62,6 +69,54 @@ export function useObserverPageState(params) {
 
   const isValidating = shouldValidateEqpOnly && isEquipmentInfoFetching;
   const hasValidationResult = !shouldValidateEqpOnly || !isEquipmentInfoFetching;
+
+  useEffect(() => {
+    const nextRange = getLogRangeFromSearchParams(
+      new URLSearchParams(location.search)
+    );
+    if (!nextRange) return;
+
+    setLogRange((currentRange) => {
+      const current = normalizeLogRange(currentRange);
+      if (
+        current.startDaysAgo === nextRange.startDaysAgo &&
+        current.endDaysAgo === nextRange.endDaysAgo
+      ) {
+        return currentRange;
+      }
+
+      return nextRange;
+    });
+  }, [location.search]);
+
+  useEffect(() => {
+    const nextParams = new URLSearchParams(location.search);
+    let hasChanged = false;
+
+    for (const [key, value] of Object.entries(logQueryOptions)) {
+      if (nextParams.get(key) !== value) {
+        nextParams.set(key, value);
+        hasChanged = true;
+      }
+    }
+
+    if (!hasChanged) return;
+
+    navigate(
+      {
+        pathname: location.pathname,
+        search: `?${nextParams.toString()}`,
+        hash: location.hash,
+      },
+      { replace: true }
+    );
+  }, [
+    location.hash,
+    location.pathname,
+    location.search,
+    logQueryOptions,
+    navigate,
+  ]);
 
   useEffect(() => {
     if (!shouldValidateEqpOnly) {
@@ -112,12 +167,34 @@ export function useObserverPageState(params) {
     if (eqpId) {
       const newPath = `/observer/${eqpId}`;
       if (currentPath !== newPath) {
-        navigate(newPath, { replace: true });
+        navigate(
+          {
+            pathname: newPath,
+            search: location.search,
+            hash: location.hash,
+          },
+          { replace: true }
+        );
       }
     } else if (isParamRoute) {
-      navigate("/observer", { replace: true });
+      navigate(
+        {
+          pathname: "/observer",
+          search: location.search,
+          hash: location.hash,
+        },
+        { replace: true }
+      );
     }
-  }, [eqpId, hasValidationResult, isValidating, location.pathname, navigate]);
+  }, [
+    eqpId,
+    hasValidationResult,
+    isValidating,
+    location.hash,
+    location.pathname,
+    location.search,
+    navigate,
+  ]);
 
   useEffect(() => {
     resetSelection();
