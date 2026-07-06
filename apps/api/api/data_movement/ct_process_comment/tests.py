@@ -66,7 +66,7 @@ def _build_comment_row(
     return row
 
 
-def _build_openwebui_session(reply: str = "시간순 요약: 점검\n원인: 확인 불가\n조치사항: 확인 불가\n결과: 확인 불가") -> Mock:
+def _build_openwebui_session(reply: str = "[시간 미상] 점검") -> Mock:
     """OpenWebUI 응답을 흉내 내는 requests session mock을 생성합니다."""
 
     response = Mock()
@@ -276,12 +276,13 @@ class CtProcessCommentSummaryTests(TestCase):
         comment.refresh_from_db()
         self.assertEqual(run_summary.success_count, 1)
         self.assertEqual(comment.update_flag, "N")
-        self.assertIn("시간순 요약", comment.llm_summary)
+        self.assertEqual(comment.llm_summary, "[10:00] 점검 시작\n[11:00] 조치 완료")
         request_kwargs = session.post.call_args.kwargs
         self.assertEqual(request_kwargs["json"]["temperature"], 0.0)
         self.assertEqual(request_kwargs["json"]["model"], "test-model")
         self.assertEqual(request_kwargs["headers"]["Authorization"], "Bearer test-token")
         self.assertIn("절대로 추정하거나 생성하지 마세요", request_kwargs["json"]["messages"][0]["content"])
+        self.assertIn("[시간] 이벤트", request_kwargs["json"]["messages"][0]["content"])
 
     def test_summarize_keeps_update_flag_when_openwebui_fails(self) -> None:
         """OpenWebUI 요청 실패 시 update_flag를 Y로 유지합니다."""

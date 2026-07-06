@@ -41,8 +41,8 @@ export default function Field({
   if (fullWidth) {
     return (
       <>
-        <FieldLabel label={label} className={className} />
-        <div className={`col-span-3 min-w-0 break-words ${valueClassName}`}>
+        <FieldLabel label={label} className={`col-start-1 ${className}`} />
+        <div className={`col-start-2 col-end-5 min-w-0 break-words ${valueClassName}`}>
           {content}
         </div>
       </>

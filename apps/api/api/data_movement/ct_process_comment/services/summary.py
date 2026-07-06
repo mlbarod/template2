@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -22,6 +23,10 @@ SUMMARY_STATUS_SUCCESS = "success"
 SUMMARY_STATUS_FAILED = "failed"
 SUMMARY_STATUS_SKIPPED = "skipped"
 SUMMARY_STATUS_DRY_RUN = "dry_run"
+SUMMARY_SECTION_PREFIX_PATTERN = re.compile(r"^(원인|조치사항|결과)\s*:")
+SUMMARY_TIME_LINE_PATTERN = re.compile(
+    r"^(?P<time>(?:\d{4}[-/.]\d{2}[-/.]\d{2}\s+)?\d{1,2}:\d{2}(?::\d{2})?)\s+(?P<event>.+)$"
+)
 
 SUMMARY_SYSTEM_PROMPT = """당신은 설비 점검 이력 요약기입니다.
 입력으로 제공된 contents_text에 실제로 포함된 사실만 사용하세요.
@@ -29,18 +34,17 @@ SUMMARY_SYSTEM_PROMPT = """당신은 설비 점검 이력 요약기입니다.
 
 작업:
 1. 설비 점검 이력을 확인 가능한 시간 순서대로 정리하세요.
-2. 각 시간대의 이벤트는 간결한 문장으로 요약하세요.
-3. 이벤트들은 콤마(,)로 구분하세요.
-4. 원인, 조치사항, 결과가 입력에 명확히 있으면 별도 항목으로 표시하세요.
-5. 명확하지 않은 항목은 "확인 불가"라고만 쓰세요.
-6. 같은 의미의 중복 이벤트는 합치되, 서로 다른 사실은 누락하지 마세요.
-7. 출력 형식 외의 설명, 추론 과정, 사과문, 안내문은 쓰지 마세요.
+2. 핵심 이벤트만 최대 3줄로 짧게 요약하세요.
+3. 각 줄은 반드시 "[시간] 이벤트" 형식으로 쓰세요.
+4. 한 줄에는 하나의 이벤트만 쓰고, 이벤트 사이에는 줄바꿈만 사용하세요.
+5. 명확한 시간이 없으면 "[시간 미상]"으로 쓰세요.
+6. 같은 의미의 중복 이벤트는 합치되, 핵심 사실은 누락하지 마세요.
+7. 원인, 조치사항, 결과 같은 별도 제목 항목은 쓰지 마세요.
+8. 출력 형식 외의 설명, 추론 과정, 사과문, 안내문은 쓰지 마세요.
 
 출력 형식:
-시간순 요약: <이벤트1>, <이벤트2>, <이벤트3>
-원인: <명확한 원인 또는 확인 불가>
-조치사항: <명확한 조치사항 또는 확인 불가>
-결과: <명확한 결과 또는 확인 불가>"""
+[07/06 10:00] 점검 시작
+[07/06 11:00] 조치 완료"""
 
 
 class OpenWebUIConfigError(RuntimeError):
@@ -192,7 +196,46 @@ def _extract_summary(resp_json: dict[str, Any]) -> str:
     summary = content.strip()
     if not summary:
         raise OpenWebUIRequestError("OpenWebUI 응답 content가 비어 있습니다.")
-    return summary
+    return _normalize_summary_text(summary)
+
+
+def _format_summary_event_line(raw_line: str) -> str:
+    """요약 이벤트 한 줄을 Log Detail 표시 형식으로 정규화합니다."""
+
+    line = raw_line.strip().strip("-•, ")
+    if not line:
+        return ""
+    if line.startswith("["):
+        return line
+
+    match = SUMMARY_TIME_LINE_PATTERN.match(line)
+    if match:
+        return f"[{match.group('time')}] {match.group('event').strip()}"
+    return line
+
+
+def _normalize_summary_text(summary: str) -> str:
+    """OpenWebUI 응답을 짧은 streaming 표시용 요약 문자열로 정리합니다."""
+
+    normalized_lines: list[str] = []
+    for raw_line in summary.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        split_by_comma = False
+        if line.startswith("시간순 요약:"):
+            line = line.split(":", 1)[1].strip()
+            split_by_comma = True
+        if not line or SUMMARY_SECTION_PREFIX_PATTERN.match(line):
+            continue
+
+        candidates = [part.strip() for part in line.split(",") if part.strip()] if split_by_comma else [line]
+        for candidate in candidates:
+            event_line = _format_summary_event_line(candidate)
+            if event_line:
+                normalized_lines.append(event_line)
+
+    return "\n".join(normalized_lines) or summary.strip()
 
 
 def request_summary(

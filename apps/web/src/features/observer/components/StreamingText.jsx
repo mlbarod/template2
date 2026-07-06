@@ -1,4 +1,4 @@
-// src/features/observer/components/logDetail/StreamingText.jsx
+// Observer log detail의 streaming 텍스트 표시 컴포넌트입니다.
 import React, { useState, useEffect } from "react";
 
 /**
@@ -25,7 +25,7 @@ export default function StreamingText({ text, speed = 30 }) {
   }, [currentIndex, text, speed]);
 
   return (
-    <span className="inline-block">
+    <span className="inline-block whitespace-pre-line">
       {displayedText}
       {currentIndex < text.length && (
         <span className="ml-0.5 inline-block h-4 w-2 animate-pulse bg-muted-foreground" />
