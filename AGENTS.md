@@ -28,6 +28,7 @@ Detailed execution workflows are delegated to `.codex/skills/*`.
 - Frontend boundary audit: `.codex/skills/frontend-boundary-audit/SKILL.md`
 - Safe file edit/output format: `.codex/skills/safe-file-edit-output/SKILL.md`
 - Offsite contract synchronization: `.codex/skills/offsite-dev-contract-sync/SKILL.md`
+- Branch merge routine: `.codex/skills/branch-merge-routine/SKILL.md`
 
 ## 0-4. Planning and Evaluation
 - For complex changes, use `docs/agent/PLANS.md`.
