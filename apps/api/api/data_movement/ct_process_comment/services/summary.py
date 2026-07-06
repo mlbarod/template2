@@ -49,6 +49,7 @@ GENERIC_CORE_SUMMARY_PHRASES = {
     "육안",
 }
 GENERIC_CORE_SUMMARY_TOKENS = {"점검", "시작", "확인", "알람", "내용", "없음", "불가", "특이사항", "해당", "작업중"}
+CORE_SUMMARY_REWRITE_PREFIX = "REWRITE:"
 
 SUMMARY_SYSTEM_PROMPT = """당신은 설비 점검 이력 요약기입니다.
 입력으로 제공된 이벤트 목록에 실제로 포함된 사실만 사용하세요.
@@ -82,12 +83,31 @@ CORE_SUMMARY_SYSTEM_PROMPT = """당신은 설비 점검 이력 핵심 요약기�
 4. 입력에 해결 여부가 명시되지 않았다면 확인된 진행 상황만 있는 그대로 요약하세요.
 5. 단순 점검, 확인, 조치 진행, 알람 확인만으로 문제가 해결되었다고 추정하지 마세요.
 6. 핵심요약할 만큼 의미 있는 진행, 상태, 조치 정보가 부족하면 정확히 "NO_CORE_SUMMARY"만 출력하세요.
-7. 핵심요약을 작성할 때 첫 줄은 반드시 "핵심 요약: "으로 시작하세요.
-8. 출력은 핵심 요약 한 줄 또는 "NO_CORE_SUMMARY"만 작성하세요.
-9. 설명, 추론 과정, 사과문, 안내문, markdown은 쓰지 마세요.
+7. 구체 대상 없이 "여러", "일부", "관련", "작업 진행", "조치 과정", "불량사항" 같은 모호한 표현으로 핵심요약을 만들지 마세요.
+8. 모호한 표현을 입력에 있는 구체 장비명, 부품명, 알람명, 작업명, 상태, 결과로 바꿀 수 없으면 "NO_CORE_SUMMARY"만 출력하세요.
+9. 핵심요약을 작성할 때 첫 줄은 반드시 "핵심 요약: "으로 시작하세요.
+10. 출력은 핵심 요약 한 줄 또는 "NO_CORE_SUMMARY"만 작성하세요.
+11. 설명, 추론 과정, 사과문, 안내문, markdown은 쓰지 마세요.
 
 출력 형식:
 핵심 요약: 점검 시작 후 알람을 확인했고 조치 내용이 기록되었습니다."""
+
+CORE_SUMMARY_REVIEW_SYSTEM_PROMPT = """당신은 설비 점검 이력 핵심요약 검수자입니다.
+입력으로 시간순 요약과 후보 핵심요약이 제공됩니다.
+시간순 요약에 실제로 포함된 사실만 사용하세요.
+입력에 없는 원인, 조치사항, 결과, 시간, 장비 상태를 절대로 추정하거나 생성하지 마세요.
+
+판단 기준:
+1. 후보 핵심요약이 구체 장비명, 부품명, 알람명, 작업명, 상태, 결과 중 확인 가능한 정보를 담고 있으면 "KEEP"만 출력하세요.
+2. 후보가 "여러", "일부", "관련", "작업 진행", "조치 과정", "불량사항"처럼 모호하지만 시간순 요약에서 더 구체적으로 바꿀 수 있으면 "REWRITE: " 뒤에 구체 핵심요약을 한 줄로 작성하세요.
+3. 시간순 요약만으로 구체 핵심요약을 만들 수 없으면 정확히 "NO_CORE_SUMMARY"만 출력하세요.
+4. 해결, 완료, 정상화, 복구 표현은 시간순 요약에 명시된 경우에만 쓰세요.
+5. 설명, 추론 과정, 사과문, 안내문, markdown은 쓰지 마세요.
+
+출력 형식:
+KEEP
+REWRITE: TMP 센서 알람 후 CH-A 밸브 탈착 및 장착이 완료되었습니다.
+NO_CORE_SUMMARY"""
 
 
 class OpenWebUIConfigError(RuntimeError):
@@ -295,6 +315,30 @@ def build_core_summary_prompt(event_summary: str) -> list[dict[str, str]]:
     ]
 
 
+def build_core_summary_review_prompt(event_summary: str, core_summary: str) -> list[dict[str, str]]:
+    """핵심 요약 후보를 검수하는 OpenWebUI message 목록을 생성합니다."""
+
+    return [
+        {"role": "system", "content": CORE_SUMMARY_REVIEW_SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": "\n".join(
+                [
+                    "time_ordered_summary:",
+                    "<<<",
+                    event_summary,
+                    ">>>",
+                    "",
+                    "candidate_core_summary:",
+                    "<<<",
+                    core_summary,
+                    ">>>",
+                ]
+            ),
+        },
+    ]
+
+
 def _extract_reply_content(resp_json: dict[str, Any]) -> str:
     """OpenAI 호환 응답에서 assistant content 원문을 추출합니다."""
 
@@ -410,6 +454,21 @@ def _normalize_core_summary_text(summary: str) -> str | None:
     return compact or None
 
 
+def _normalize_reviewed_core_summary_text(review: str, candidate: str) -> str | None:
+    """AI 검수 응답을 최종 llm_core_summary 값으로 정규화합니다."""
+
+    lines = [line.strip().strip("-• ") for line in review.splitlines() if line.strip()]
+    compact = " ".join(lines).strip()
+    upper_compact = compact.upper()
+    if upper_compact == "KEEP":
+        return candidate
+    if upper_compact == NO_CORE_SUMMARY_SENTINEL:
+        return None
+    if compact.startswith(CORE_SUMMARY_REWRITE_PREFIX):
+        return _normalize_core_summary_text(compact[len(CORE_SUMMARY_REWRITE_PREFIX):].strip())
+    return _normalize_core_summary_text(compact)
+
+
 def _post_chat_completion(
     *,
     session: requests.Session,
@@ -480,7 +539,18 @@ def request_summary(
             messages=build_core_summary_prompt(event_summary),
         )
     )
-    return GeneratedSummary(core_summary=core_summary, event_summary=event_summary)
+    if core_summary is None:
+        return GeneratedSummary(core_summary=None, event_summary=event_summary)
+
+    reviewed_core_summary = _normalize_reviewed_core_summary_text(
+        _post_chat_completion(
+            session=session,
+            config=config,
+            messages=build_core_summary_review_prompt(event_summary, core_summary),
+        ),
+        core_summary,
+    )
+    return GeneratedSummary(core_summary=reviewed_core_summary, event_summary=event_summary)
 
 
 def summarize_pending_ct_process_comments(

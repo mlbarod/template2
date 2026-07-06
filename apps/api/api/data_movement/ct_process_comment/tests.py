@@ -339,6 +339,7 @@ class CtProcessCommentSummaryTests(TestCase):
             replies=[
                 "시간순 요약: 2026-01-01 10:00 점검 시작, 2026-01-01 11:00 조치 완료\n원인: 확인 불가\n조치사항: 조치 완료\n결과: 확인 불가",
                 "핵심 요약: 점검 시작 후 조치가 완료되었습니다.",
+                "KEEP",
             ]
         )
 
@@ -353,11 +354,13 @@ class CtProcessCommentSummaryTests(TestCase):
         self.assertEqual(comment.update_flag, "N")
         self.assertEqual(comment.llm_core_summary, "점검 시작 후 조치가 완료되었습니다.")
         self.assertEqual(comment.llm_summary, "[2026-01-01 10:00] 점검 시작\n[2026-01-01 11:00] 조치 완료")
-        self.assertEqual(session.post.call_count, 2)
+        self.assertEqual(session.post.call_count, 3)
         event_request_kwargs = session.post.call_args_list[0].kwargs
         core_request_kwargs = session.post.call_args_list[1].kwargs
+        review_request_kwargs = session.post.call_args_list[2].kwargs
         event_request_messages = event_request_kwargs["json"]["messages"]
         core_request_messages = core_request_kwargs["json"]["messages"]
+        review_request_messages = review_request_kwargs["json"]["messages"]
         self.assertEqual(event_request_kwargs["json"]["temperature"], 0.0)
         self.assertEqual(event_request_kwargs["json"]["model"], "test-model")
         self.assertEqual(event_request_kwargs["headers"]["Authorization"], "Bearer test-token")
@@ -375,7 +378,15 @@ class CtProcessCommentSummaryTests(TestCase):
         self.assertIn("입력에 명시된 경우에만", core_request_messages[0]["content"])
         self.assertIn("해결되었다고 추정하지 마세요", core_request_messages[0]["content"])
         self.assertIn("NO_CORE_SUMMARY", core_request_messages[0]["content"])
+        self.assertIn("모호한 표현", core_request_messages[0]["content"])
+        self.assertIn("구체 대상 없이", core_request_messages[0]["content"])
+        self.assertIn("구체 장비명", core_request_messages[0]["content"])
         self.assertIn("[2026-01-01 10:00] 점검 시작", core_request_messages[1]["content"])
+        self.assertIn("KEEP", review_request_messages[0]["content"])
+        self.assertIn("REWRITE:", review_request_messages[0]["content"])
+        self.assertIn("NO_CORE_SUMMARY", review_request_messages[0]["content"])
+        self.assertIn("점검 시작 후 조치가 완료되었습니다.", review_request_messages[1]["content"])
+        self.assertIn("[2026-01-01 10:00] 점검 시작", review_request_messages[1]["content"])
 
     def test_summarize_leaves_core_summary_empty_when_event_summary_is_too_short(self) -> None:
         """시간순 요약 정보량이 부족하면 핵심요약 호출 없이 core summary를 비워 둡니다."""
@@ -440,6 +451,69 @@ class CtProcessCommentSummaryTests(TestCase):
 
         self.assertIsNone(generated.core_summary)
         self.assertEqual(session.post.call_count, 2)
+
+    def test_request_summary_maps_vague_core_summary_to_empty_core_summary(self) -> None:
+        """LLM이 모호한 핵심요약을 반환하면 core summary를 비워 둡니다."""
+
+        session = _build_openwebui_session(
+            replies=[
+                "[2026-01-01 10:00] TMP 센서 알람 발생\n"
+                "[2026-01-01 11:00] CH-A 밸브 교체 요청",
+                "핵심 요약: 여러 부품의 교체가 있었고 일부 부품의 수급과 장착이 완료되었습니다.",
+                "NO_CORE_SUMMARY",
+            ]
+        )
+
+        generated = summary_module.request_summary(
+            session=session,
+            config=_build_openwebui_config(),
+            contents_text="[ 2026-01-01 10:00 / 홍길동 ]\nTMP 센서 알람 발생",
+        )
+
+        self.assertIsNone(generated.core_summary)
+        self.assertEqual(session.post.call_count, 3)
+
+    def test_request_summary_keeps_concrete_action_core_summary(self) -> None:
+        """구체 대상이 있는 작업 표현은 core summary로 유지합니다."""
+
+        session = _build_openwebui_session(
+            replies=[
+                "[2026-01-01 10:00] TMP 센서 알람 발생\n"
+                "[2026-01-01 11:00] CH-A 밸브 탈착 및 장착 완료",
+                "핵심 요약: TMP 센서 알람 후 CH-A 밸브 탈착 및 장착이 완료되었습니다.",
+                "KEEP",
+            ]
+        )
+
+        generated = summary_module.request_summary(
+            session=session,
+            config=_build_openwebui_config(),
+            contents_text="[ 2026-01-01 10:00 / 홍길동 ]\nTMP 센서 알람 발생",
+        )
+
+        self.assertEqual(generated.core_summary, "TMP 센서 알람 후 CH-A 밸브 탈착 및 장착이 완료되었습니다.")
+        self.assertEqual(session.post.call_count, 3)
+
+    def test_request_summary_uses_rewritten_core_summary_from_review(self) -> None:
+        """AI 검수가 모호한 후보를 구체화하면 rewrite 결과를 저장합니다."""
+
+        session = _build_openwebui_session(
+            replies=[
+                "[2026-01-01 10:00] TMP 센서 알람 발생\n"
+                "[2026-01-01 11:00] CH-A 밸브 교체 요청",
+                "핵심 요약: 여러 부품의 교체 요청이 있었습니다.",
+                "REWRITE: TMP 센서 알람 후 CH-A 밸브 교체 요청이 기록되었습니다.",
+            ]
+        )
+
+        generated = summary_module.request_summary(
+            session=session,
+            config=_build_openwebui_config(),
+            contents_text="[ 2026-01-01 10:00 / 홍길동 ]\nTMP 센서 알람 발생",
+        )
+
+        self.assertEqual(generated.core_summary, "TMP 센서 알람 후 CH-A 밸브 교체 요청이 기록되었습니다.")
+        self.assertEqual(session.post.call_count, 3)
 
     def test_summarize_keeps_update_flag_when_openwebui_fails(self) -> None:
         """OpenWebUI 요청 실패 시 update_flag를 Y로 유지합니다."""

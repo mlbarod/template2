@@ -28,11 +28,6 @@ function formatSummaryTimestamp(text) {
   );
 }
 
-function buildSummaryText(log) {
-  const parts = [log.coreSummary, log.summary].filter(Boolean);
-  return formatSummaryTimestamp(parts.join("\n"));
-}
-
 export default function CtttmDetail({ log, summaryStreamingScrollClassName }) {
   return (
     <>
@@ -49,8 +44,14 @@ export default function CtttmDetail({ log, summaryStreamingScrollClassName }) {
         value={log.url ? <CtttmUrlLink url={log.url} /> : null}
       />
       <Field
+        label="핵심요약"
+        value={log.coreSummary}
+        fullWidth
+        valueClassName="whitespace-pre-wrap break-words leading-6"
+      />
+      <Field
         label="Summary"
-        value={buildSummaryText(log)}
+        value={formatSummaryTimestamp(log.summary)}
         fullWidth
         streaming={true}
         streamingClassName="leading-6 tabular-nums"
