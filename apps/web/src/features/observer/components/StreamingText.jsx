@@ -1,5 +1,5 @@
 // Observer log detail의 streaming 텍스트 표시 컴포넌트입니다.
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 
 const streamedTextCache = new Set();
 
@@ -11,12 +11,25 @@ export default function StreamingText({
   speed = 8,
   className = "",
   scrollClassName = "max-w-full overflow-x-auto",
+  active = true,
   onProgress,
+  onComplete,
 }) {
   const [displayedText, setDisplayedText] = useState("");
   const [currentIndex, setCurrentIndex] = useState(0);
+  const onCompleteRef = useRef(onComplete);
 
   useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
+
+  useEffect(() => {
+    if (!active) {
+      setDisplayedText("");
+      setCurrentIndex(0);
+      return;
+    }
+
     if (streamedTextCache.has(text)) {
       setDisplayedText(text);
       setCurrentIndex(text.length);
@@ -25,9 +38,11 @@ export default function StreamingText({
 
     setDisplayedText("");
     setCurrentIndex(0);
-  }, [text]);
+  }, [active, text]);
 
   useEffect(() => {
+    if (!active) return undefined;
+
     if (currentIndex < text.length) {
       const timer = setTimeout(() => {
         setDisplayedText((prev) => prev + text[currentIndex]);
@@ -36,10 +51,16 @@ export default function StreamingText({
 
       return () => clearTimeout(timer);
     }
-    if (text) {
-      streamedTextCache.add(text);
-    }
-  }, [currentIndex, text, speed]);
+
+    return undefined;
+  }, [active, currentIndex, text, speed]);
+
+  useEffect(() => {
+    if (!active || !text || currentIndex < text.length) return;
+
+    streamedTextCache.add(text);
+    onCompleteRef.current?.();
+  }, [active, currentIndex, text]);
 
   useEffect(() => {
     if (displayedText) {
@@ -50,7 +71,7 @@ export default function StreamingText({
   return (
     <span className={`block whitespace-pre break-normal ${scrollClassName} ${className}`}>
       {displayedText}
-      {currentIndex < text.length && (
+      {active && currentIndex < text.length && (
         <span className="ml-0.5 inline-block h-4 w-2 animate-pulse bg-muted-foreground" />
       )}
     </span>

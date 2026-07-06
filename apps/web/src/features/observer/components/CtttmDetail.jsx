@@ -1,5 +1,5 @@
 // 파일 경로: src/features/observer/components/logDetail/CtttmDetail.jsx
-import React from "react";
+import React, { useState } from "react";
 import { ExternalLink } from "lucide-react";
 import Field from "./Field";
 
@@ -44,6 +44,19 @@ export default function CtttmDetail({
   summaryStreamingScrollClassName,
   onStreamingProgress,
 }) {
+  const coreSummaryText = normalizeDetailText(log.coreSummary);
+  const summaryText = formatSummaryTimestamp(log.summary);
+  const streamResetKey = [
+    log.logType,
+    log.eventType,
+    log.eventTime,
+    log.url,
+    coreSummaryText,
+    summaryText,
+  ].join("|");
+  const [completedCoreSummaryKey, setCompletedCoreSummaryKey] = useState(null);
+  const isCoreSummaryStreamingComplete = completedCoreSummaryKey === streamResetKey;
+
   return (
     <>
       <Field label="Log Type" value={log.logType} />
@@ -62,8 +75,9 @@ export default function CtttmDetail({
         valueClassName={FULL_WIDTH_TEXT_CLASS}
       />
       <Field
+        key={`core-summary-${streamResetKey}`}
         label="핵심요약"
-        value={normalizeDetailText(log.coreSummary)}
+        value={coreSummaryText}
         fullWidth
         streaming={true}
         className={FULL_WIDTH_LABEL_CLASS}
@@ -72,12 +86,15 @@ export default function CtttmDetail({
         streamingClassName="leading-6"
         streamingScrollClassName={FULL_WIDTH_STREAMING_SCROLL_CLASS}
         onStreamingProgress={onStreamingProgress}
+        onStreamingComplete={() => setCompletedCoreSummaryKey(streamResetKey)}
       />
       <Field
+        key={`summary-${streamResetKey}`}
         label="Summary"
-        value={formatSummaryTimestamp(log.summary)}
+        value={summaryText}
         fullWidth
         streaming={true}
+        streamingActive={isCoreSummaryStreamingComplete}
         className={FULL_WIDTH_LABEL_CLASS}
         valueContainerClassName={FULL_WIDTH_VALUE_CONTAINER_CLASS}
         valueClassName={FULL_WIDTH_TEXT_CLASS}

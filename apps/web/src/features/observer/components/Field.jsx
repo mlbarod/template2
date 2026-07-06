@@ -35,9 +35,11 @@ export default function Field({
   valueContainerClassName = "",
   fullWidth = false,
   streaming = false,
+  streamingActive = true,
   streamingClassName = "",
   streamingScrollClassName = undefined,
   onStreamingProgress,
+  onStreamingComplete,
 }) {
   const displayValue = TIME_FIELD_LABELS.has(label) ? formatDetailDateTime(value) : value;
   const content = streaming ? (
@@ -45,7 +47,9 @@ export default function Field({
       text={displayValue || "-"}
       className={streamingClassName}
       scrollClassName={streamingScrollClassName}
+      active={streamingActive}
       onProgress={onStreamingProgress}
+      onComplete={onStreamingComplete}
     />
   ) : displayValue || "-";
 

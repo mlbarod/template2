@@ -15,9 +15,9 @@
 
   /* 팔레트 기반 컬러 선택 */
   /* 가동/런 */
-  --observer-palette-active: hsl(246, 100%, 50%);
+  --observer-palette-active: hsl(246 100% 50%);
   /* 강조/오픈 */
-  --observer-palette-accent: hsl(123, 78%, 62%);
+  --observer-palette-accent: hsl(123 78% 62%);
   /* 유지보수/유휴 */
   --observer-palette-maintenance: hsl(84 65% 60%);
   /* 경고/PM */
@@ -40,31 +40,33 @@
 
   --observer-selected: var(--observer-palette-accent);
   --observer-selected-soft: color-mix(in hsl, var(--observer-selected) 20%, transparent);
-  --observer-eqp-run: color-mix(in hsl, var(--observer-palette-active) 28%, var(--observer-surface) 72%);
-  --observer-eqp-idle: color-mix(in hsl, var(--observer-palette-maintenance) 85%, var(--observer-surface) 15%);
-  --observer-eqp-pm: color-mix(in hsl, var(--observer-palette-caution) 90%, transparent);
-  --observer-eqp-down: var(--observer-palette-critical);
-  --observer-eqp-local: color-mix(in hsl, var(--muted-foreground) 34%, var(--observer-surface) 66%);
-  --observer-tip-open: hsl(123, 78%, 62%);
-  --observer-tip-close: var(--observer-palette-critical);
-  --observer-racb-alarm: var(--observer-palette-critical);
-  --observer-racb-warn: var(--observer-palette-caution);
-  --observer-ctttm-cbm: var(--observer-palette-info);
-  --observer-ctttm-nsp: var(--observer-palette-violet);
-  --observer-esop: var(--observer-palette-teal);
-  --observer-esop-foup-split-step: var(--observer-palette-teal);
-  --observer-esop-production: var(--observer-palette-info);
-  --observer-esop-foup-split: var(--observer-palette-violet);
-  --observer-esop-production-any: var(--observer-palette-success);
-  --observer-esop-logical-split: var(--observer-palette-active);
-  --observer-esop-foup-split-step-skew: var(--observer-palette-caution);
-  --observer-esop-foup-split-step-any: var(--observer-palette-accent);
-  --observer-esop-foup-split-skew: var(--observer-palette-highlight);
-  --observer-esop-foup-split-step-risk: var(--observer-palette-critical);
-  --observer-esop-batch-skew: var(--observer-palette-maintenance);
-  --observer-esop-foup-split-any: color-mix(in hsl, var(--observer-palette-neutral) 70%, var(--observer-surface) 30%);
-  --observer-esop-logical-split-skew: color-mix(in hsl, var(--observer-palette-active) 65%, var(--observer-palette-violet) 35%);
-  --observer-esop-foup-split-step-skew-any: color-mix(in hsl, var(--observer-palette-caution) 60%, var(--observer-palette-critical) 40%);
+
+  /* 상태별 단일 HSL 색상 */
+  --observer-eqp-run: hsl(214 88% 74%);
+  --observer-eqp-idle: hsl(84 65% 60%);
+  --observer-eqp-pm: hsl(35 92% 61%);
+  --observer-eqp-down: hsl(358 72% 52%);
+  --observer-eqp-local: hsl(220 10% 72%);
+  --observer-tip-open: hsl(123 78% 62%);
+  --observer-tip-close: hsl(358 72% 52%);
+  --observer-racb-alarm: hsl(358 72% 52%);
+  --observer-racb-warn: hsl(35 92% 61%);
+  --observer-ctttm-cbm: hsl(198 82% 56%);
+  --observer-ctttm-nsp: hsl(268 72% 60%);
+  --observer-esop: hsl(186 62% 52%);
+  --observer-esop-foup-split-step: hsl(186 62% 52%);
+  --observer-esop-production: hsl(198 82% 56%);
+  --observer-esop-foup-split: hsl(268 72% 60%);
+  --observer-esop-production-any: hsl(152 62% 48%);
+  --observer-esop-logical-split: hsl(246 100% 50%);
+  --observer-esop-foup-split-step-skew: hsl(35 92% 61%);
+  --observer-esop-foup-split-step-any: hsl(123 78% 62%);
+  --observer-esop-foup-split-skew: hsl(14 88% 58%);
+  --observer-esop-foup-split-step-risk: hsl(358 72% 52%);
+  --observer-esop-batch-skew: hsl(84 65% 60%);
+  --observer-esop-foup-split-any: hsl(220 9% 72%);
+  --observer-esop-logical-split-skew: hsl(257 84% 54%);
+  --observer-esop-foup-split-step-skew-any: hsl(20 80% 57%);
   --observer-foreground-strong: var(--primary-foreground);
 }
 
