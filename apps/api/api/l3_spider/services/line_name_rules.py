@@ -145,3 +145,24 @@ def resolve_line_name(line_id: object, process_id: object, step_seq: object) -> 
     result = _resolve_uncached(rules, line_id, process_id, step_seq)
     memo[key] = result
     return result
+
+
+def get_configured_line_names() -> list[str]:
+    """CSV의 line_name 컬럼 unique 값을 반환합니다 (file_index 데이터 불필요).
+
+    파일이 없거나 파싱 실패 시 빈 목록 반환.
+    """
+    path = rules_path()
+    if not path.exists():
+        return []
+    try:
+        names: set[str] = set()
+        with open(path, encoding="utf-8-sig", newline="") as fh:
+            for row in csv.DictReader(ln for ln in fh if ln.strip() and not ln.lstrip().startswith("#")):
+                name = str(row.get("line_name") or "").strip()
+                if name:
+                    names.add(name)
+        return sorted(names)
+    except Exception as exc:
+        logger.warning("line_name_rules.csv line_name 읽기 실패: %s", exc)
+        return []

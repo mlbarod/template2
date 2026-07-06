@@ -85,11 +85,13 @@ function SummaryStats({ h }) {
   )
 }
 
-// 라인별 고유 색상 팔레트
+// 라인별 차트 색상 토큰 팔레트
 const LINE_COLORS = [
-  "#4f86f7", "#34c77b", "#f59e0b", "#a855f7", "#ec4899",
-  "#06b6d4", "#10b981", "#6366f1", "#f43f5e", "#8b5cf6",
-  "#14b8a6", "#f97316", "#84cc16", "#e879f9", "#38bdf8",
+  { stroke: "hsl(var(--chart-1))", dot: "bg-chart-1" },
+  { stroke: "hsl(var(--chart-2))", dot: "bg-chart-2" },
+  { stroke: "hsl(var(--chart-3))", dot: "bg-chart-3" },
+  { stroke: "hsl(var(--chart-4))", dot: "bg-chart-4" },
+  { stroke: "hsl(var(--chart-5))", dot: "bg-chart-5" },
 ]
 
 const DONUT_META = {
@@ -102,7 +104,7 @@ const DONUT_META = {
 // focusLine 선택 시 해당 라인의 process_id별 집계로 전환
 function DonutChartCard({ lineSummary, cells, metric, focusLine }) {
   const { arcs, total, C, R } = useMemo(() => {
-    const R = 44
+    const R = 30
     const C = 2 * Math.PI * R
     const getValue = (row) => metric === "hr" ? row.hr : metric === "wn" ? row.wn : row.hr + row.wn
 
@@ -135,47 +137,48 @@ function DonutChartCard({ lineSummary, cells, metric, focusLine }) {
       const val = getValue(r)
       const fullLen = total > 0 ? (val / total) * C : 0
       const len = Math.max(0, fullLen - GAP)
-      const seg = { key: r.key, label: r.label, val, color: LINE_COLORS[i % LINE_COLORS.length], len, off: off + GAP / 2 }
+      const color = LINE_COLORS[i % LINE_COLORS.length]
+      const seg = { key: r.key, label: r.label, val, color, len, off: off + GAP / 2 }
       off += fullLen
       return seg
     })
     return { arcs, total, C, R }
   }, [lineSummary, cells, metric, focusLine])
 
-  const SW = 16
+  const SW = 11
   const { title, center } = DONUT_META[metric] ?? DONUT_META.total
 
   return (
     <Card className="flex flex-col overflow-hidden rounded-lg py-0">
-      <CardHeader className="shrink-0 border-b bg-muted/50 px-4 py-2.5">
+      <CardHeader className="shrink-0 border-b bg-muted/50 px-4 py-1.5 !pb-1.5">
         <CardTitle className="text-sm">{title}</CardTitle>
       </CardHeader>
-      <CardContent className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-4 py-4">
-        <svg width="120" height="120" viewBox="0 0 120 120" aria-label={`${center} ${total}`}>
-          <g transform="rotate(-90 60 60)">
+      <CardContent className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1.5 px-3 py-2">
+        <svg width="88" height="88" viewBox="0 0 88 88" aria-label={`${center} ${total}`}>
+          <g transform="rotate(-90 44 44)">
             {total === 0 ? (
-              <circle cx="60" cy="60" r={R} fill="none" stroke="hsl(var(--muted))" strokeWidth={SW} />
+              <circle cx="44" cy="44" r={R} fill="none" stroke="hsl(var(--muted))" strokeWidth={SW} />
             ) : arcs.map((arc) => (
               <circle
                 key={arc.key}
-                cx="60" cy="60" r={R} fill="none"
-                stroke={arc.color} strokeWidth={SW}
+                cx="44" cy="44" r={R} fill="none"
+                stroke={arc.color.stroke} strokeWidth={SW}
                 strokeDasharray={`${arc.len} ${C}`}
                 strokeDashoffset={-arc.off}
                 strokeLinecap="butt"
               />
             ))}
           </g>
-          <text x="60" y="55" textAnchor="middle" fontSize="16" fontWeight="700"
+          <text x="44" y="40" textAnchor="middle" fontSize="13" fontWeight="700"
             fill="hsl(var(--foreground))">{formatNumber(total)}</text>
-          <text x="60" y="70" textAnchor="middle" fontSize="8" fontWeight="600"
+          <text x="44" y="52" textAnchor="middle" fontSize="7" fontWeight="600"
             fill="hsl(var(--muted-foreground))">{center}</text>
         </svg>
         {/* 범례 */}
-        <div className="grid w-full grid-cols-2 gap-x-3 gap-y-1 text-xs">
+        <div className="grid w-full grid-cols-2 gap-x-2 gap-y-0.5 text-[11px]">
           {arcs.map((arc) => (
             <span key={arc.key} className="flex min-w-0 items-center gap-1">
-              <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: arc.color }} aria-hidden="true" />
+              <span className={cn("size-2 shrink-0 rounded-full", arc.color.dot)} aria-hidden="true" />
               <span className="min-w-0 truncate text-muted-foreground">{arc.label}</span>
               <span className="ml-auto shrink-0 tabular-nums font-semibold">{formatNumber(arc.val)}</span>
             </span>
@@ -254,12 +257,12 @@ function LegendDot({ className }) {
 
 function AnomalyMatrix({ matrix, selectedLine, onDrill, metric }) {
   const { edsSteps = [], cells = [] } = matrix ?? {}
-  const lines = matrix?.lines ?? []
+  const matrixLines = matrix?.lines
 
-  const visibleLines = useMemo(
-    () => selectedLine ? lines.filter((line) => line === selectedLine) : lines,
-    [lines, selectedLine],
-  )
+  const visibleLines = useMemo(() => {
+    const lines = matrixLines ?? []
+    return selectedLine ? lines.filter((line) => line === selectedLine) : lines
+  }, [matrixLines, selectedLine])
   const visibleCells = useMemo(
     () => selectedLine ? cells.filter((cell) => cell.line === selectedLine) : cells,
     [cells, selectedLine],
@@ -401,7 +404,7 @@ function AnomalyMatrix({ matrix, selectedLine, onDrill, metric }) {
 function MatrixCard({ title, legend, rows, cells, matrix, metric, selectedLine, onDrill }) {
   return (
     <Card className="flex min-w-0 flex-1 flex-col gap-0 overflow-hidden rounded-lg py-0">
-      <CardHeader className="shrink-0 border-b bg-muted/50 px-4 py-2.5">
+      <CardHeader className="shrink-0 border-b bg-muted/50 px-4 py-1.5 !pb-1.5">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <CardTitle className="text-sm">{title}</CardTitle>
           {rows != null ? <Badge variant="outline">{formatNumber(rows)} rows</Badge> : null}
@@ -422,12 +425,12 @@ function MatrixCard({ title, legend, rows, cells, matrix, metric, selectedLine, 
 // 날짜 "2026-06-20" → "06-20"
 const fmtDate = (d) => String(d ?? "").slice(5)
 
-// startStr~endStr 사이 모든 날짜(UTC 기준) 배열 반환
+// startStr~endStr 사이 모든 날짜(UTC 기준) 배열 반환 — 최대 366일 캡
 function makeDateRange(startStr, endStr) {
   const dates = []
   const cur = new Date(startStr + "T00:00:00Z")
   const end = new Date(endStr + "T00:00:00Z")
-  while (+cur <= +end) {
+  while (+cur <= +end && dates.length < 366) {
     dates.push(cur.toISOString().slice(0, 10))
     cur.setUTCDate(cur.getUTCDate() + 1)
   }
@@ -492,12 +495,20 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
     }
 
     // perLine: pivot — 날짜 갭은 0으로 채움
+    // 날짜 × 라인 조합이 2000 초과 시 렌더링 폭발 방지를 위해 sum으로 폴백
     const dateSet = new Set()
     for (const p of filteredPoints) dateSet.add(p.date)
     const rawDates = [...dateSet].sort()
     const dates = rawDates.length > 1
       ? makeDateRange(rawDates[0], rawDates[rawDates.length - 1])
       : rawDates
+    if (dates.length * effectiveLineNames.length > 2000) {
+      const byDate = new Map()
+      for (const p of filteredPoints) byDate.set(p.date, (byDate.get(p.date) ?? 0) + getValue(p))
+      const chartData = [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, value]) => ({ date: fmtDate(date), value }))
+      return { chartData, seriesKeys: ["value"] }
+    }
 
     const byDateLine = new Map()
     for (const p of filteredPoints) {
@@ -515,7 +526,7 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
 
   return (
     <Card className="flex flex-col overflow-hidden rounded-lg py-0">
-      <CardHeader className="shrink-0 border-b bg-muted/50 px-4 py-2.5">
+      <CardHeader className="shrink-0 border-b bg-muted/50 px-4 py-1.5 !pb-1.5">
         <div className="flex flex-wrap items-center gap-2">
           <CardTitle className="text-sm">일자별 이상감지 트렌드</CardTitle>
           {focusLine && (
@@ -559,14 +570,14 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
           </div>
         </div>
       </CardHeader>
-      <CardContent className="min-h-0 flex-1 p-4">
+      <CardContent className="min-h-0 flex-1 p-2">
         {chartData.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             트렌드 데이터가 없습니다.
           </div>
         ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 4 }} barCategoryGap="30%">
+          <ResponsiveContainer width="100%" height="100%" debounce={60}>
+            <BarChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }} barCategoryGap="30%">
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
               <XAxis
                 dataKey="date"
@@ -579,7 +590,7 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
                 tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
                 tickLine={false}
                 axisLine={false}
-                width={40}
+                width={52}
                 tickFormatter={(v) => formatNumber(v)}
               />
               <Tooltip
@@ -602,7 +613,7 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
                 <Bar
                   dataKey="value"
                   name={metric === "hr" ? "전체 High Risk" : "전체 이상 건수 (HR+WN)"}
-                  fill={metric === "hr" ? "#ef4444" : "#f97316"}
+                  fill={metric === "hr" ? "hsl(var(--destructive))" : "hsl(var(--chart-4))"}
                   radius={[3, 3, 0, 0]}
                   maxBarSize={48}
                 />
@@ -643,15 +654,7 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
     const base = fromGroups.length ? fromGroups : []
     const baseSet = new Set(base)
     const extras = activeLineOptions.filter((l) => !baseSet.has(l))
-    const merged = extras.length ? sortLineNames([...base, ...extras]) : base.length ? base : activeLineOptions
-    // TEMP: 15개까지 더미 비활성 라인으로 채우기 (UI 테스트용)
-    const mergedSet = new Set(merged)
-    const dummies = [
-      "TestLine_A", "TestLine_B", "TestLine_C", "TestLine_D", "TestLine_E",
-      "TestLine_F", "TestLine_G", "TestLine_H", "TestLine_I", "TestLine_J",
-      "TestLine_K", "TestLine_L",
-    ].filter((d) => !mergedSet.has(d)).slice(0, Math.max(0, 15 - merged.length))
-    return dummies.length ? sortLineNames([...merged, ...dummies]) : merged
+    return extras.length ? sortLineNames([...base, ...extras]) : base.length ? base : activeLineOptions
   }, [lineGroups, activeLineOptions])
 
   // 선택된 라인 — 활성/비활성 모두 허용 (트렌드 필터링 등)
@@ -662,8 +665,8 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
     const totals = new Map()
     for (const c of data?.matrix?.cells ?? []) {
       const cur = totals.get(c.line) ?? { hr: 0, wn: 0 }
-      cur.hr += c.highRisk
-      cur.wn += c.warning
+      cur.hr += c.highRisk ?? 0
+      cur.wn += c.warning ?? 0
       totals.set(c.line, cur)
     }
     const activeSet = new Set(activeLineOptions)
@@ -736,13 +739,12 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
       <SummaryStats h={h} />
 
       {/* col1=1fr(라인테이블 2행span), col2=1.4fr(도넛2개+트렌드) */}
-      <div className="gap-5" style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gridTemplateRows: "auto 1fr", minHeight: 520 }}>
+      <div className="grid min-h-[400px] grid-cols-[1fr_1.4fr] grid-rows-[auto_1fr] gap-5">
         {/* col1 row1+2: 라인별 현황 테이블 */}
         <Card
-          className="flex min-h-0 flex-col overflow-hidden rounded-lg py-0"
-          style={{ gridColumn: 1, gridRow: "1 / span 2" }}
+          className="col-start-1 row-span-2 row-start-1 flex min-h-0 flex-col overflow-hidden rounded-lg py-0"
         >
-          <CardHeader className="shrink-0 border-b bg-muted/50 px-4 py-2.5">
+          <CardHeader className="shrink-0 border-b bg-muted/50 px-4 py-1.5 !pb-1.5">
             <div className="flex items-center gap-2">
               <CardTitle className="text-sm">라인별 현황</CardTitle>
               <Badge variant="outline" className="text-[11px]">{allLineOptions.length}개</Badge>
@@ -763,7 +765,7 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
         </Card>
 
         {/* col2 row1: 도넛 차트 3개 나란히 */}
-        <div className="grid grid-cols-3 gap-3" style={{ gridColumn: 2, gridRow: 1 }}>
+        <div className="col-start-2 row-start-1 grid grid-cols-3 gap-3">
           <DonutChartCard lineSummary={lineSummary} cells={data?.matrix?.cells ?? []} metric="hr" focusLine={activeLine} />
           <DonutChartCard lineSummary={lineSummary} cells={data?.matrix?.cells ?? []} metric="wn" focusLine={activeLine} />
           <DonutChartCard lineSummary={lineSummary} cells={data?.matrix?.cells ?? []} metric="total" focusLine={activeLine} />

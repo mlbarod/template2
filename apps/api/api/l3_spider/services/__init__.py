@@ -516,15 +516,13 @@ def _build_line_groups_impl() -> list[dict]:
     # line_name에 매핑(eqc·parquet·Postgres 불필요). step_seq마다 line_name이 달라질 수 있어
     # (override) 한 (line_id, process)가 여러 line_name에 나타날 수 있다. line_name→line_id 해석용.
     combos = selectors.query_all_date_line_process_eds_step()
-    if not combos:
-        return []
     groups: dict[str, dict[str, dict[str, set[str]]]] = {}   # lineName -> lineId -> process -> {eds}
     for _date, line_id, process_id, eds_step, step_seq in combos:
         line_name = line_name_rules.resolve_line_name(line_id, process_id, step_seq)
         groups.setdefault(line_name, {}).setdefault(str(line_id), {}).setdefault(str(process_id), set()).add(
             str(eds_step),
         )
-    return [
+    result = [
         {
             "lineName": ln,
             "lineId": lid,
@@ -534,6 +532,12 @@ def _build_line_groups_impl() -> list[dict]:
         for ln in sorted(groups)
         for lid, proc_eds in sorted(groups[ln].items())
     ]
+    # CSV에 정의된 라인은 file_index 데이터 없어도 meta에 포함 (이상감지 없는 라인도 표시)
+    existing = {g["lineName"] for g in result}
+    for ln in line_name_rules.get_configured_line_names():
+        if ln not in existing:
+            result.append({"lineName": ln, "lineId": "", "processIds": [], "procEds": {}})
+    return result
 
 
 def get_meta(*, user: Any | None = None) -> dict[str, object]:
