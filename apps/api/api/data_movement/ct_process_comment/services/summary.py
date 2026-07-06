@@ -25,15 +25,12 @@ SUMMARY_STATUS_FAILED = "failed"
 SUMMARY_STATUS_SKIPPED = "skipped"
 SUMMARY_STATUS_DRY_RUN = "dry_run"
 NO_CORE_SUMMARY_SENTINEL = "NO_CORE_SUMMARY"
-MIN_CORE_SUMMARY_EVENT_COUNT = 2
-MIN_CORE_SUMMARY_COMPACT_LENGTH = 40
 SUMMARY_CHUNK_MAX_EVENTS = 40
 SUMMARY_CHUNK_MAX_CHARS = 8000
 CONTENTS_EVENT_HEADER_PATTERN = re.compile(
     r"^\[\s*(?P<time>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})\s*/\s*(?P<author>[^\]]+?)\s*\]\s*$"
 )
 SUMMARY_SECTION_PREFIX_PATTERN = re.compile(r"^(원인|조치사항|결과)\s*:")
-SUMMARY_TIMESTAMP_PREFIX_PATTERN = re.compile(r"^\[[^\]]+\]\s*")
 SUMMARY_TIME_LINE_PATTERN = re.compile(
     r"^(?P<time>(?:\d{4}[-/.]\d{2}[-/.]\d{2}\s+)?\d{1,2}:\d{2}(?::\d{2})?)\s+(?P<event>.+)$"
 )
@@ -444,12 +441,6 @@ def _normalize_summary_text(summary: str) -> str:
     return "\n".join(normalized_lines) or summary.strip()
 
 
-def _strip_summary_timestamp(line: str) -> str:
-    """요약 line 앞의 timestamp 표시를 제거합니다."""
-
-    return SUMMARY_TIMESTAMP_PREFIX_PATTERN.sub("", line).strip()
-
-
 def _normalize_generic_text(text: str) -> str:
     """정보량 판단을 위해 문장부호와 공백을 단순화합니다."""
 
@@ -468,23 +459,6 @@ def _is_generic_summary_event(text: str) -> bool:
         return True
     tokens = normalized.split()
     return bool(tokens) and all(token in GENERIC_CORE_SUMMARY_TOKENS for token in tokens)
-
-
-def _should_skip_core_summary(event_summary: str) -> bool:
-    """시간순 요약만으로 핵심요약을 만들 정보량이 충분한지 판단합니다."""
-
-    event_texts = [
-        _strip_summary_timestamp(line)
-        for line in event_summary.splitlines()
-        if line.strip()
-    ]
-    if not event_texts:
-        return True
-
-    compact = "".join("".join(_normalize_generic_text(text).split()) for text in event_texts)
-    if len(event_texts) < MIN_CORE_SUMMARY_EVENT_COUNT and len(compact) < MIN_CORE_SUMMARY_COMPACT_LENGTH:
-        return True
-    return all(_is_generic_summary_event(text) for text in event_texts)
 
 
 def _normalize_core_summary_text(summary: str) -> str | None:
@@ -608,8 +582,6 @@ def request_summary(
         contents_text=contents_text,
         workorder_title=workorder_title,
     )
-    if _should_skip_core_summary(event_summary):
-        return GeneratedSummary(core_summary=None, event_summary=event_summary)
 
     core_summary = _normalize_core_summary_text(
         _post_chat_completion(

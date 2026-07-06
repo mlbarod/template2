@@ -466,15 +466,20 @@ class CtProcessCommentSummaryTests(TestCase):
                 contents_text="[ 2026-01-01 10:00 / 홍길동 ]\nTMP 센서 알람 발생",
             )
 
-    def test_summarize_leaves_core_summary_empty_when_event_summary_is_too_short(self) -> None:
-        """시간순 요약 정보량이 부족하면 핵심요약 호출 없이 core summary를 비워 둡니다."""
+    def test_summarize_requests_core_summary_even_when_event_summary_is_short(self) -> None:
+        """시간순 요약이 짧아도 핵심요약 생성을 요청하고 NO_CORE_SUMMARY면 비워 둡니다."""
 
         comment = CtProcessComment.objects.create(
             workorder_id="WO1",
             contents_text="[ 2026-01-01 10:00 / 홍길동 ]\n점검",
             update_flag="Y",
         )
-        session = _build_openwebui_session(replies=["[2026-01-01 10:00] 점검"])
+        session = _build_openwebui_session(
+            replies=[
+                "[2026-01-01 10:00] 점검",
+                "NO_CORE_SUMMARY",
+            ]
+        )
 
         run_summary = summary_module.summarize_pending_ct_process_comments(
             limit=10,
@@ -487,7 +492,27 @@ class CtProcessCommentSummaryTests(TestCase):
         self.assertEqual(comment.update_flag, "N")
         self.assertEqual(comment.llm_summary, "[2026-01-01 10:00] 점검")
         self.assertIsNone(comment.llm_core_summary)
-        self.assertEqual(session.post.call_count, 1)
+        self.assertEqual(session.post.call_count, 2)
+
+    def test_request_summary_keeps_single_short_event_core_summary(self) -> None:
+        """단일 짧은 이벤트도 LLM이 구체 핵심요약을 만들면 저장합니다."""
+
+        session = _build_openwebui_session(
+            replies=[
+                "[2026-01-01 10:00] TMP 센서 알람",
+                "핵심 요약: TMP 센서 알람이 발생했습니다.",
+                "KEEP",
+            ]
+        )
+
+        generated = summary_module.request_summary(
+            session=session,
+            config=_build_openwebui_config(),
+            contents_text="[ 2026-01-01 10:00 / 홍길동 ]\nTMP 센서 알람",
+        )
+
+        self.assertEqual(generated.core_summary, "TMP 센서 알람이 발생했습니다.")
+        self.assertEqual(session.post.call_count, 3)
 
     def test_request_summary_maps_no_core_summary_sentinel_to_empty_core_summary(self) -> None:
         """LLM이 NO_CORE_SUMMARY를 반환하면 core summary를 비워 둡니다."""

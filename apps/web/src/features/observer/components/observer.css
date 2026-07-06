@@ -53,12 +53,12 @@
   --observer-racb-warn: hsl(35 92% 61%);
   --observer-ctttm-cbm: hsl(198 82% 56%);
   --observer-ctttm-nsp: hsl(268 72% 60%);
-  --observer-esop: hsl(186 62% 52%);
-  --observer-esop-foup-split-step: hsl(186 62% 52%);
-  --observer-esop-production: hsl(198 82% 56%);
+  --observer-esop: hsl(229, 64%, 58%);
+  --observer-esop-foup-split-step: hsl(180, 64%, 58%);
+  --observer-esop-production: hsl(123, 82%, 56%);
   --observer-esop-foup-split: hsl(268 72% 60%);
-  --observer-esop-production-any: hsl(152 62% 48%);
-  --observer-esop-logical-split: hsl(246 100% 50%);
+  --observer-esop-production-any: hsl(308, 62%, 48%);
+  --observer-esop-logical-split: hsl(246, 51%, 47%);
   --observer-esop-foup-split-step-skew: hsl(35 92% 61%);
   --observer-esop-foup-split-step-any: hsl(123 78% 62%);
   --observer-esop-foup-split-skew: hsl(14 88% 58%);
