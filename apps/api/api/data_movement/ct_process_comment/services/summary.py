@@ -50,6 +50,20 @@ SUMMARY_SYSTEM_PROMPT = """당신은 설비 점검 이력 요약기입니다.
 [2026-06-19 13:44] 점검 시작
 [2026-06-19 18:37] 조치 완료"""
 
+CORE_SUMMARY_SYSTEM_PROMPT = """당신은 설비 점검 이력 핵심 요약기입니다.
+입력으로 제공된 시간순 요약에 실제로 포함된 사실만 사용하세요.
+입력에 없는 원인, 조치사항, 결과, 시간, 장비 상태를 절대로 추정하거나 생성하지 마세요.
+
+작업:
+1. 입력된 시간순 요약 전체 흐름을 1~3문장으로 매우 짧게 요약하세요.
+2. 완전 핵심만 남기고 세부 시간별 반복 표현은 줄이세요.
+3. 첫 줄은 반드시 "핵심 요약: "으로 시작하세요.
+4. 출력은 핵심 요약 한 줄만 작성하세요.
+5. 설명, 추론 과정, 사과문, 안내문, markdown은 쓰지 마세요.
+
+출력 형식:
+핵심 요약: 점검 시작 후 알람을 확인했고 조치가 완료되었습니다."""
+
 
 class OpenWebUIConfigError(RuntimeError):
     """OpenWebUI 설정이 부족할 때 발생합니다."""
@@ -93,6 +107,14 @@ class SummaryRowOutcome:
     status: str
     summary: str = ""
     error_message: str = ""
+
+
+@dataclass(frozen=True)
+class GeneratedSummary:
+    """OpenWebUI가 생성한 핵심 요약과 시간순 요약을 분리해 보관합니다."""
+
+    core_summary: str
+    event_summary: str
 
 
 @dataclass(frozen=True)
@@ -217,8 +239,27 @@ def build_summary_prompt(contents_text: str) -> list[dict[str, str]]:
     ]
 
 
-def _extract_summary(resp_json: dict[str, Any]) -> str:
-    """OpenAI 호환 응답에서 assistant content를 추출합니다."""
+def build_core_summary_prompt(event_summary: str) -> list[dict[str, str]]:
+    """시간순 요약 결과를 핵심 요약 생성용 message 목록으로 변환합니다."""
+
+    return [
+        {"role": "system", "content": CORE_SUMMARY_SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": "\n".join(
+                [
+                    "time_ordered_summary:",
+                    "<<<",
+                    event_summary,
+                    ">>>",
+                ]
+            ),
+        },
+    ]
+
+
+def _extract_reply_content(resp_json: dict[str, Any]) -> str:
+    """OpenAI 호환 응답에서 assistant content 원문을 추출합니다."""
 
     try:
         choices = resp_json["choices"]
@@ -233,7 +274,7 @@ def _extract_summary(resp_json: dict[str, Any]) -> str:
     summary = content.strip()
     if not summary:
         raise OpenWebUIRequestError("OpenWebUI 응답 content가 비어 있습니다.")
-    return _normalize_summary_text(summary)
+    return summary
 
 
 def _format_summary_event_line(raw_line: str) -> str:
@@ -275,13 +316,23 @@ def _normalize_summary_text(summary: str) -> str:
     return "\n".join(normalized_lines) or summary.strip()
 
 
-def request_summary(
+def _normalize_core_summary_text(summary: str) -> str:
+    """핵심 요약 응답을 llm_core_summary 저장 형식으로 정규화합니다."""
+
+    lines = [line.strip().strip("-• ") for line in summary.splitlines() if line.strip()]
+    compact = " ".join(lines).strip()
+    if compact.startswith("핵심 요약:"):
+        compact = compact.split(":", 1)[1].strip()
+    return f"핵심 요약: {compact}" if compact else "핵심 요약: 확인 불가"
+
+
+def _post_chat_completion(
     *,
     session: requests.Session,
     config: OpenWebUISummaryConfig,
-    contents_text: str,
+    messages: list[dict[str, str]],
 ) -> str:
-    """OpenWebUI에 contents_text 요약을 요청하고 요약 문자열을 반환합니다."""
+    """OpenWebUI chat completions API를 호출하고 assistant 응답 원문을 반환합니다."""
 
     if not config.url:
         raise OpenWebUIConfigError("OPENWEBUI_URL 설정이 비어 있습니다.")
@@ -290,7 +341,7 @@ def request_summary(
 
     payload = {
         "model": config.model,
-        "messages": build_summary_prompt(contents_text),
+        "messages": messages,
         "temperature": 0.0,
         "stream": False,
     }
@@ -316,7 +367,32 @@ def request_summary(
     except requests.RequestException as exc:
         raise OpenWebUIRequestError(f"OpenWebUI 요청 실패: {exc}") from exc
 
-    return _extract_summary(resp_json)
+    return _extract_reply_content(resp_json)
+
+
+def request_summary(
+    *,
+    session: requests.Session,
+    config: OpenWebUISummaryConfig,
+    contents_text: str,
+) -> GeneratedSummary:
+    """OpenWebUI를 2회 호출해 핵심 요약과 시간순 상세 요약을 분리해 반환합니다."""
+
+    event_summary = _normalize_summary_text(
+        _post_chat_completion(
+            session=session,
+            config=config,
+            messages=build_summary_prompt(contents_text),
+        )
+    )
+    core_summary = _normalize_core_summary_text(
+        _post_chat_completion(
+            session=session,
+            config=config,
+            messages=build_core_summary_prompt(event_summary),
+        )
+    )
+    return GeneratedSummary(core_summary=core_summary, event_summary=event_summary)
 
 
 def summarize_pending_ct_process_comments(
@@ -361,7 +437,8 @@ def summarize_pending_ct_process_comments(
             )
             with transaction.atomic():
                 updated_count = CtProcessComment.objects.filter(pk=comment.pk, update_flag="Y").update(
-                    llm_summary=summary,
+                    llm_summary=summary.event_summary,
+                    llm_core_summary=summary.core_summary,
                     update_flag="N",
                     updated_at=timezone.now(),
                 )
@@ -371,7 +448,7 @@ def summarize_pending_ct_process_comments(
                 SummaryRowOutcome(
                     workorder_id=comment.workorder_id,
                     status=SUMMARY_STATUS_SUCCESS,
-                    summary=summary,
+                    summary=summary.event_summary,
                 )
             )
         except (OpenWebUIConfigError, OpenWebUIRequestError) as exc:

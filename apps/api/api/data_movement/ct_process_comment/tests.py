@@ -66,22 +66,31 @@ def _build_comment_row(
     return row
 
 
-def _build_openwebui_session(reply: str = "[2026-06-19 13:44] 점검") -> Mock:
+def _build_openwebui_session(
+    reply: str = "[2026-06-19 13:44] 점검",
+    replies: list[str] | None = None,
+) -> Mock:
     """OpenWebUI 응답을 흉내 내는 requests session mock을 생성합니다."""
 
-    response = Mock()
-    response.raise_for_status.return_value = None
-    response.json.return_value = {
-        "choices": [
-            {
-                "message": {
-                    "content": reply,
+    def build_response(content: str) -> Mock:
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": content,
+                    }
                 }
-            }
-        ]
-    }
+            ]
+        }
+        return response
+
     session = Mock()
-    session.post.return_value = response
+    if replies is not None:
+        session.post.side_effect = [build_response(content) for content in replies]
+    else:
+        session.post.return_value = build_response(reply)
     return session
 
 
@@ -109,9 +118,12 @@ class CtProcessCommentStructureTests(SimpleTestCase):
         """contents_text의 LLM 요약 결과를 저장할 컬럼이 있는지 확인합니다."""
 
         field = CtProcessComment._meta.get_field("llm_summary")
+        core_field = CtProcessComment._meta.get_field("llm_core_summary")
 
         self.assertTrue(field.null)
         self.assertTrue(field.blank)
+        self.assertTrue(core_field.null)
+        self.assertTrue(core_field.blank)
 
     def test_build_summary_prompt_groups_contents_by_comment_timestamp(self) -> None:
         """comment header 다음 내용은 다음 header 전까지 같은 시간 이벤트로 묶습니다."""
@@ -300,7 +312,10 @@ class CtProcessCommentSummaryTests(TestCase):
             update_flag="Y",
         )
         session = _build_openwebui_session(
-            reply="시간순 요약: 2026-01-01 10:00 점검 시작, 2026-01-01 11:00 조치 완료\n원인: 확인 불가\n조치사항: 조치 완료\n결과: 확인 불가"
+            replies=[
+                "시간순 요약: 2026-01-01 10:00 점검 시작, 2026-01-01 11:00 조치 완료\n원인: 확인 불가\n조치사항: 조치 완료\n결과: 확인 불가",
+                "핵심 요약: 점검 시작 후 조치가 완료되었습니다.",
+            ]
         )
 
         run_summary = summary_module.summarize_pending_ct_process_comments(
@@ -312,19 +327,26 @@ class CtProcessCommentSummaryTests(TestCase):
         comment.refresh_from_db()
         self.assertEqual(run_summary.success_count, 1)
         self.assertEqual(comment.update_flag, "N")
+        self.assertEqual(comment.llm_core_summary, "핵심 요약: 점검 시작 후 조치가 완료되었습니다.")
         self.assertEqual(comment.llm_summary, "[2026-01-01 10:00] 점검 시작\n[2026-01-01 11:00] 조치 완료")
-        request_kwargs = session.post.call_args.kwargs
-        request_messages = request_kwargs["json"]["messages"]
-        self.assertEqual(request_kwargs["json"]["temperature"], 0.0)
-        self.assertEqual(request_kwargs["json"]["model"], "test-model")
-        self.assertEqual(request_kwargs["headers"]["Authorization"], "Bearer test-token")
-        self.assertIn("절대로 추정하거나 생성하지 마세요", request_messages[0]["content"])
-        self.assertIn("[YYYY-MM-DD HH:MM] 이벤트", request_messages[0]["content"])
-        self.assertNotIn("시간 미상", request_messages[0]["content"])
-        self.assertNotIn("최대 3줄", request_messages[0]["content"])
-        self.assertIn("입력 이벤트는 모두 출력", request_messages[0]["content"])
-        self.assertIn("가능하면 35자 이내", request_messages[0]["content"])
-        self.assertIn("[2026-01-01 10:00] 점검 시작 알람 확인", request_messages[1]["content"])
+        self.assertEqual(session.post.call_count, 2)
+        event_request_kwargs = session.post.call_args_list[0].kwargs
+        core_request_kwargs = session.post.call_args_list[1].kwargs
+        event_request_messages = event_request_kwargs["json"]["messages"]
+        core_request_messages = core_request_kwargs["json"]["messages"]
+        self.assertEqual(event_request_kwargs["json"]["temperature"], 0.0)
+        self.assertEqual(event_request_kwargs["json"]["model"], "test-model")
+        self.assertEqual(event_request_kwargs["headers"]["Authorization"], "Bearer test-token")
+        self.assertIn("절대로 추정하거나 생성하지 마세요", event_request_messages[0]["content"])
+        self.assertIn("[YYYY-MM-DD HH:MM] 이벤트", event_request_messages[0]["content"])
+        self.assertNotIn("시간 미상", event_request_messages[0]["content"])
+        self.assertNotIn("최대 3줄", event_request_messages[0]["content"])
+        self.assertIn("입력 이벤트는 모두 출력", event_request_messages[0]["content"])
+        self.assertIn("가능하면 35자 이내", event_request_messages[0]["content"])
+        self.assertIn("[2026-01-01 10:00] 점검 시작 알람 확인", event_request_messages[1]["content"])
+        self.assertIn("핵심 요약:", core_request_messages[0]["content"])
+        self.assertIn("1~3문장", core_request_messages[0]["content"])
+        self.assertIn("[2026-01-01 10:00] 점검 시작", core_request_messages[1]["content"])
 
     def test_summarize_keeps_update_flag_when_openwebui_fails(self) -> None:
         """OpenWebUI 요청 실패 시 update_flag를 Y로 유지합니다."""
@@ -346,6 +368,7 @@ class CtProcessCommentSummaryTests(TestCase):
         comment.refresh_from_db()
         self.assertEqual(run_summary.failure_count, 1)
         self.assertEqual(comment.update_flag, "Y")
+        self.assertIsNone(comment.llm_core_summary)
         self.assertIsNone(comment.llm_summary)
 
     def test_summarize_skips_empty_contents_without_api_call(self) -> None:
@@ -381,6 +404,7 @@ class CtProcessCommentSummaryTests(TestCase):
         comment.refresh_from_db()
         self.assertEqual(run_summary.dry_run_count, 1)
         self.assertEqual(comment.update_flag, "Y")
+        self.assertIsNone(comment.llm_core_summary)
         self.assertIsNone(comment.llm_summary)
         session.post.assert_not_called()
 
@@ -552,6 +576,7 @@ class CtProcessCommentLifecycleTests(TestCase):
             workorder_id="WO1",
             line_id="OLD_LINE",
             contents_text="old text",
+            llm_core_summary="old core summary",
             llm_summary="old summary",
             use_yn="Y",
         )
@@ -568,6 +593,7 @@ class CtProcessCommentLifecycleTests(TestCase):
         self.assertEqual(summary.success_count, 1, summary.outcomes)
         updated_row = CtProcessComment.objects.get(workorder_id="WO1")
         self.assertEqual(updated_row.contents_text, "contents text")
+        self.assertIsNone(updated_row.llm_core_summary)
         self.assertIsNone(updated_row.llm_summary)
 
     @patch.object(loader_module, "_upsert_rows")

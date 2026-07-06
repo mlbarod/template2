@@ -19,6 +19,7 @@ class CtProcessComment(models.Model):
     contents = models.TextField(null=True, blank=True)
     contents_text = models.TextField(null=True, blank=True)
     llm_summary = models.TextField(null=True, blank=True)
+    llm_core_summary = models.TextField(null=True, blank=True)
     create_date = models.DateTimeField(null=True, blank=True)
     create_user = models.TextField(null=True, blank=True)
     update_date = models.DateTimeField(null=True, blank=True)

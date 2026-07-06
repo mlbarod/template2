@@ -837,6 +837,7 @@ def _fetch_ctttm_logs(
             null as operator,
             workorder.description as comment,
             concat(%s, workorder.workorder_id, '&lineId=', workorder.line_id) as url,
+            comment.llm_core_summary as core_summary,
             comment.llm_summary as summary
         from ctttm_workorder_list workorder
         left join ct_process_comment comment
@@ -859,6 +860,7 @@ def _fetch_ctttm_logs(
             "operator": row.get("operator"),
             "comment": row.get("comment"),
             "url": row.get("url"),
+            "coreSummary": row.get("core_summary"),
             "summary": row.get("summary"),
         }
         for row in rows

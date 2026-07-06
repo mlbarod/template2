@@ -16,6 +16,7 @@ DEFAULT_TABLE_DIR = Path(settings.DATA_MOVEMENT_CT_PROCESS_COMMENT_DIR)
 UPSERT_KEY = "workorder_id"
 UPDATE_FLAG_COLUMN = "update_flag"
 LLM_SUMMARY_COLUMN = "llm_summary"
+LLM_CORE_SUMMARY_COLUMN = "llm_core_summary"
 EQP_ID_FILTER_COLUMN = "eqp_id"
 EQP_ID_FILTER_PREFIXES = ("E",)
 

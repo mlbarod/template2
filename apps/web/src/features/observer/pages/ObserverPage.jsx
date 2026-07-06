@@ -220,8 +220,14 @@ export default function ObserverPage() {
               선택한 {selectedLogType} 로그 상세 정보를 최대화된 모달에서 표시합니다.
             </DialogDescription>
           </DialogHeader>
-          <div className="min-h-0 overflow-auto rounded-md border border-border bg-card p-3">
-            <LogDetailSection log={selectedLog} textSizeClass="text-sm" />
+          <div className="min-h-0 min-w-0 overflow-auto rounded-md border border-border bg-card p-3">
+            <LogDetailSection
+              log={selectedLog}
+              overflowClassName="overflow-visible"
+              summaryStreamingScrollClassName="max-w-none overflow-visible"
+              textSizeClass="text-sm"
+              className="min-w-max"
+            />
           </div>
         </DialogContent>
       </Dialog>

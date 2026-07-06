@@ -35,10 +35,15 @@ export default function Field({
   fullWidth = false,
   streaming = false,
   streamingClassName = "",
+  streamingScrollClassName = undefined,
 }) {
   const displayValue = TIME_FIELD_LABELS.has(label) ? formatDetailDateTime(value) : value;
   const content = streaming ? (
-    <StreamingText text={displayValue || "-"} className={streamingClassName} />
+    <StreamingText
+      text={displayValue || "-"}
+      className={streamingClassName}
+      scrollClassName={streamingScrollClassName}
+    />
   ) : displayValue || "-";
 
   if (fullWidth) {

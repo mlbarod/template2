@@ -834,6 +834,7 @@ class ObserverEndpointTests(TestCase):
                     "operator": None,
                     "comment": "CTTTM comment",
                     "url": "https://example.local?wono=WO-1&lineId=L1",
+                    "core_summary": "Core summary",
                     "summary": "LLM summary",
                 }
             ],
@@ -846,9 +847,11 @@ class ObserverEndpointTests(TestCase):
             )
 
         query, params = fetch_all.call_args.args
+        self.assertEqual(logs[0]["coreSummary"], "Core summary")
         self.assertEqual(logs[0]["summary"], "LLM summary")
         self.assertIn("from ctttm_workorder_list workorder", query)
         self.assertIn("left join ct_process_comment comment", query)
+        self.assertIn("comment.llm_core_summary as core_summary", query)
         self.assertIn("comment.llm_summary as summary", query)
         self.assertIn("comment.workorder_id = workorder.workorder_id", query)
         self.assertEqual(params[1:], ["EQP-ALPHA", "2026-01-01T00:00:00", 20])

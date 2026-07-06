@@ -28,7 +28,12 @@ function formatSummaryTimestamp(text) {
   );
 }
 
-export default function CtttmDetail({ log }) {
+function buildSummaryText(log) {
+  const parts = [log.coreSummary, log.summary].filter(Boolean);
+  return formatSummaryTimestamp(parts.join("\n"));
+}
+
+export default function CtttmDetail({ log, summaryStreamingScrollClassName }) {
   return (
     <>
       <Field label="Log Type" value={log.logType} />
@@ -45,10 +50,11 @@ export default function CtttmDetail({ log }) {
       />
       <Field
         label="Summary"
-        value={formatSummaryTimestamp(log.summary)}
+        value={buildSummaryText(log)}
         fullWidth
         streaming={true}
-        streamingClassName="leading-6"
+        streamingClassName="leading-6 tabular-nums"
+        streamingScrollClassName={summaryStreamingScrollClassName}
       />
     </>
   );
