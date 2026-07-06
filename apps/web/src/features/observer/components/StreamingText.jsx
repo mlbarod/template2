@@ -6,7 +6,7 @@ const streamedTextCache = new Set();
 /**
  * 스트리밍 텍스트 애니메이션 컴포넌트
  */
-export default function StreamingText({ text, speed = 8 }) {
+export default function StreamingText({ text, speed = 8, className = "" }) {
   const [displayedText, setDisplayedText] = useState("");
   const [currentIndex, setCurrentIndex] = useState(0);
 
@@ -36,7 +36,7 @@ export default function StreamingText({ text, speed = 8 }) {
   }, [currentIndex, text, speed]);
 
   return (
-    <span className="block max-w-full overflow-x-auto whitespace-pre break-normal">
+    <span className={`block max-w-full overflow-x-auto whitespace-pre break-normal ${className}`}>
       {displayedText}
       {currentIndex < text.length && (
         <span className="ml-0.5 inline-block h-4 w-2 animate-pulse bg-muted-foreground" />

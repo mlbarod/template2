@@ -1,5 +1,14 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
+import { Maximize2 } from "lucide-react";
 import { useParams } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { LoadingSpinner } from "../components/Loaders";
 import ObserverBoard from "../components/ObserverBoard";
 import DataLogSection from "../components/DataLogSection";
@@ -10,6 +19,7 @@ import { useObserverPageState } from "../hooks/useObserverPageState";
 
 export default function ObserverPage() {
   const params = useParams();
+  const [isLogDetailDialogOpen, setIsLogDetailDialogOpen] = useState(false);
   const {
     selection,
     observerPrefs,
@@ -57,6 +67,12 @@ export default function ObserverPage() {
     refetchFailedLogs,
   } = logs;
   const isCtttmLogSelected = selectedLog?.logType === "CTTTM";
+  const isLogSelected = Boolean(selectedLog);
+  const selectedLogType = selectedLog?.logType || "Log";
+
+  useEffect(() => {
+    setIsLogDetailDialogOpen(false);
+  }, [selectedLog?.id]);
 
   // 검증 중일 때 로딩 표시
   if (isValidating) {
@@ -82,7 +98,8 @@ export default function ObserverPage() {
   }
 
   return (
-    <div className="grid h-full min-h-0 gap-3 overflow-hidden lg:grid-cols-[2fr_3fr]">
+    <>
+      <div className="grid h-full min-h-0 gap-3 overflow-hidden lg:grid-cols-[2fr_3fr]">
       <div className="grid min-h-0 grid-rows-[auto_1fr] gap-2">
         <LogViewerSection
           lineId={lineId}
@@ -116,18 +133,33 @@ export default function ObserverPage() {
           <section className="grid min-h-0 grid-rows-[auto_1fr] gap-2 rounded-xl border border-border bg-card p-3 shadow-sm">
             <div className="flex min-w-0 items-center justify-between gap-3">
               <h2 className="min-w-0 text-md font-bold text-foreground">📝 Log Detail</h2>
-              {isCtttmLogSelected && (
-                <div
-                  className="flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-bold ring-1 ring-ring/20"
-                  aria-label="Powered by Qwen"
-                >
-                  <span>Powered by Qwen AI</span>
-                  <img
-                    src="/icons/qwen-ai-logo.png"
-                    alt=""
-                    className="size-4 rounded-sm object-cover object-left"
-                    aria-hidden="true"
-                  />
+              {isLogSelected && (
+                <div className="flex shrink-0 items-center gap-2">
+                  {isCtttmLogSelected ? (
+                    <div
+                      className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-bold ring-1 ring-ring/20"
+                      aria-label="Powered by Qwen"
+                    >
+                      <span>Powered by Qwen AI</span>
+                      <img
+                        src="/icons/qwen-ai-logo.png"
+                        alt=""
+                        className="size-4 rounded-sm object-cover object-left"
+                        aria-hidden="true"
+                      />
+                    </div>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="size-7"
+                    aria-label={`${selectedLogType} Log Detail 최대화`}
+                    title="최대화"
+                    onClick={() => setIsLogDetailDialogOpen(true)}
+                  >
+                    <Maximize2 className="size-4" />
+                  </Button>
                 </div>
               )}
             </div>
@@ -176,6 +208,23 @@ export default function ObserverPage() {
           ) : null}
         </div>
       </div>
-    </div>
+      </div>
+      <Dialog
+        open={isLogSelected && isLogDetailDialogOpen}
+        onOpenChange={setIsLogDetailDialogOpen}
+      >
+        <DialogContent className="grid h-[min(90dvh,900px)] max-h-[90dvh] w-[min(1200px,calc(100vw-2rem))] max-w-[min(1200px,calc(100vw-2rem))] grid-rows-[auto_minmax(0,1fr)] overflow-hidden p-4 sm:max-w-[min(1200px,calc(100vw-2rem))]">
+          <DialogHeader className="pr-8">
+            <DialogTitle>{selectedLogType} Log Detail</DialogTitle>
+            <DialogDescription className="sr-only">
+              선택한 {selectedLogType} 로그 상세 정보를 최대화된 모달에서 표시합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 overflow-auto rounded-md border border-border bg-card p-3">
+            <LogDetailSection log={selectedLog} textSizeClass="text-sm" />
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

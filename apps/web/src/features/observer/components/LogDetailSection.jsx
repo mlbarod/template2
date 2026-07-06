@@ -10,7 +10,7 @@ import EsopDetail from "./EsopDetail";
  * 로그 타입에 따라 적절한 상세 컴포넌트를 렌더링합니다
  * @param {Object} log - 상세를 보여줄 로그 객체
  */
-export default function LogDetailSection({ log }) {
+export default function LogDetailSection({ log, className = "", textSizeClass = "text-xs" }) {
   if (!log) {
     return (
       <div className="text-sm text-muted-foreground text-center py-17">
@@ -43,9 +43,9 @@ export default function LogDetailSection({ log }) {
 
   return (
     <div
-      className="grid grid-cols-[max-content_minmax(0,1fr)_max-content_minmax(0,1fr)] gap-x-4 gap-y-2 text-xs
+      className={`grid grid-cols-[max-content_minmax(0,1fr)_max-content_minmax(0,1fr)] gap-x-4 gap-y-2 ${textSizeClass}
        rounded-lg p-2
-      text-foreground overflow-auto"
+      text-foreground overflow-auto ${className}`}
     >
       {renderDetailComponent()}
     </div>

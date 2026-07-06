@@ -34,9 +34,12 @@ export default function Field({
   valueClassName = "",
   fullWidth = false,
   streaming = false,
+  streamingClassName = "",
 }) {
   const displayValue = TIME_FIELD_LABELS.has(label) ? formatDetailDateTime(value) : value;
-  const content = streaming ? <StreamingText text={displayValue || "-"} /> : displayValue || "-";
+  const content = streaming ? (
+    <StreamingText text={displayValue || "-"} className={streamingClassName} />
+  ) : displayValue || "-";
 
   if (fullWidth) {
     return (
