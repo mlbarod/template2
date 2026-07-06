@@ -134,6 +134,7 @@ class CtProcessCommentStructureTests(SimpleTestCase):
         self.assertNotIn("시간 미상", system_prompt)
         self.assertNotIn("최대 3줄", system_prompt)
         self.assertIn("입력 이벤트는 모두 출력", system_prompt)
+        self.assertIn("가능하면 35자 이내", system_prompt)
         self.assertIn("입력 이벤트끼리 합치거나 누락하지 마세요", system_prompt)
         self.assertIn("timestamped_events:", user_prompt)
         self.assertIn("[2026-06-19 13:44] 점검 시작 알람 확인", user_prompt)
@@ -322,6 +323,7 @@ class CtProcessCommentSummaryTests(TestCase):
         self.assertNotIn("시간 미상", request_messages[0]["content"])
         self.assertNotIn("최대 3줄", request_messages[0]["content"])
         self.assertIn("입력 이벤트는 모두 출력", request_messages[0]["content"])
+        self.assertIn("가능하면 35자 이내", request_messages[0]["content"])
         self.assertIn("[2026-01-01 10:00] 점검 시작 알람 확인", request_messages[1]["content"])
 
     def test_summarize_keeps_update_flag_when_openwebui_fails(self) -> None:
