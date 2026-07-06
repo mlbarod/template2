@@ -46,8 +46,9 @@ GENERIC_CORE_SUMMARY_PHRASES = {
     "특이사항 없음",
     "해당 없음",
     "없음",
+    "육안",
 }
-GENERIC_CORE_SUMMARY_TOKENS = {"점검", "시작", "확인", "알람", "내용", "없음", "불가", "특이사항", "해당"}
+GENERIC_CORE_SUMMARY_TOKENS = {"점검", "시작", "확인", "알람", "내용", "없음", "불가", "특이사항", "해당", "작업중"}
 
 SUMMARY_SYSTEM_PROMPT = """당신은 설비 점검 이력 요약기입니다.
 입력으로 제공된 이벤트 목록에 실제로 포함된 사실만 사용하세요.

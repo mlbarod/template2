@@ -37,6 +37,7 @@ export const portalNavigationItems = [
       { title: "메일함", href: "/emails/inbox" },
       { title: "L0 Spider", href: "http://mem-etch-spider.samsungds.net:32603", external: true },
       { title: "L1 Spider", href: "https://atlas.samsungds.net/d/spider?mode=full", external: true },
+      { title: "Defect Spider", href: "http://10.173.129.168:32600", external: true },
       { title: "L3 Spider(개발중)", href: "/l3_spider" },
       { title: "PM Spider(개발중)", href: "/pm_spider" },
       { title: "접속 현황", href: "/access-stats" },
