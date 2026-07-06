@@ -34,20 +34,6 @@ SUMMARY_SECTION_PREFIX_PATTERN = re.compile(r"^(원인|조치사항|결과)\s*:"
 SUMMARY_TIME_LINE_PATTERN = re.compile(
     r"^(?P<time>(?:\d{4}[-/.]\d{2}[-/.]\d{2}\s+)?\d{1,2}:\d{2}(?::\d{2})?)\s+(?P<event>.+)$"
 )
-GENERIC_CORE_SUMMARY_PHRASES = {
-    "점검",
-    "점검 시작",
-    "확인",
-    "내용 확인",
-    "알람 확인",
-    "확인 불가",
-    "내용 없음",
-    "특이사항 없음",
-    "해당 없음",
-    "없음",
-    "육안",
-}
-GENERIC_CORE_SUMMARY_TOKENS = {"점검", "시작", "확인", "알람", "내용", "없음", "불가", "특이사항", "해당", "작업중"}
 CORE_SUMMARY_REWRITE_PREFIX = "REWRITE:"
 
 SUMMARY_SYSTEM_PROMPT = """당신은 설비 점검 이력 요약기입니다.
@@ -76,14 +62,14 @@ CORE_SUMMARY_SYSTEM_PROMPT = """당신은 설비 점검 이력 핵심 요약기�
 입력에 없는 원인, 조치사항, 결과, 시간, 장비 상태를 절대로 추정하거나 생성하지 마세요.
 
 작업:
-1. 입력된 시간순 요약 전체 흐름을 1~3문장으로 매우 짧게 요약하세요.
-2. 완전 핵심만 남기고 세부 시간별 반복 표현은 줄이세요.
+1. 입력된 시간순 요약 전체 흐름을 1~2문장으로 매우 짧게 요약하세요.
+2. 시간순 요약이 한 줄이거나 단순 점검/확인/알람 내용이어도 확인된 사실을 그대로 짧게 요약하세요.
 3. 문제가 해결, 완료, 정상화, 복구되었다는 표현은 입력에 명시된 경우에만 쓰세요.
 4. 입력에 해결 여부가 명시되지 않았다면 확인된 진행 상황만 있는 그대로 요약하세요.
 5. 단순 점검, 확인, 조치 진행, 알람 확인만으로 문제가 해결되었다고 추정하지 마세요.
-6. 핵심요약할 만큼 의미 있는 진행, 상태, 조치 정보가 부족하면 정확히 "NO_CORE_SUMMARY"만 출력하세요.
-7. 구체 대상 없이 "여러", "일부", "관련", "작업 진행", "조치 과정", "불량사항" 같은 모호한 표현으로 핵심요약을 만들지 마세요.
-8. 모호한 표현을 입력에 있는 구체 장비명, 부품명, 알람명, 작업명, 상태, 결과로 바꿀 수 없으면 "NO_CORE_SUMMARY"만 출력하세요.
+6. 구체 장비명, 부품명, 알람명, 작업명, 상태, 결과가 있으면 우선 포함하세요.
+7. 구체 대상이 없어도 입력에 있는 일반 표현만으로 짧게 요약할 수 있으면 "NO_CORE_SUMMARY"를 쓰지 마세요.
+8. 입력이 비어 있거나 내용 없음, 확인 불가, 해당 없음처럼 저장할 사실이 없을 때만 정확히 "NO_CORE_SUMMARY"를 출력하세요.
 9. 핵심요약을 작성할 때 첫 줄은 반드시 "핵심 요약: "으로 시작하세요.
 10. 출력은 핵심 요약 한 줄 또는 "NO_CORE_SUMMARY"만 작성하세요.
 11. 설명, 추론 과정, 사과문, 안내문, markdown은 쓰지 마세요.
@@ -97,11 +83,12 @@ CORE_SUMMARY_REVIEW_SYSTEM_PROMPT = """당신은 설비 점검 이력 핵심요�
 입력에 없는 원인, 조치사항, 결과, 시간, 장비 상태를 절대로 추정하거나 생성하지 마세요.
 
 판단 기준:
-1. 후보 핵심요약이 구체 장비명, 부품명, 알람명, 작업명, 상태, 결과 중 확인 가능한 정보를 담고 있으면 "KEEP"만 출력하세요.
-2. 후보가 "여러", "일부", "관련", "작업 진행", "조치 과정", "불량사항"처럼 모호하지만 시간순 요약에서 더 구체적으로 바꿀 수 있으면 "REWRITE: " 뒤에 구체 핵심요약을 한 줄로 작성하세요.
-3. 시간순 요약만으로 구체 핵심요약을 만들 수 없으면 정확히 "NO_CORE_SUMMARY"만 출력하세요.
+1. 후보 핵심요약이 시간순 요약의 사실과 충돌하지 않으면 단순하거나 일반적인 표현이어도 "KEEP"만 출력하세요.
+2. 후보가 모호하지만 시간순 요약에서 더 구체적으로 바꿀 수 있으면 "REWRITE: " 뒤에 구체 핵심요약을 한 줄로 작성하세요.
+3. 후보가 시간순 요약에 없는 사실을 추가했거나 시간순 요약에 저장할 사실이 없을 때만 정확히 "NO_CORE_SUMMARY"를 출력하세요.
 4. 해결, 완료, 정상화, 복구 표현은 시간순 요약에 명시된 경우에만 쓰세요.
-5. 설명, 추론 과정, 사과문, 안내문, markdown은 쓰지 마세요.
+5. 판단이 애매하면 버리지 말고 "KEEP"을 출력하세요.
+6. 설명, 추론 과정, 사과문, 안내문, markdown은 쓰지 마세요.
 
 출력 형식:
 KEEP
@@ -441,26 +428,6 @@ def _normalize_summary_text(summary: str) -> str:
     return "\n".join(normalized_lines) or summary.strip()
 
 
-def _normalize_generic_text(text: str) -> str:
-    """정보량 판단을 위해 문장부호와 공백을 단순화합니다."""
-
-    return re.sub(r"[\s,./·ㆍ:;()\[\]\-]+", " ", text).strip()
-
-
-def _is_generic_summary_event(text: str) -> bool:
-    """핵심요약을 만들기 어려운 범용 이벤트 표현인지 판단합니다."""
-
-    normalized = _normalize_generic_text(text)
-    compact = normalized.replace(" ", "")
-    if not compact:
-        return True
-    generic_compacts = {phrase.replace(" ", "") for phrase in GENERIC_CORE_SUMMARY_PHRASES}
-    if compact in generic_compacts:
-        return True
-    tokens = normalized.split()
-    return bool(tokens) and all(token in GENERIC_CORE_SUMMARY_TOKENS for token in tokens)
-
-
 def _normalize_core_summary_text(summary: str) -> str | None:
     """핵심 요약 응답을 llm_core_summary 저장 형식으로 정규화합니다."""
 
@@ -469,8 +436,6 @@ def _normalize_core_summary_text(summary: str) -> str | None:
     if compact.startswith("핵심 요약:"):
         compact = compact.split(":", 1)[1].strip()
     if compact.upper() == NO_CORE_SUMMARY_SENTINEL:
-        return None
-    if _is_generic_summary_event(compact):
         return None
     return compact or None
 
