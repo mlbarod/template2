@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import { Activity, AlertTriangle, Cpu, Gauge, Inbox, Layers, Loader2 } from "lucide-react"
 import {
   Bar,
@@ -147,9 +147,9 @@ function DonutChartCard({ lineSummary, cells, metric, focusLine }) {
 
   return (
     <Card className="flex flex-col overflow-hidden rounded-lg py-0">
-      <CardHeader className="shrink-0 border-b bg-muted/50 px-4 py-1.5 !pb-1.5">
+      <div className="shrink-0 flex items-center border-b bg-muted/50 px-4 h-9">
         <CardTitle className="text-sm">{title}</CardTitle>
-      </CardHeader>
+      </div>
       <CardContent className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1.5 px-3 py-2">
         <svg width="88" height="88" viewBox="0 0 88 88" aria-label={`${center} ${total}`}>
           <g transform="rotate(-90 44 44)">
@@ -186,13 +186,39 @@ function DonutChartCard({ lineSummary, cells, metric, focusLine }) {
   )
 }
 
-// 전 라인 요약 테이블 — 이상감지 없는 라인도 포함, 클릭 시 매트릭스 필터
-function LineTable({ rows, selectedLine, onSelectLine }) {
+// 전 라인 요약 테이블 — 이상감지 없는 라인도 포함, 클릭 시 매트릭스 필터, 드래그로 순서 변경
+function LineTable({ rows, selectedLine, onSelectLine, onReorder }) {
+  const dragIdx = useRef(null)
+  const [dragOver, setDragOver] = useState(null)
+
+  function handleDragStart(e, idx) {
+    dragIdx.current = idx
+    e.dataTransfer.effectAllowed = "move"
+  }
+  function handleDragOver(e, idx) {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = "move"
+    if (idx !== dragIdx.current) setDragOver(idx)
+  }
+  function handleDrop(e, idx) {
+    e.preventDefault()
+    if (dragIdx.current !== null && dragIdx.current !== idx) {
+      onReorder?.(dragIdx.current, idx)
+    }
+    dragIdx.current = null
+    setDragOver(null)
+  }
+  function handleDragEnd() {
+    dragIdx.current = null
+    setDragOver(null)
+  }
+
   return (
     <div className="min-h-0 overflow-y-auto">
       <table className="w-full border-collapse text-xs">
         <thead className="sticky top-0 z-10 bg-card">
           <tr className="border-b">
+            <th className="w-6 px-1 py-2" />
             <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Line</th>
             <th className="px-3 py-2 text-center font-semibold text-destructive">HR</th>
             <th className="px-3 py-2 text-center font-semibold text-chart-4">WN</th>
@@ -200,21 +226,34 @@ function LineTable({ rows, selectedLine, onSelectLine }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => {
+          {rows.map((r, idx) => {
             const isSelected = r.line === selectedLine
+            const isDragTarget = dragOver === idx
             const total = r.hr + r.wn
             return (
               <tr
                 key={r.line}
+                draggable
+                onDragStart={(e) => handleDragStart(e, idx)}
+                onDragOver={(e) => handleDragOver(e, idx)}
+                onDrop={(e) => handleDrop(e, idx)}
+                onDragEnd={handleDragEnd}
                 onClick={() => onSelectLine?.(isSelected ? null : r.line)}
                 className={cn(
                   "border-b transition-colors cursor-pointer",
+                  isDragTarget && "border-t-2 border-t-primary",
                   isSelected
                     ? "bg-primary/10 hover:bg-primary/15"
                     : "hover:bg-muted/40",
                   !r.active && "opacity-40",
                 )}
               >
+                <td
+                  className="w-6 cursor-grab px-1 py-1.5 text-center text-base text-muted-foreground/50 active:cursor-grabbing"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  ⠿
+                </td>
                 <td className={cn(
                   "px-3 py-1.5 font-mono font-semibold",
                   isSelected ? "text-primary" : "text-foreground",
@@ -401,17 +440,15 @@ function AnomalyMatrix({ matrix, selectedLine, onDrill, metric }) {
 function MatrixCard({ title, legend, rows, cells, matrix, metric, selectedLine, onDrill }) {
   return (
     <Card className="flex min-w-0 flex-1 flex-col gap-0 overflow-hidden rounded-lg py-0">
-      <CardHeader className="shrink-0 border-b bg-muted/50 px-4 py-1.5 !pb-1.5">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <CardTitle className="text-sm">{title}</CardTitle>
-          {rows != null ? <Badge variant="outline">{formatNumber(rows)} rows</Badge> : null}
-          {cells != null ? <Badge variant="secondary">{formatNumber(cells)} cells</Badge> : null}
-          <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-            {legend}
-            <span>셀 클릭 → Chart 탭</span>
-          </span>
-        </div>
-      </CardHeader>
+      <div className="shrink-0 flex flex-wrap items-center gap-x-2 gap-y-1 border-b bg-muted/50 px-4 py-1.5">
+        <CardTitle className="text-sm">{title}</CardTitle>
+        {rows != null ? <Badge variant="outline">{formatNumber(rows)} rows</Badge> : null}
+        {cells != null ? <Badge variant="secondary">{formatNumber(cells)} cells</Badge> : null}
+        <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+          {legend}
+          <span>셀 클릭 → Chart 탭</span>
+        </span>
+      </div>
       <CardContent className="min-h-0 p-0">
         <AnomalyMatrix matrix={matrix} metric={metric} selectedLine={selectedLine} onDrill={onDrill} />
       </CardContent>
@@ -523,8 +560,7 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
 
   return (
     <Card className="flex min-h-[240px] min-w-0 flex-col overflow-hidden rounded-lg py-0">
-      <CardHeader className="shrink-0 border-b bg-muted/50 px-4 py-1.5 !pb-1.5">
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="shrink-0 flex flex-wrap items-center gap-2 border-b bg-muted/50 px-4 py-1.5">
           <CardTitle className="text-sm">일자별 이상감지 트렌드</CardTitle>
           {focusLine && (
             <Badge variant="secondary" className="text-[11px]">{focusLine}</Badge>
@@ -565,8 +601,7 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
               라인별
             </button>
           </div>
-        </div>
-      </CardHeader>
+      </div>
       <CardContent className="min-h-[180px] flex-1 p-2">
         {chartData.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -681,9 +716,34 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
     [trendQuery.data?.points],
   )
 
+  // 유저 지정 순서 (드래그로 변경, null = 기본 정렬)
+  const [customLineOrder, setCustomLineOrder] = useState(null)
+
+  function handleReorder(fromIdx, toIdx) {
+    const names = lineSummary.map((r) => r.line)
+    const next = customLineOrder ? [...customLineOrder] : [...names]
+    const [moved] = next.splice(fromIdx, 1)
+    next.splice(toIdx, 0, moved)
+    setCustomLineOrder(next)
+  }
+
+  const orderedLineSummary = useMemo(() => {
+    if (!customLineOrder) return lineSummary
+    const map = new Map(lineSummary.map((r) => [r.line, r]))
+    const ordered = customLineOrder.map((name) => map.get(name)).filter(Boolean)
+    const extras = lineSummary.filter((r) => !customLineOrder.includes(r.line))
+    return [...ordered, ...extras]
+  }, [lineSummary, customLineOrder])
+
   if (!date || query.isLoading || query.error || !hasData) {
     let message
-    if (!date) {
+    if (!date && (trendQuery.isLoading || !lineGroups)) {
+      message = (
+        <span className="inline-flex items-center gap-2">
+          <Loader2 className="size-4 animate-spin" /> 데이터를 불러오는 중입니다.
+        </span>
+      )
+    } else if (!date) {
       message = "날짜를 선택하면 해당 날짜 전체의 이상감지 요약을 조회합니다."
     } else if (query.isLoading) {
       message = (
@@ -736,29 +796,36 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
       <SummaryStats h={h} />
 
       {/* col1=1fr(라인테이블 2행span), col2=1.4fr(도넛2개+트렌드) */}
-      <div className="gap-5" style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gridTemplateRows: "auto 1fr", minHeight: 400 }}>
+      <div className="gap-5" style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gridTemplateRows: "auto minmax(180px, 1fr)", minHeight: 400 }}>
         {/* col1 row1+2: 라인별 현황 테이블 */}
         <Card
           className="flex min-h-0 flex-col overflow-hidden rounded-lg py-0"
           style={{ gridColumn: 1, gridRow: "1 / span 2" }}
         >
-          <CardHeader className="shrink-0 border-b bg-muted/50 px-4 py-1.5 !pb-1.5">
-            <div className="flex items-center gap-2">
-              <CardTitle className="text-sm">라인별 현황</CardTitle>
-              <Badge variant="outline" className="text-[11px]">{allLineOptions.length}개</Badge>
-              {activeLine && (
-                <button
-                  type="button"
-                  onClick={() => onSelectLine?.(null)}
-                  className="ml-auto text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                >
-                  해제
-                </button>
-              )}
-            </div>
-          </CardHeader>
+          <div className="shrink-0 flex items-center gap-2 border-b bg-muted/50 px-4 h-9">
+            <CardTitle className="text-sm">라인별 현황</CardTitle>
+            <Badge variant="outline" className="text-[11px]">{allLineOptions.length}개</Badge>
+            {customLineOrder && (
+              <button
+                type="button"
+                onClick={() => setCustomLineOrder(null)}
+                className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              >
+                순서초기화
+              </button>
+            )}
+            {activeLine && (
+              <button
+                type="button"
+                onClick={() => onSelectLine?.(null)}
+                className="ml-auto text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              >
+                해제
+              </button>
+            )}
+          </div>
           <CardContent className="min-h-0 flex-1 overflow-y-auto p-0">
-            <LineTable rows={lineSummary} selectedLine={activeLine} onSelectLine={onSelectLine} />
+            <LineTable rows={orderedLineSummary} selectedLine={activeLine} onSelectLine={onSelectLine} onReorder={handleReorder} />
           </CardContent>
         </Card>
 
