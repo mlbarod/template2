@@ -115,13 +115,12 @@ OIDC/운영 환경에서는 자동 소속 변경을 실행하지 않습니다.
 
 ## Data Movement Airflow DAG
 
-`airflow/dags/data_movement_file_load.py`는 기본 1분 주기로 아래 endpoint를 호출합니다.
+`airflow/dags/data_movement_file_load.py`는 기본 1분 주기로 아래 파일 적재 endpoint를 호출합니다.
 
 ```text
 POST /api/v1/data-movement/m_tkin_prevent/load/
 POST /api/v1/data-movement/ctttm_workorder_list/load/
 POST /api/v1/data-movement/ct_process_comment/load/
-POST /api/v1/data-movement/ct_process_comment/summarize/
 POST /api/v1/data-movement/eqp_status_chg/load/
 POST /api/v1/data-movement/mi_tip_update_hist/load/
 POST /api/v1/data-movement/racb_list/load/
@@ -130,19 +129,29 @@ POST /api/v1/data-movement/station_master/load/
 ```
 
 `ct_process_comment`는 workorder 목록을 참조하므로 DAG에서 `ctttm_workorder_list` 이후 실행됩니다.
-`ct_process_comment` 요약은 comment 적재 이후 실행되며, `update_flag='Y'` row를 OpenWebUI로 요약합니다.
 `eqp_status_chg`는 `/data/data_movement/m_eqp_status_chg/incoming/*m_eqp_status_chg*.csv.deflate` 파일을 `eqp_event_key` 기준으로 upsert하고 180일 retention을 적용합니다.
 `mi_tip_update_hist`는 `/data/data_movement/mi_tip_update_hist/incoming/*mi_tip_update_hist*.csv.deflate` 파일을 TIP timeline 조회용 row로 적재합니다.
 `racb_list`는 `/data/data_movement/racb_list/incoming/*racb_list*.csv.deflate` 파일을 `c_racb_id` 최신 row 기준으로 설비별 `eqp_cb` row로 펼쳐 적재합니다.
 `mes_line_mapping_info`는 `/data/data_movement/mes_line_mapping_info/incoming/*_MES_MAPPING_INFO_*.csv.deflate` 파일을 테이블 전체 snapshot으로 적재합니다.
 `station_master`는 `/data/data_movement/station_master/incoming/*_STATION_MASTER_*.csv.deflate` 파일을 테이블 전체 snapshot으로 적재합니다.
-스케줄과 실행 옵션은 Airflow 환경 변수로 조정합니다.
+파일 적재 스케줄과 실행 옵션은 Airflow 환경 변수로 조정합니다.
 
 ```text
 DATA_MOVEMENT_LOAD_SCHEDULE=*/1 * * * *
 DATA_MOVEMENT_LOAD_HTTP_TIMEOUT=1800
 DATA_MOVEMENT_LOAD_LIMIT=
 DATA_MOVEMENT_LOAD_DRY_RUN=false
+```
+
+`airflow/dags/ct_process_comment_summary.py`는 별도 DAG `ct_process_comment_summary`로 아래 endpoint를 호출합니다.
+요약은 `update_flag='Y'` row를 OpenWebUI로 처리하므로 파일 적재 DAG와 독립적으로 재시도하거나 중지할 수 있습니다.
+
+```text
+POST /api/v1/data-movement/ct_process_comment/summarize/
+```
+
+```text
+DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_SCHEDULE=*/1 * * * *
 DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_HTTP_TIMEOUT=1800
 DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_LIMIT=
 DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_DRY_RUN=false

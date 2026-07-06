@@ -30,6 +30,7 @@ loader는 파일명에서 source를 추출한 뒤 MST는 55개 컬럼, MNU는 49
 
 - 수동 실행: Django management command
 - 자동 실행: Airflow DAG `data_movement_file_load`
+- CTTTM comment 요약 자동 실행: Airflow DAG `ct_process_comment_summary`
 - 내부 API: `POST /api/v1/data-movement/<table_name>/load/`
 - CTTTM comment 요약 API: `POST /api/v1/data-movement/ct_process_comment/summarize/`
 - 파일 수신: Compose `ftp` service
@@ -38,7 +39,7 @@ loader는 파일명에서 source를 추출한 뒤 MST는 55개 컬럼, MNU는 49
 
 `ct_process_comment`는 `ctttm_workorder_list`의 workorder 목록을 기준으로 적재 대상을 필터링합니다.
 따라서 DAG는 `ctttm_workorder_list` 성공 후 `ct_process_comment`를 실행합니다.
-`ct_process_comment` 요약은 comment 적재 성공 후 실행되며, `update_flag='Y'` row를 최근 업데이트 순으로 처리합니다.
+`ct_process_comment` 요약은 별도 `ct_process_comment_summary` DAG에서 실행되며, `update_flag='Y'` row를 최근 업데이트 순으로 처리합니다.
 `m_tkin_prevent`, `eqp_status_chg`, `mi_tip_update_hist`, `racb_list`, `mes_line_mapping_info`, `station_master`는 독립적으로 실행됩니다.
 
 ## 주의사항

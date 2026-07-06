@@ -34,7 +34,8 @@
 | `OIDC_*` / `ADFS_*` / Auth/OIDC | `OIDC_CLIENT_ID`, `OIDC_ISSUER`, `ADFS_AUTH_URL`, `ADFS_LOGOUT_URL`, `OIDC_REDIRECT_URI`, `ADFS_CER_PATH`, `ALLOWED_REDIRECT_HOSTS` | ADFS/OIDC 로그인 |
 | Airflow trigger | `AIRFLOW_TRIGGER_TOKEN` | 수집/동기화 trigger 보호용 Bearer token |
 | Airflow L3 Spider mail DAG | `L3_SPIDER_MAIL_TRIGGER_SCHEDULE`, `L3_SPIDER_MAIL_TRIGGER_HTTP_TIMEOUT`, `L3_SPIDER_MAIL_TRIGGER_LIMIT` | `l3_spider_mail_trigger` DAG의 polling 주기와 실행 옵션 |
-| Airflow data movement DAG | `DATA_MOVEMENT_LOAD_*`, `DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_*` | `data_movement_file_load` DAG의 파일 적재와 CTTTM comment 요약 실행 옵션 |
+| Airflow data movement DAG | `DATA_MOVEMENT_LOAD_*` | `data_movement_file_load` DAG의 파일 적재 실행 옵션 |
+| Airflow CTTTM summary DAG | `DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_*` | `ct_process_comment_summary` DAG의 CTTTM comment 요약 실행 옵션 |
 | Emails POP3/OCR | `EMAIL_POP3_*`, `EMAIL_OCR_INTERNAL_TOKEN`, `EMAIL_EXCLUDED_SUBJECT_PREFIXES` | 메일 수집과 OCR worker |
 | Drone POP3/Jira/Mail/Messenger | `DRONE_*`, `KNOX_MESSENGER_*` | Drone SOP 수집과 채널별 전송 |
 | Assistant/RAG/LLM | `ASSISTANT_*`, `RAG_*` | RAG 검색, RAG 문서 등록/삭제, LLM 답변 |

@@ -24,7 +24,7 @@
 - 실패 row는 `update_flag='Y'`를 유지해 다음 배치에서 재시도한다.
 - `contents_text`가 비어 있는 row는 외부 호출 없이 skip하고 flag는 유지한다.
 - 로컬 dev는 `adfs_dummy`의 `/v1/chat/completions`를 `OPENWEBUI_URL`로 사용한다.
-- Airflow `data_movement_file_load` DAG는 `load_ct_process_comment` 성공 후 요약 trigger API를 호출한다.
+- 초기 구현에서는 Airflow `data_movement_file_load` DAG가 `load_ct_process_comment` 성공 후 요약 trigger API를 호출했다.
 
 ## 실행 단계
 - [x] ExecPlan 작성
@@ -53,3 +53,4 @@
 - 2026-07-06: 사용자 결정에 따라 command 분리, `OPENWEBUI_*` 별도 설정, `updated_at DESC, id DESC` 순서로 계획했다.
 - 2026-07-06: OpenWebUI 요약 service/command/env/docs/tests를 추가했고 대상 테스트, migration check, backend boundary audit을 통과했다.
 - 2026-07-06: Airflow 주기 실행을 위해 `ct_process_comment/summarize/` trigger API와 DAG task를 추가했다.
+- 2026-07-06: 요약 trigger는 별도 `ct_process_comment_summary` DAG로 분리했다.
