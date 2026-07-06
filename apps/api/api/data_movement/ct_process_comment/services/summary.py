@@ -27,6 +27,8 @@ SUMMARY_STATUS_DRY_RUN = "dry_run"
 NO_CORE_SUMMARY_SENTINEL = "NO_CORE_SUMMARY"
 MIN_CORE_SUMMARY_EVENT_COUNT = 2
 MIN_CORE_SUMMARY_COMPACT_LENGTH = 40
+SUMMARY_CHUNK_MAX_EVENTS = 40
+SUMMARY_CHUNK_MAX_CHARS = 8000
 CONTENTS_EVENT_HEADER_PATTERN = re.compile(
     r"^\[\s*(?P<time>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})\s*/\s*(?P<author>[^\]]+?)\s*\]\s*$"
 )
@@ -261,12 +263,43 @@ def _build_timestamped_event_text(contents_text: str) -> str:
     return "\n".join(events)
 
 
-def build_summary_prompt(contents_text: str, workorder_title: str = "") -> list[dict[str, str]]:
-    """OpenWebUI chat completions용 고정 message 목록을 생성합니다."""
+def _split_summary_source_chunks(source_text: str) -> list[str]:
+    """큰 요약 입력을 OpenWebUI가 처리하기 쉬운 이벤트 묶음으로 나눕니다."""
 
-    timestamped_events = _build_timestamped_event_text(contents_text)
-    prompt_source = timestamped_events or contents_text
-    source_label = "timestamped_events:" if timestamped_events else "contents_text:"
+    lines = [line for line in source_text.splitlines() if line.strip()]
+    if not lines:
+        return []
+
+    chunks: list[str] = []
+    current_lines: list[str] = []
+    current_chars = 0
+
+    for line in lines:
+        projected_chars = current_chars + len(line) + (1 if current_lines else 0)
+        should_flush = bool(current_lines) and (
+            len(current_lines) >= SUMMARY_CHUNK_MAX_EVENTS or projected_chars > SUMMARY_CHUNK_MAX_CHARS
+        )
+        if should_flush:
+            chunks.append("\n".join(current_lines))
+            current_lines = []
+            current_chars = 0
+
+        current_lines.append(line)
+        current_chars += len(line) + (1 if len(current_lines) > 1 else 0)
+
+    if current_lines:
+        chunks.append("\n".join(current_lines))
+    return chunks
+
+
+def _build_summary_prompt_from_source(
+    *,
+    source_label: str,
+    prompt_source: str,
+    workorder_title: str = "",
+) -> list[dict[str, str]]:
+    """요약 source를 OpenWebUI chat completions용 message 목록으로 감쌉니다."""
+
     content_parts: list[str] = []
     if workorder_title.strip():
         content_parts.extend(
@@ -280,7 +313,7 @@ def build_summary_prompt(contents_text: str, workorder_title: str = "") -> list[
         )
     content_parts.extend(
         [
-            source_label,
+            f"{source_label}:",
             "<<<",
             prompt_source,
             ">>>",
@@ -294,6 +327,17 @@ def build_summary_prompt(contents_text: str, workorder_title: str = "") -> list[
             "content": "\n".join(content_parts),
         },
     ]
+
+
+def build_summary_prompt(contents_text: str, workorder_title: str = "") -> list[dict[str, str]]:
+    """OpenWebUI chat completions용 고정 message 목록을 생성합니다."""
+
+    timestamped_events = _build_timestamped_event_text(contents_text)
+    return _build_summary_prompt_from_source(
+        source_label="timestamped_events" if timestamped_events else "contents_text",
+        prompt_source=timestamped_events or contents_text,
+        workorder_title=workorder_title,
+    )
 
 
 def build_core_summary_prompt(event_summary: str) -> list[dict[str, str]]:
@@ -346,7 +390,10 @@ def _extract_reply_content(resp_json: dict[str, Any]) -> str:
         choices = resp_json["choices"]
         if not choices:
             raise OpenWebUIRequestError("OpenWebUI 응답 choices가 비어 있습니다.")
-        content = choices[0]["message"]["content"]
+        choice = choices[0]
+        if choice.get("finish_reason") == "length":
+            raise OpenWebUIRequestError("OpenWebUI 응답이 token limit으로 잘렸습니다.")
+        content = choice["message"]["content"]
         if not isinstance(content, str):
             raise OpenWebUIRequestError("OpenWebUI 응답 content가 문자열이 아닙니다.")
     except (KeyError, IndexError, TypeError) as exc:
@@ -513,6 +560,39 @@ def _post_chat_completion(
     return _extract_reply_content(resp_json)
 
 
+def _request_event_summary(
+    *,
+    session: requests.Session,
+    config: OpenWebUISummaryConfig,
+    contents_text: str,
+    workorder_title: str = "",
+) -> str:
+    """큰 contents_text를 이벤트 묶음으로 나눠 시간순 요약을 생성합니다."""
+
+    timestamped_events = _build_timestamped_event_text(contents_text)
+    prompt_source = timestamped_events or contents_text
+    source_label = "timestamped_events" if timestamped_events else "contents_text"
+    chunks = _split_summary_source_chunks(prompt_source) or [prompt_source]
+    summary_chunks: list[str] = []
+
+    for chunk in chunks:
+        chunk_summary = _normalize_summary_text(
+            _post_chat_completion(
+                session=session,
+                config=config,
+                messages=_build_summary_prompt_from_source(
+                    source_label=source_label,
+                    prompt_source=chunk,
+                    workorder_title=workorder_title,
+                ),
+            )
+        )
+        if chunk_summary:
+            summary_chunks.append(chunk_summary)
+
+    return "\n".join(summary_chunks)
+
+
 def request_summary(
     *,
     session: requests.Session,
@@ -520,14 +600,13 @@ def request_summary(
     contents_text: str,
     workorder_title: str = "",
 ) -> GeneratedSummary:
-    """OpenWebUI를 2회 호출해 핵심 요약과 시간순 상세 요약을 분리해 반환합니다."""
+    """OpenWebUI로 시간순 상세 요약과 핵심 요약을 분리해 반환합니다."""
 
-    event_summary = _normalize_summary_text(
-        _post_chat_completion(
-            session=session,
-            config=config,
-            messages=build_summary_prompt(contents_text, workorder_title=workorder_title),
-        )
+    event_summary = _request_event_summary(
+        session=session,
+        config=config,
+        contents_text=contents_text,
+        workorder_title=workorder_title,
     )
     if _should_skip_core_summary(event_summary):
         return GeneratedSummary(core_summary=None, event_summary=event_summary)

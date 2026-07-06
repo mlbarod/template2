@@ -46,7 +46,6 @@ export default function CtttmDetail({ log, summaryStreamingScrollClassName }) {
       <Field
         label="핵심요약"
         value={log.coreSummary}
-        fullWidth
         valueClassName="whitespace-pre-wrap break-words leading-6"
       />
       <Field

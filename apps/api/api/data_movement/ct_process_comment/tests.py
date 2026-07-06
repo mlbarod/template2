@@ -388,6 +388,84 @@ class CtProcessCommentSummaryTests(TestCase):
         self.assertIn("점검 시작 후 조치가 완료되었습니다.", review_request_messages[1]["content"])
         self.assertIn("[2026-01-01 10:00] 점검 시작", review_request_messages[1]["content"])
 
+    def test_request_summary_splits_large_timestamped_events_before_summary_call(self) -> None:
+        """긴 contents_text는 시간 이벤트 묶음으로 나눠 요약합니다."""
+
+        contents_text = "\n".join(
+            [
+                "[ 2026-01-01 10:00 / 홍길동 ]",
+                "TMP 센서 알람 발생",
+                "[ 2026-01-01 11:00 / 홍길동 ]",
+                "CH-A 밸브 교체 요청",
+                "[ 2026-01-01 12:00 / 홍길동 ]",
+                "CH-A 밸브 장착 완료",
+            ]
+        )
+        session = _build_openwebui_session(
+            replies=[
+                "[2026-01-01 10:00] TMP 센서 알람 발생\n[2026-01-01 11:00] CH-A 밸브 교체 요청",
+                "[2026-01-01 12:00] CH-A 밸브 장착 완료",
+                "핵심 요약: TMP 센서 알람 후 CH-A 밸브 교체 요청과 장착 완료가 기록되었습니다.",
+                "KEEP",
+            ]
+        )
+
+        with patch.object(summary_module, "SUMMARY_CHUNK_MAX_EVENTS", 2):
+            generated = summary_module.request_summary(
+                session=session,
+                config=_build_openwebui_config(),
+                contents_text=contents_text,
+                workorder_title="TMP 센서 이상 점검",
+            )
+
+        self.assertEqual(session.post.call_count, 4)
+        first_event_request = session.post.call_args_list[0].kwargs["json"]["messages"][1]["content"]
+        second_event_request = session.post.call_args_list[1].kwargs["json"]["messages"][1]["content"]
+        self.assertIn("TMP 센서 이상 점검", first_event_request)
+        self.assertIn("[2026-01-01 10:00] TMP 센서 알람 발생", first_event_request)
+        self.assertIn("[2026-01-01 11:00] CH-A 밸브 교체 요청", first_event_request)
+        self.assertNotIn("[2026-01-01 12:00] CH-A 밸브 장착 완료", first_event_request)
+        self.assertIn("[2026-01-01 12:00] CH-A 밸브 장착 완료", second_event_request)
+        self.assertEqual(
+            generated.event_summary,
+            "\n".join(
+                [
+                    "[2026-01-01 10:00] TMP 센서 알람 발생",
+                    "[2026-01-01 11:00] CH-A 밸브 교체 요청",
+                    "[2026-01-01 12:00] CH-A 밸브 장착 완료",
+                ]
+            ),
+        )
+        self.assertEqual(
+            generated.core_summary,
+            "TMP 센서 알람 후 CH-A 밸브 교체 요청과 장착 완료가 기록되었습니다.",
+        )
+
+    def test_request_summary_raises_when_openwebui_response_is_truncated(self) -> None:
+        """OpenWebUI가 token limit으로 자른 응답은 저장 가능한 요약으로 취급하지 않습니다."""
+
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "choices": [
+                {
+                    "finish_reason": "length",
+                    "message": {
+                        "content": "[2026-01-01 10:00] TMP 센서 알람",
+                    },
+                }
+            ]
+        }
+        session = Mock()
+        session.post.return_value = response
+
+        with self.assertRaisesRegex(summary_module.OpenWebUIRequestError, "token limit"):
+            summary_module.request_summary(
+                session=session,
+                config=_build_openwebui_config(),
+                contents_text="[ 2026-01-01 10:00 / 홍길동 ]\nTMP 센서 알람 발생",
+            )
+
     def test_summarize_leaves_core_summary_empty_when_event_summary_is_too_short(self) -> None:
         """시간순 요약 정보량이 부족하면 핵심요약 호출 없이 core summary를 비워 둡니다."""
 
