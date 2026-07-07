@@ -3,15 +3,10 @@ import AppIntegrationMarquee from "../components/AppIntegrationMarquee"
 import { PopularServicesSection } from "../components/PopularSection"
 import { marqueeApps } from "../utils/constants"
 
-const DEFAULT_HERO_ACTIONS = [
-  { label: "대시보드로 이동", href: "/esop_dashboard" },
-  { label: "Appstore 둘러보기", href: "/appstore", variant: "outline" },
-]
-
-const HomePage = ({ heroActions = DEFAULT_HERO_ACTIONS }) => {
+const HomePage = () => {
   return (
     <>
-      <HeroSection actions={heroActions} />
+      <HeroSection />
       <PopularServicesSection />
       <AppIntegrationMarquee apps={marqueeApps} />
     </>
