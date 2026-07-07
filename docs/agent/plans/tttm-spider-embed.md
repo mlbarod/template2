@@ -3,28 +3,29 @@
 ## 목표
 - Apps 하위 메뉴에 TTTM Spider 항목을 추가한다.
 - TTTM Spider 화면은 Portal shell 안에서 외부 TTTM Spider 앱을 iframe으로 임베드한다.
-- 외부 URL은 env-driven 방식으로 설정한다.
+- 외부 URL은 TTTM Spider page 상수로 고정한다.
 
 ## 현재 상태
 - `apps/web/src/lib/config/portalNavigation.js`가 Apps/About Us 하위 메뉴를 정의한다.
 - `apps/web/src/routes/router.jsx`가 feature route facade를 모아 보호된 route를 구성한다.
 - Portal 외부 링크 env는 `env/web.*.env`, `apps/web/Dockerfile`, `apps/web/README.md`에 문서화되어 있다.
+- 2026-07-07 현재 TTTM Spider iframe URL은 env 계약에서 제거되고 page 상수로 고정되어 있다.
 
 ## 범위
-- 수정: React web feature route/page, Portal navigation/branding, web env 문서와 Docker build arg.
+- 수정: React web feature route/page, Portal navigation/branding.
 - 제외: 백엔드 API, DB, auth 권한, 기존 Spider 기능의 동작 변경.
 
 ## 설계
 - `apps/web/src/features/tttm-spider` feature를 추가하고 `index.js`에서 `tttmSpiderRoutes`만 named export한다.
-- `/tttm_spider` route에서 `VITE_TTTM_SPIDER_URL`을 읽어 iframe `src`로 사용한다.
-- env 파일에는 요청 URL을 설정하되, 코드에는 IP를 직접 하드코딩하지 않는다.
+- `/tttm_spider` route에서 고정 URL을 iframe `src`로 사용한다.
+- 사용자 요청에 따라 TTTM Spider intranet URL은 코드에 직접 둔다.
 - `portalNavigation.js` Apps 항목에는 내부 링크로 `TTTM Spider`를 추가한다.
 
 ## 실행 단계
 - [x] ExecPlan 작성
 - [x] TTTM Spider feature route/page 추가
 - [x] Portal navigation/branding/router 연결
-- [x] env/Dockerfile/README 설정 추가
+- [x] TTTM Spider iframe page 구현
 - [x] frontend boundary/UI audit 실행
 
 ## 검증
@@ -40,3 +41,4 @@
 ## 진행 기록
 - 2026-07-07: TTTM Spider 메뉴/임베드 추가 계획을 작성했다.
 - 2026-07-07: `/tttm_spider` iframe route와 Apps 메뉴 항목을 추가하고 검증을 실행했다.
+- 2026-07-07: TTTM Spider iframe URL을 env-driven 방식에서 코드 상수 방식으로 전환했다.

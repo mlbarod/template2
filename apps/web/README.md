@@ -47,7 +47,6 @@ npm run preview
 | `VITE_PORTAL_PMX_URL` | Portal PMx 외부 링크. 비어 있으면 숨김 |
 | `VITE_PORTAL_MOSAIC_URL` | Portal MOSAIC 외부 링크. 비어 있으면 숨김 |
 | `VITE_PORTAL_CONFLUENCE_URL` | Portal Confluence 외부 링크. 비어 있으면 숨김 |
-| `VITE_TTTM_SPIDER_URL` | TTTM Spider iframe 임베드 URL |
 
 ## 코드 구조
 

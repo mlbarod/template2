@@ -54,14 +54,13 @@
 | `MAIL_API_*` / Mail API | `MAIL_API_URL`, `MAIL_API_KEY`, `MAIL_API_SYSTEM_ID`, `MAIL_API_KNOX_ID` | 외부 Mail API 전송 |
 | MinIO | `MINIO_*` | 메일 asset storage |
 | `VITE_*` / Web | `VITE_BACKEND_URL`, `BACKEND_API_URL`, `VITE_ASSISTANT_API_URL`, `VITE_AIRFLOW_BASE_URL`, `VITE_SITE_URL` | 브라우저와 container 내부 API URL |
-| `VITE_PORTAL_*` / Web | `VITE_PORTAL_PMX_URL`, `VITE_PORTAL_MOSAIC_URL`, `VITE_PORTAL_CONFLUENCE_URL`, `VITE_TTTM_SPIDER_URL` | Portal 전역 네비게이션과 iframe 임베드용 외부 링크. 비어 있으면 메뉴 또는 화면에서 숨김/안내 |
+| `VITE_PORTAL_*` / Web | `VITE_PORTAL_PMX_URL`, `VITE_PORTAL_MOSAIC_URL`, `VITE_PORTAL_CONFLUENCE_URL` | Portal 전역 네비게이션 외부 링크. 비어 있으면 메뉴 또는 화면에서 숨김/안내 |
 | Monitoring | `PROMETHEUS_RETENTION_TIME`, `GF_SECURITY_ADMIN_USER`, `GF_SECURITY_ADMIN_PASSWORD`, `GF_SERVER_ROOT_URL`, `GF_SERVER_SERVE_FROM_SUB_PATH` | Prometheus 보관 기간, Grafana 관리자 계정, nginx subpath 프록시 설정 |
 
 ### Web 공통 환경 변수
 
 - `env/web.common.env`는 dev/OIDC dev/prod Web 서비스가 공통으로 읽는 브라우저 노출 설정입니다.
-- `VITE_TTTM_SPIDER_URL`은 TTTM Spider iframe 임베드 URL이며, 기본값은 `env/web.common.env`에서 관리합니다.
-- Vite의 `VITE_*` 값은 운영 정적 빌드 시점에 번들에 포함됩니다. 운영 빌드 값 override가 필요하면 Compose 실행 환경에서 `VITE_TTTM_SPIDER_URL`을 함께 주입합니다.
+- Vite의 `VITE_*` 값은 운영 정적 빌드 시점에 번들에 포함됩니다.
 
 ### 모니터링 스택
 
