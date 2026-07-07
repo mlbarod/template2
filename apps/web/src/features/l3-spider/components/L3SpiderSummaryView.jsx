@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Activity, AlertTriangle, Cpu, Gauge, Inbox, Layers, Loader2 } from "lucide-react"
 import {
   Bar,
@@ -14,6 +14,8 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
+
+import { useAuth } from "@/lib/auth"
 
 import { useL3SpiderDailySummary, useL3SpiderTrend } from "../hooks/useL3SpiderQueries"
 import { formatNumber } from "../utils/format"
@@ -716,8 +718,28 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
     [trendQuery.data?.points],
   )
 
-  // 유저 지정 순서 (드래그로 변경, null = 기본 정렬)
+  // 유저 지정 순서 (드래그로 변경, null = 기본 정렬) — 로그인 사용자별 localStorage 영속
+  const { user } = useAuth()
+  const storageKey = user?.email ? `l3spider:lineOrder:${user.email}` : null
+
   const [customLineOrder, setCustomLineOrder] = useState(null)
+
+  // 사용자 확인 후 저장된 순서 복원 (사용자 변경 시 재실행)
+  useEffect(() => {
+    if (!storageKey) return
+    try {
+      const saved = localStorage.getItem(storageKey)
+      if (saved) setCustomLineOrder(JSON.parse(saved))
+    } catch {}
+  }, [storageKey])
+
+  // 순서 변경 시 저장 (null 리셋은 저장하지 않음 — 별도로 removeItem)
+  useEffect(() => {
+    if (!storageKey || customLineOrder === null) return
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(customLineOrder))
+    } catch {}
+  }, [storageKey, customLineOrder])
 
   function handleReorder(fromIdx, toIdx) {
     const names = lineSummary.map((r) => r.line)
@@ -725,6 +747,11 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
     const [moved] = next.splice(fromIdx, 1)
     next.splice(toIdx, 0, moved)
     setCustomLineOrder(next)
+  }
+
+  function resetLineOrder() {
+    setCustomLineOrder(null)
+    if (storageKey) localStorage.removeItem(storageKey)
   }
 
   const orderedLineSummary = useMemo(() => {
@@ -808,7 +835,7 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
             {customLineOrder && (
               <button
                 type="button"
-                onClick={() => setCustomLineOrder(null)}
+                onClick={resetLineOrder}
                 className="text-[13px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
               >
                 순서초기화
