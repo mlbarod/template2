@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from django.db import models
+from django.db.models import Q
 from django.db.models.functions import Now
 
 
@@ -38,6 +39,11 @@ class CtProcessComment(models.Model):
             models.Index(fields=["line_id"], name="idx_ct_prc_cmt_line"),
             models.Index(fields=["eqp_id"], name="idx_ct_prc_cmt_eqp"),
             models.Index(fields=["create_date"], name="idx_ct_prc_cmt_crt"),
+            models.Index(
+                fields=["-updated_at", "-id"],
+                name="idx_ct_prc_cmt_pend",
+                condition=Q(update_flag="Y"),
+            ),
         ]
         constraints = [
             models.UniqueConstraint(fields=["workorder_id"], name="uniq_ct_prc_cmt_wo"),

@@ -55,6 +55,13 @@ class MTkinPreventStructureTests(SimpleTestCase):
         self.assertEqual(MTkinPrevent._meta.db_table, "m_tkin_prevent")
         self.assertEqual(MTkinPreventLoadJob._meta.db_table, "m_tkin_prevent_load_job")
 
+    def test_model_indexes_support_observer_matrix_query(self) -> None:
+        """Observer matrix 조회 조건을 지원하는 index가 있는지 확인합니다."""
+
+        index_names = {index.name for index in MTkinPrevent._meta.indexes}
+
+        self.assertIn("idx_mtk_prc_stp_lvl_eqp", index_names)
+
     def test_list_data_files_returns_sorted_limited_deflate_files(self) -> None:
         """파일 목록 helper가 이름순 및 limit을 적용하는지 확인합니다."""
 

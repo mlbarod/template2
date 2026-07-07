@@ -70,6 +70,10 @@ class MTkinPrevent(models.Model):
                 fields=["process_id", "eqp_id", "registration_level", "step_seq"],
                 name="idx_mtk_prc_eqp_lvl_stp",
             ),
+            models.Index(
+                fields=["process_id", "step_seq", "registration_level", "eqp_id"],
+                name="idx_mtk_prc_stp_lvl_eqp",
+            ),
         ]
 
     def __str__(self) -> str:
