@@ -1,11 +1,12 @@
 # Vite 빌드 + 정적 프리뷰를 위한 멀티 스테이지 Dockerfile
 
-FROM node:20-alpine AS deps
+ARG NODE_BASE_IMAGE=node:20-alpine
+FROM ${NODE_BASE_IMAGE} AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm install --legacy-peer-deps
 
-FROM node:20-alpine AS builder
+FROM ${NODE_BASE_IMAGE} AS builder
 WORKDIR /app
 ENV NODE_ENV=production
 ARG VITE_BACKEND_URL=/
@@ -26,7 +27,7 @@ ENV VITE_PORTAL_MOSAIC_URL=${VITE_PORTAL_MOSAIC_URL}
 ENV VITE_PORTAL_CONFLUENCE_URL=${VITE_PORTAL_CONFLUENCE_URL}
 RUN npm run build
 
-FROM node:20-alpine AS runner
+FROM ${NODE_BASE_IMAGE} AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app/dist ./dist

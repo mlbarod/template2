@@ -1,4 +1,5 @@
-FROM python:3.12-bookworm AS base
+ARG PYTHON_BASE_IMAGE=python:3.12-bookworm
+FROM ${PYTHON_BASE_IMAGE} AS base
 
 # - PYTHONDONTWRITEBYTECODE=1 .pyc 캐시 파일 생성 방지 → 이미지가 깔끔해짐
 # - PYTHONUNBUFFERED=1 표준 출력 버퍼링 비활성화 → docker logs 에 즉시 표시

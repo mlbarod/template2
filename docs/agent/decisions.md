@@ -12,6 +12,7 @@
 - AI가 feature 작업을 수행할 때는 `docs/agent/ai-feature-workflow.md`의 기본 프롬프트와 검증 절차를 따른다.
 - 큰 작업은 `docs/agent/PLANS.md`의 ExecPlan 기준을 따른다.
 - eval은 `docs/agent/evals/*`의 작업/성공 기준을 기준으로 누적한다.
+- OIDC 개발과 운영 Compose의 외부 registry image는 `repository.samsungds.net`를 사용하고, 외부 dev Compose는 public image 이름을 유지한다.
 
 ## 보류된 결정
 - multi-agent orchestration은 eval에서 병렬 검토 효과가 확인될 때까지 도입하지 않는다.

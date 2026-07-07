@@ -25,6 +25,7 @@
 - 서비스 고유 infra 설정은 `env/minio.env`, `env/grafana.env`처럼 서비스별 env 파일에 둡니다.
 - Compose 계층은 app과 infra를 분리합니다. 앱 컨테이너는 `compose/*.app.yml`, 운영 보조 서비스는 `compose/*.infra.yml` 또는 infra에서 include하는 파일에 둡니다.
 - Airflow Compose 공통 env에는 Airflow runtime과 DAG 공통 연결/인증 값만 둡니다. DAG별 schedule/timeout/limit/dry-run 기본값은 각 DAG 코드에 둡니다.
+- OIDC 개발과 운영 Compose에서 외부 registry image를 pull할 때는 `repository.samsungds.net` 사내 registry를 사용합니다. Docker Hub image는 `repository.samsungds.net/docker.io/<image>` 형식으로 적고, dev Compose는 외부 개발용 public image 이름을 유지합니다.
 - password/token/key/secret 값은 실제 운영에서는 배포 secret manager나 외부 env injection으로 관리합니다. repo env 파일에는 로컬/템플릿 값만 둡니다.
 - env/Compose 변경 후 `bash scripts/agent/check_compose_configs.sh`로 dev/OIDC/prod Compose 병합 결과를 확인합니다.
 
@@ -56,6 +57,7 @@
 | `VITE_*` / Web | `VITE_BACKEND_URL`, `BACKEND_API_URL`, `VITE_ASSISTANT_API_URL`, `VITE_AIRFLOW_BASE_URL`, `VITE_SITE_URL` | 브라우저와 container 내부 API URL |
 | `VITE_PORTAL_*` / Web | `VITE_PORTAL_PMX_URL`, `VITE_PORTAL_MOSAIC_URL`, `VITE_PORTAL_CONFLUENCE_URL` | Portal 전역 네비게이션 외부 링크. 비어 있으면 메뉴 또는 화면에서 숨김/안내 |
 | Monitoring | `PROMETHEUS_RETENTION_TIME`, `GF_SECURITY_ADMIN_USER`, `GF_SECURITY_ADMIN_PASSWORD`, `GF_SERVER_ROOT_URL`, `GF_SERVER_SERVE_FROM_SUB_PATH` | Prometheus 보관 기간, Grafana 관리자 계정, nginx subpath 프록시 설정 |
+| TTTM Spider | `TTTM_SPIDER_UPSTREAM` | nginx `/tttm-spider/` HTTPS 프록시가 전달할 내부 TTTM Spider host:port |
 
 ### Web 공통 환경 변수
 
@@ -73,6 +75,13 @@
 - Grafana 기본 관리자 값은 `env/grafana.env`에 있습니다. 운영 보안 정책에 맞게 `GF_SECURITY_ADMIN_PASSWORD`를 관리합니다.
 - 기본 dashboard `App Load Overview`는 host CPU/메모리/파일시스템/네트워크와 container별 CPU/메모리 추세를 표시합니다.
 - endpoint별 API latency, HTTP status, Django DB query 추세는 아직 앱 내부 metric이 없으므로 별도 instrumentation을 추가해야 합니다.
+
+### TTTM Spider 프록시
+
+- 운영 nginx는 `/tttm-spider/` 경로를 `TTTM_SPIDER_UPSTREAM`으로 프록시합니다.
+- 브라우저 iframe은 HTTP 원본 URL 대신 same-origin HTTPS 경로인 `/tttm-spider/`를 사용합니다.
+- `TTTM_SPIDER_UPSTREAM` 값은 scheme 없이 `host:port` 형식으로 설정합니다. 기본값은 운영 compose의 nginx environment에 있습니다.
+- TTTM Spider 원본 페이지가 내부 asset을 절대 HTTP URL로 렌더링하면 브라우저 mixed content가 남을 수 있으므로, 이 경우 원본 서비스 base URL 또는 nginx rewrite를 추가 조정해야 합니다.
 
 ### 외부 앱 사용량 API
 

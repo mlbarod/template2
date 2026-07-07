@@ -1,9 +1,9 @@
 include:
-  - airflow.yml
+  - airflow.internal.yml
 
 services:
   ftp:
-    image: repo.samsungds.net/docker.io/fauria/vsftpd
+    image: repository.samsungds.net/docker.io/fauria/vsftpd
     container_name: datalake-ftp
     environment:
       FTP_USER: ${FTP_USER:-ftpuser}

@@ -1,5 +1,6 @@
 # base 이미지는 offline_load.sh로 사전에 docker에 로드되어 있어야 함
-FROM apache/airflow:2.11.0
+ARG AIRFLOW_BASE_IMAGE=apache/airflow:2.11.0
+FROM ${AIRFLOW_BASE_IMAGE}
 
 USER root
 ARG CS_VER=4.105.1
