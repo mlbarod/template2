@@ -66,16 +66,16 @@ function SummaryStats({ h }) {
           <div key={key} className="flex items-center gap-3 border-r px-5 py-3 last:border-r-0">
             <Icon className={cn("size-4 shrink-0", tone)} aria-hidden="true" />
             <div className="min-w-0">
-              <p className={cn("text-xl font-semibold leading-none tabular-nums", tone)}>
+              <p className={cn("text-[22px] font-semibold leading-none tabular-nums", tone)}>
                 {formatNumber(h[key])}
               </p>
-              <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 {label}
               </p>
             </div>
           </div>
         ))}
-        <div className="ml-auto px-5 py-3 text-right text-[11px] leading-tight text-muted-foreground">
+        <div className="ml-auto px-5 py-3 text-right text-xs leading-tight text-muted-foreground">
           Line {formatNumber(h.lines)} · Process {formatNumber(h.processes)} · EDS {formatNumber(h.edsSteps)}
           <br />
           Bin {formatNumber(h.binNames)} · 총 {formatNumber(h.totalRows)}행
@@ -148,10 +148,10 @@ function DonutChartCard({ lineSummary, cells, metric, focusLine }) {
   return (
     <Card className="flex flex-col overflow-hidden rounded-lg py-0">
       <div className="shrink-0 flex items-center border-b bg-muted/50 px-4 h-9">
-        <CardTitle className="text-sm">{title}</CardTitle>
+        <CardTitle className="text-[15px]">{title}</CardTitle>
       </div>
-      <CardContent className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1.5 px-3 py-2">
-        <svg width="88" height="88" viewBox="0 0 88 88" aria-label={`${center} ${total}`}>
+      <CardContent className="flex min-h-0 flex-1 items-center justify-center gap-3 px-3 py-2">
+        <svg className="shrink-0" width="88" height="88" viewBox="0 0 88 88" aria-label={`${center} ${total}`}>
           <g transform="rotate(-90 44 44)">
             {total === 0 ? (
               <circle cx="44" cy="44" r={R} fill="none" stroke="hsl(var(--muted))" strokeWidth={SW} />
@@ -166,13 +166,13 @@ function DonutChartCard({ lineSummary, cells, metric, focusLine }) {
               />
             ))}
           </g>
-          <text x="44" y="40" textAnchor="middle" fontSize="13" fontWeight="700"
+          <text x="44" y="40" textAnchor="middle" fontSize="14" fontWeight="700"
             fill="hsl(var(--foreground))">{formatNumber(total)}</text>
-          <text x="44" y="52" textAnchor="middle" fontSize="7" fontWeight="600"
+          <text x="44" y="53" textAnchor="middle" fontSize="8" fontWeight="600"
             fill="hsl(var(--muted-foreground))">{center}</text>
         </svg>
         {/* 범례 */}
-        <div className="grid w-full grid-cols-2 gap-x-2 gap-y-0.5 text-[11px]">
+        <div className="grid min-w-0 flex-1 gap-1 text-xs">
           {arcs.map((arc) => (
             <span key={arc.key} className="flex min-w-0 items-center gap-1">
               <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: arc.color }} aria-hidden="true" />
@@ -215,7 +215,7 @@ function LineTable({ rows, selectedLine, onSelectLine, onReorder }) {
 
   return (
     <div className="min-h-0 overflow-y-auto">
-      <table className="w-full border-collapse text-xs">
+      <table className="w-full border-collapse text-[13px]">
         <thead className="sticky top-0 z-10 bg-card">
           <tr className="border-b">
             <th className="w-6 px-1 py-2" />
@@ -260,7 +260,7 @@ function LineTable({ rows, selectedLine, onSelectLine, onReorder }) {
                 )}>
                   {r.line}
                   {!r.active && (
-                    <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">(이상 없음)</span>
+                    <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">(이상 없음)</span>
                   )}
                 </td>
                 <td className="px-3 py-1.5 text-center tabular-nums">
@@ -334,7 +334,7 @@ function AnomalyMatrix({ matrix, selectedLine, onDrill, metric }) {
 
   return (
     <div className="overflow-x-auto p-4">
-      <table className="w-auto border-collapse text-xs leading-tight">
+      <table className="w-auto border-collapse text-[13px] leading-tight">
         <colgroup>
           <col className="w-24" />
           <col className="w-28" />
@@ -382,7 +382,7 @@ function AnomalyMatrix({ matrix, selectedLine, onDrill, metric }) {
                     >
                       <div className="flex flex-col gap-1 leading-tight">
                         <span>{line}</span>
-                        <span className="text-[10px] font-normal">
+                        <span className="text-[11px] font-normal">
                           <MetricVal metric={metric} hr={lt.hr} wn={lt.wn} ss={lt.ss} eq={lt.eq} />
                         </span>
                       </div>
@@ -441,10 +441,10 @@ function MatrixCard({ title, legend, rows, cells, matrix, metric, selectedLine, 
   return (
     <Card className="flex min-w-0 flex-1 flex-col gap-0 overflow-hidden rounded-lg py-0">
       <div className="shrink-0 flex flex-wrap items-center gap-x-2 gap-y-1 border-b bg-muted/50 px-4 py-1.5">
-        <CardTitle className="text-sm">{title}</CardTitle>
+        <CardTitle className="text-[15px]">{title}</CardTitle>
         {rows != null ? <Badge variant="outline">{formatNumber(rows)} rows</Badge> : null}
         {cells != null ? <Badge variant="secondary">{formatNumber(cells)} cells</Badge> : null}
-        <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-2 text-[13px] text-muted-foreground">
           {legend}
           <span>셀 클릭 → Chart 탭</span>
         </span>
@@ -561,12 +561,12 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
   return (
     <Card className="flex min-h-[240px] min-w-0 flex-col overflow-hidden rounded-lg py-0">
       <div className="shrink-0 flex flex-wrap items-center gap-2 border-b bg-muted/50 px-4 py-1.5">
-          <CardTitle className="text-sm">일자별 이상감지 트렌드</CardTitle>
+          <CardTitle className="text-[15px]">일자별 이상감지 트렌드</CardTitle>
           {focusLine && (
-            <Badge variant="secondary" className="text-[11px]">{focusLine}</Badge>
+            <Badge variant="secondary" className="text-xs">{focusLine}</Badge>
           )}
           {/* 기간 선택 */}
-          <div className="flex items-center rounded border bg-background p-0.5 text-xs">
+          <div className="flex items-center rounded border bg-background p-0.5 text-[13px]">
             {RANGE_OPTIONS.map((opt) => (
               <button key={opt.value} type="button" onClick={() => setRangeDays(opt.value)}
                 className={cn("rounded px-2 py-0.5 font-medium transition-colors",
@@ -576,7 +576,7 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
             ))}
           </div>
           {/* Y축 토글 */}
-          <div className="flex items-center rounded border bg-background p-0.5 text-xs">
+          <div className="flex items-center rounded border bg-background p-0.5 text-[13px]">
             <button type="button" onClick={() => setMetric("hr")}
               className={cn("rounded px-2 py-0.5 font-medium transition-colors",
                 metric === "hr" ? "bg-destructive/10 text-destructive" : "text-muted-foreground hover:text-foreground")}>
@@ -589,7 +589,7 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
             </button>
           </div>
           {/* 계열 토글 */}
-          <div className="flex items-center rounded border bg-background p-0.5 text-xs">
+          <div className="flex items-center rounded border bg-background p-0.5 text-[13px]">
             <button type="button" onClick={() => setGrouping("sum")}
               className={cn("rounded px-2 py-0.5 font-medium transition-colors",
                 grouping === "sum" ? "bg-background text-foreground shadow-sm ring-1 ring-border" : "text-muted-foreground hover:text-foreground")}>
@@ -613,13 +613,13 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
               <XAxis
                 dataKey="date"
-                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }}
                 tickLine={false}
                 axisLine={false}
                 interval="preserveStartEnd"
               />
               <YAxis
-                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }}
                 tickLine={false}
                 axisLine={false}
                 width={52}
@@ -630,7 +630,7 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
                   background: "hsl(var(--card))",
                   border: "1px solid hsl(var(--border))",
                   borderRadius: "6px",
-                  fontSize: 12,
+                  fontSize: 13,
                 }}
                 formatter={(value, name) => [formatNumber(value), name === "value" ? (metric === "hr" ? "High Risk" : "이상 건수") : name]}
                 labelFormatter={(label) => `날짜: ${label}`}
@@ -639,7 +639,7 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
               <Legend
                 iconType="square"
                 iconSize={8}
-                wrapperStyle={{ fontSize: 11, paddingTop: 4 }}
+                wrapperStyle={{ fontSize: 12, paddingTop: 4 }}
               />
               {grouping === "sum" ? (
                 <Bar
@@ -791,25 +791,25 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
   const matrixRows = data?.matrix?.lines?.length ?? 0
 
   return (
-    <main className="grid gap-5 px-6 pb-6 pt-4">
+    <main className="grid gap-4 px-5 pb-5 pt-3">
       {/* 집계 카드 */}
       <SummaryStats h={h} />
 
       {/* col1=1fr(라인테이블 2행span), col2=1.4fr(도넛2개+트렌드) */}
-      <div className="gap-5" style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gridTemplateRows: "auto minmax(180px, 1fr)", minHeight: 400 }}>
+      <div className="gap-4" style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gridTemplateRows: "auto minmax(180px, 1fr)", minHeight: 400 }}>
         {/* col1 row1+2: 라인별 현황 테이블 */}
         <Card
           className="flex min-h-0 flex-col overflow-hidden rounded-lg py-0"
           style={{ gridColumn: 1, gridRow: "1 / span 2" }}
         >
           <div className="shrink-0 flex items-center gap-2 border-b bg-muted/50 px-4 h-9">
-            <CardTitle className="text-sm">라인별 현황</CardTitle>
-            <Badge variant="outline" className="text-[11px]">{allLineOptions.length}개</Badge>
+            <CardTitle className="text-[15px]">라인별 현황</CardTitle>
+            <Badge variant="outline" className="text-xs">{allLineOptions.length}개</Badge>
             {customLineOrder && (
               <button
                 type="button"
                 onClick={() => setCustomLineOrder(null)}
-                className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                className="text-[13px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
               >
                 순서초기화
               </button>
@@ -818,7 +818,7 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
               <button
                 type="button"
                 onClick={() => onSelectLine?.(null)}
-                className="ml-auto text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                className="ml-auto text-[13px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
               >
                 해제
               </button>
@@ -847,13 +847,13 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
       {/* 매트릭스 헤더 */}
       {activeLine && (
         <div className="flex items-center gap-3">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">매트릭스</span>
+          <span className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">매트릭스</span>
           <Badge variant="secondary" className="text-[11px]">{activeLine} 필터 중</Badge>
         </div>
       )}
 
       {/* 매트릭스 나란히 */}
-      <div className="grid grid-cols-2 gap-5">
+      <div className="grid grid-cols-2 gap-4">
         <MatrixCard
           title="Anomaly Summary"
           legend={countLegend}
