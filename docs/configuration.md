@@ -55,7 +55,7 @@
 | MinIO | `MINIO_*` | 메일 asset storage |
 | `VITE_*` / Web | `VITE_BACKEND_URL`, `BACKEND_API_URL`, `VITE_ASSISTANT_API_URL`, `VITE_AIRFLOW_BASE_URL`, `VITE_SITE_URL` | 브라우저와 container 내부 API URL |
 | `VITE_PORTAL_*` / Web | `VITE_PORTAL_PMX_URL`, `VITE_PORTAL_MOSAIC_URL`, `VITE_PORTAL_CONFLUENCE_URL`, `VITE_TTTM_SPIDER_URL` | Portal 전역 네비게이션과 iframe 임베드용 외부 링크. 비어 있으면 메뉴 또는 화면에서 숨김/안내 |
-| Monitoring | `GRAFANA_BIND_ADDRESS`, `GRAFANA_PORT`, `PROMETHEUS_RETENTION_TIME`, `GF_SECURITY_ADMIN_USER`, `GF_SECURITY_ADMIN_PASSWORD` | Grafana bind address/접속 포트, Prometheus 보관 기간, Grafana 관리자 계정 |
+| Monitoring | `PROMETHEUS_RETENTION_TIME`, `GF_SECURITY_ADMIN_USER`, `GF_SECURITY_ADMIN_PASSWORD`, `GF_SERVER_ROOT_URL`, `GF_SERVER_SERVE_FROM_SUB_PATH` | Prometheus 보관 기간, Grafana 관리자 계정, nginx subpath 프록시 설정 |
 
 ### Web 공통 환경 변수
 
@@ -67,7 +67,8 @@
 
 - 운영 인프라 Compose인 `compose/prod.infra.yml`은 `compose/monitoring.yml`을 함께 include합니다.
 - 포함 서비스는 `prometheus`, `node-exporter`, `cadvisor`, `grafana`입니다.
-- Grafana는 기본적으로 host `0.0.0.0:3001`에 노출됩니다. 로컬 접속으로 제한하려면 Compose 실행 환경에서 `GRAFANA_BIND_ADDRESS=127.0.0.1`을 지정합니다.
+- Grafana는 host port를 직접 열지 않고 nginx의 `/grafana/` 경로 뒤에서만 접근합니다.
+- nginx는 `/grafana/` 요청 전에 `/api/v1/auth/me`로 Django 세션 로그인 여부를 확인합니다. 미로그인 사용자는 `/api/v1/auth/login`으로 이동합니다.
 - Prometheus는 외부 포트를 열지 않고 `shared-net` 내부에서 Grafana datasource로만 사용합니다.
 - Prometheus 보관 기간은 `PROMETHEUS_RETENTION_TIME`으로 조정합니다. 기본값은 `15d`입니다.
 - Grafana 기본 관리자 값은 `env/grafana.env`에 있습니다. 운영 보안 정책에 맞게 `GF_SECURITY_ADMIN_PASSWORD`를 관리합니다.

@@ -23,7 +23,7 @@
 - node-exporter는 host CPU/메모리/디스크/네트워크 지표를 제공한다.
 - cAdvisor는 Docker container별 CPU/메모리/네트워크/파일시스템 지표를 제공한다.
 - Grafana는 Prometheus datasource와 기본 dashboard를 provisioning으로 자동 등록한다.
-- Grafana admin 계정, bind address, 포트는 env로 제어한다. 기본 bind address는 외부 접속을 위해 `0.0.0.0`으로 둔다.
+- Grafana admin 계정과 subpath URL은 env로 제어한다. 외부 host port는 열지 않고 nginx `/grafana/` 경로에서 Django 세션 인증 후 프록시한다.
 
 ## 실행 단계
 - [x] monitoring compose 파일을 추가한다.
@@ -37,8 +37,8 @@
 - `git status --short --branch`
 
 ## 위험과 대응
-- 위험: Grafana가 외부 접속 가능 상태로 노출된다.
-- 대응: 비밀번호는 사용자 지정값으로 설정하고, 필요 시 방화벽 또는 `GRAFANA_BIND_ADDRESS=127.0.0.1`로 제한한다.
+- 위험: Grafana가 외부 접속 가능 상태로 직접 노출된다.
+- 대응: Grafana host port를 제거하고 nginx `/grafana/` 경로에서 기존 Django 세션 인증 후 프록시한다.
 - 위험: Prometheus/cAdvisor가 Docker socket 또는 host fs를 읽어 보안 민감도가 올라간다.
 - 대응: Prometheus는 외부 포트를 열지 않고 Grafana만 노출한다.
 
@@ -48,3 +48,4 @@
 - 2026-07-07: `docker compose config`, Prometheus config check, Grafana dashboard JSON parse 검증을 통과했다.
 - 2026-07-07: Grafana 기본 bind address를 외부 접속용 `0.0.0.0`으로 변경하고 admin password를 사용자 지정값으로 설정했다.
 - 2026-07-07: 모니터링 include 위치를 `docker-compose.yml`에서 `compose/prod.infra.yml`로 이동했다.
+- 2026-07-07: Grafana 직접 port 노출을 제거하고 nginx `/grafana/` 경로에서 Django 세션 인증 후 접근하도록 변경했다.

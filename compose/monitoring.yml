@@ -58,8 +58,8 @@ services:
       - ../env/grafana.env
     depends_on:
       - prometheus
-    ports:
-      - "${GRAFANA_BIND_ADDRESS:-0.0.0.0}:${GRAFANA_PORT:-3001}:3000"
+    expose:
+      - "3000"
     volumes:
       - grafana_data:/var/lib/grafana
       - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
