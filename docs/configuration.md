@@ -10,10 +10,23 @@
 | `env/api.dev.env` | 로컬 API | dummy ADFS/RAG/LLM/Mail/Jira 연결 |
 | `env/api.oidc.dev.env` | OIDC 개발 API | 실제 OIDC/RAG 개발 연결용 override |
 | `env/api.prod.env` | 운영 API | 운영 배포 템플릿 |
+| `env/web.common.env` | Web 공통 | 모든 Web 환경에서 공유하는 브라우저 노출 설정 |
 | `env/web.dev.env` | 로컬 Web | local browser/backend URL |
 | `env/web.oidc.dev.env` | OIDC 개발 Web | nginx 경유 OIDC 개발 URL |
 | `env/web.prod.env` | 운영 Web | 운영 site/backend URL |
 | `env/minio.env` | MinIO | local MinIO 계정과 endpoint |
+| `env/grafana.env` | Grafana | 모니터링 콘솔 관리자 계정과 기본 보안 설정 |
+
+## Env / Compose 관리 원칙
+
+- 공통 기본값은 `*.common.env`에 두고, dev/OIDC/prod 차이는 환경별 env 파일에만 둡니다.
+- `VITE_*` 값은 브라우저 번들에 포함될 수 있으므로 secret을 넣지 않습니다.
+- 운영 Web의 `VITE_*` build arg는 빌드 시점 값입니다. `env_file` 변경만으로 이미 빌드된 정적 번들이 바뀌지 않습니다.
+- 서비스 고유 infra 설정은 `env/minio.env`, `env/grafana.env`처럼 서비스별 env 파일에 둡니다.
+- Compose 계층은 app과 infra를 분리합니다. 앱 컨테이너는 `compose/*.app.yml`, 운영 보조 서비스는 `compose/*.infra.yml` 또는 infra에서 include하는 파일에 둡니다.
+- Airflow Compose 공통 env에는 Airflow runtime과 DAG 공통 연결/인증 값만 둡니다. DAG별 schedule/timeout/limit/dry-run 기본값은 각 DAG 코드에 둡니다.
+- password/token/key/secret 값은 실제 운영에서는 배포 secret manager나 외부 env injection으로 관리합니다. repo env 파일에는 로컬/템플릿 값만 둡니다.
+- env/Compose 변경 후 `bash scripts/agent/check_compose_configs.sh`로 dev/OIDC/prod Compose 병합 결과를 확인합니다.
 
 ## 주요 설정 그룹
 
@@ -33,9 +46,7 @@
 | `FTP_*` / Data Movement FTP | `FTP_USER`, `FTP_PASS`, `FTP_PORT`, `FTP_PASV_ADDRESS`, `FTP_PASV_MIN_PORT`, `FTP_PASV_MAX_PORT` | `data_movement` 업로드용 FTP 계정, 접속 port, passive mode address/port |
 | `OIDC_*` / `ADFS_*` / Auth/OIDC | `OIDC_CLIENT_ID`, `OIDC_ISSUER`, `ADFS_AUTH_URL`, `ADFS_LOGOUT_URL`, `OIDC_REDIRECT_URI`, `ADFS_CER_PATH`, `ALLOWED_REDIRECT_HOSTS` | ADFS/OIDC 로그인 |
 | Airflow trigger | `AIRFLOW_TRIGGER_TOKEN` | 수집/동기화 trigger 보호용 Bearer token |
-| Airflow L3 Spider mail DAG | `L3_SPIDER_MAIL_TRIGGER_SCHEDULE`, `L3_SPIDER_MAIL_TRIGGER_HTTP_TIMEOUT`, `L3_SPIDER_MAIL_TRIGGER_LIMIT` | `l3_spider_mail_trigger` DAG의 polling 주기와 실행 옵션 |
-| Airflow data movement DAG | `DATA_MOVEMENT_LOAD_*` | `data_movement_file_load` DAG의 파일 적재 실행 옵션 |
-| Airflow CTTTM summary DAG | `DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_*` | `ct_process_comment_summary` DAG의 CTTTM comment 요약 실행 옵션 |
+| Airflow DAG overrides | `L3_SPIDER_MAIL_TRIGGER_*`, `DATA_MOVEMENT_LOAD_*`, `DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_*` | 필요할 때만 외부 env injection으로 덮어쓰는 DAG별 schedule/timeout/limit/dry-run 옵션. 기본값은 각 DAG 코드에 둠 |
 | Emails POP3/OCR | `EMAIL_POP3_*`, `EMAIL_OCR_INTERNAL_TOKEN`, `EMAIL_EXCLUDED_SUBJECT_PREFIXES` | 메일 수집과 OCR worker |
 | Drone POP3/Jira/Mail/Messenger | `DRONE_*`, `KNOX_MESSENGER_*` | Drone SOP 수집과 채널별 전송 |
 | Assistant/RAG/LLM | `ASSISTANT_*`, `RAG_*` | RAG 검색, RAG 문서 등록/삭제, LLM 답변 |
@@ -43,7 +54,25 @@
 | `MAIL_API_*` / Mail API | `MAIL_API_URL`, `MAIL_API_KEY`, `MAIL_API_SYSTEM_ID`, `MAIL_API_KNOX_ID` | 외부 Mail API 전송 |
 | MinIO | `MINIO_*` | 메일 asset storage |
 | `VITE_*` / Web | `VITE_BACKEND_URL`, `BACKEND_API_URL`, `VITE_ASSISTANT_API_URL`, `VITE_AIRFLOW_BASE_URL`, `VITE_SITE_URL` | 브라우저와 container 내부 API URL |
-| `VITE_PORTAL_*` / Web | `VITE_PORTAL_PMX_URL`, `VITE_PORTAL_MOSAIC_URL`, `VITE_PORTAL_CONFLUENCE_URL` | Portal 전역 네비게이션의 외부 링크. 비어 있으면 메뉴에서 숨김 |
+| `VITE_PORTAL_*` / Web | `VITE_PORTAL_PMX_URL`, `VITE_PORTAL_MOSAIC_URL`, `VITE_PORTAL_CONFLUENCE_URL`, `VITE_TTTM_SPIDER_URL` | Portal 전역 네비게이션과 iframe 임베드용 외부 링크. 비어 있으면 메뉴 또는 화면에서 숨김/안내 |
+| Monitoring | `GRAFANA_BIND_ADDRESS`, `GRAFANA_PORT`, `PROMETHEUS_RETENTION_TIME`, `GF_SECURITY_ADMIN_USER`, `GF_SECURITY_ADMIN_PASSWORD` | Grafana bind address/접속 포트, Prometheus 보관 기간, Grafana 관리자 계정 |
+
+### Web 공통 환경 변수
+
+- `env/web.common.env`는 dev/OIDC dev/prod Web 서비스가 공통으로 읽는 브라우저 노출 설정입니다.
+- `VITE_TTTM_SPIDER_URL`은 TTTM Spider iframe 임베드 URL이며, 기본값은 `env/web.common.env`에서 관리합니다.
+- Vite의 `VITE_*` 값은 운영 정적 빌드 시점에 번들에 포함됩니다. 운영 빌드 값 override가 필요하면 Compose 실행 환경에서 `VITE_TTTM_SPIDER_URL`을 함께 주입합니다.
+
+### 모니터링 스택
+
+- 운영 인프라 Compose인 `compose/prod.infra.yml`은 `compose/monitoring.yml`을 함께 include합니다.
+- 포함 서비스는 `prometheus`, `node-exporter`, `cadvisor`, `grafana`입니다.
+- Grafana는 기본적으로 host `0.0.0.0:3001`에 노출됩니다. 로컬 접속으로 제한하려면 Compose 실행 환경에서 `GRAFANA_BIND_ADDRESS=127.0.0.1`을 지정합니다.
+- Prometheus는 외부 포트를 열지 않고 `shared-net` 내부에서 Grafana datasource로만 사용합니다.
+- Prometheus 보관 기간은 `PROMETHEUS_RETENTION_TIME`으로 조정합니다. 기본값은 `15d`입니다.
+- Grafana 기본 관리자 값은 `env/grafana.env`에 있습니다. 운영 보안 정책에 맞게 `GF_SECURITY_ADMIN_PASSWORD`를 관리합니다.
+- 기본 dashboard `App Load Overview`는 host CPU/메모리/파일시스템/네트워크와 container별 CPU/메모리 추세를 표시합니다.
+- endpoint별 API latency, HTTP status, Django DB query 추세는 아직 앱 내부 metric이 없으므로 별도 instrumentation을 추가해야 합니다.
 
 ### 외부 앱 사용량 API
 

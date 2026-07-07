@@ -74,6 +74,7 @@ services:
     build:
       context: ../apps/web
     env_file:
+      - ../env/web.common.env
       - ../env/web.oidc.dev.env
     depends_on:
       - api

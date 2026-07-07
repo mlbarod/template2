@@ -74,7 +74,9 @@ services:
         VITE_PORTAL_PMX_URL: ${VITE_PORTAL_PMX_URL:-}
         VITE_PORTAL_MOSAIC_URL: ${VITE_PORTAL_MOSAIC_URL:-}
         VITE_PORTAL_CONFLUENCE_URL: ${VITE_PORTAL_CONFLUENCE_URL:-}
+        VITE_TTTM_SPIDER_URL: ${VITE_TTTM_SPIDER_URL:-http://10.172.60.187:32710}
     env_file:
+      - ../env/web.common.env
       - ../env/web.prod.env
     depends_on:
       - api
