@@ -74,30 +74,7 @@ function buildInitialMessages(initialMessages) {
     {
       id: createMessageId("assistant"),
       role: "assistant",
-      content: "무엇을 도와드릴까요? 아래 예시는 렌더링 확인용 더미입니다.",
-    },
-    {
-      id: createMessageId("assistant"),
-      role: "assistant",
-      content: [
-        "줄바꿈 예시:",
-        "첫 줄<br>둘째 줄",
-        "",
-        "테이블 예시:",
-        "| 단계 | 설명 |",
-        "| --- | --- |",
-        "| 1 | 줄바꿈 확인 |",
-        "| 2 | 테이블 확인 |",
-        "",
-        "리스트와 코드:",
-        "- 목록 1",
-        "- 목록 2",
-        "",
-        "인라인 코드 `code` 와 블록:",
-        "```js",
-        "console.log('markdown 렌더링 테스트');",
-        "```",
-      ].join("\n"),
+      content: "무엇을 도와드릴까요?",
     },
   ]
 }
