@@ -7,9 +7,12 @@ COMPOSE_PROD=docker compose -f docker-compose.yml
 # - DB: airflow-postgres
 # - Airflow: airflow-init, airflow-webserver, airflow-scheduler
 # - FTP: ftp
+# - Monitoring: OIDC/prod에서 prometheus, node-exporter, cadvisor, grafana
 INFRA_SERVICES=airflow-postgres airflow-init airflow-webserver airflow-scheduler ftp
 INFRA_BUILD_SERVICES=airflow-init airflow-webserver airflow-scheduler
-PROD_INFRA_SERVICES=$(INFRA_SERVICES) prometheus node-exporter cadvisor grafana
+MONITORING_SERVICES=prometheus node-exporter cadvisor grafana
+OIDC_INFRA_SERVICES=$(INFRA_SERVICES) $(MONITORING_SERVICES)
+PROD_INFRA_SERVICES=$(INFRA_SERVICES) $(MONITORING_SERVICES)
 
 # app은 실제 애플리케이션 기능을 구성하는 서비스입니다.
 # dev는 로컬 dummy 외부계(adfs)를 app으로 취급합니다.
@@ -83,7 +86,7 @@ oidc-app-down:
 
 # OIDC infra만 올립니다.
 oidc-infra-up: network
-	$(COMPOSE_OIDC) up -d $(INFRA_SERVICES)
+	$(COMPOSE_OIDC) up -d $(OIDC_INFRA_SERVICES)
 
 # OIDC infra 이미지 중 빌드가 필요한 Airflow 이미지만 다시 빌드합니다.
 oidc-infra-build: network
@@ -91,8 +94,8 @@ oidc-infra-build: network
 
 # OIDC infra 컨테이너만 중지하고 제거합니다.
 oidc-infra-down:
-	$(COMPOSE_OIDC) stop $(INFRA_SERVICES)
-	$(COMPOSE_OIDC) rm -f $(INFRA_SERVICES)
+	$(COMPOSE_OIDC) stop $(OIDC_INFRA_SERVICES)
+	$(COMPOSE_OIDC) rm -f $(OIDC_INFRA_SERVICES)
 
 # prod 전체 실행: infra를 먼저 올린 뒤 app을 올립니다.
 prod:

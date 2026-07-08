@@ -1,5 +1,6 @@
 include:
   - airflow.internal.yml
+  - monitoring.yml
 
 services:
   ftp:

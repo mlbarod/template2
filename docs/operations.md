@@ -45,6 +45,7 @@ make prod-app-down
 ```
 
 Airflow/FTP 기반 데이터 적재 작업이 필요하면 infra를 별도로 조작합니다.
+OIDC/prod infra에는 monitoring 서비스도 함께 포함됩니다.
 
 ```bash
 make dev-infra-up
@@ -58,7 +59,7 @@ make prod-infra-build
 make prod-infra-down
 ```
 
-운영 compose에는 Airflow/FTP 외에 monitoring 서비스도 포함됩니다.
+OIDC/prod compose에는 Airflow/FTP 외에 monitoring 서비스도 포함됩니다.
 
 주요 주소:
 

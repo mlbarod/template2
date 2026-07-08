@@ -99,7 +99,7 @@
 
 ### 모니터링 스택
 
-- 운영 인프라 Compose인 `compose/prod.infra.yml`은 `compose/monitoring.yml`을 함께 include합니다.
+- 사내 OIDC/운영 인프라 Compose인 `compose/oidc.infra.yml`, `compose/prod.infra.yml`은 `compose/monitoring.yml`을 함께 include합니다.
 - 포함 서비스는 `prometheus`, `node-exporter`, `cadvisor`, `grafana`입니다.
 - Grafana는 host port를 직접 열지 않고 nginx의 `/grafana/` 경로 뒤에서만 접근합니다.
 - nginx는 `/grafana/` 요청 전에 `/api/v1/auth/me`로 Django 세션 로그인 여부를 확인합니다. 미로그인 사용자는 `/api/v1/auth/login`으로 이동합니다.
