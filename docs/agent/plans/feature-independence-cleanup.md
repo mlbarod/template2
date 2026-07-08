@@ -8,7 +8,7 @@
 ## 현재 상태
 - frontend boundary audit는 기존 기준으로 통과하지만, feature facade 경유 cross-feature import는 허용하고 있다.
 - `ChatWidget`이 여러 feature shell에서 직접 import된다.
-- `HomeShell`/`GlobalNavbarShell`이 `features/home`에서 layout 역할로 공개된다.
+- home layout alias exports가 `features/home`에서 layout 역할로 공개된다.
 - `account` feature facade가 계정 UI와 공통 사용자/소속 API를 함께 공개한다.
 - backend `api.account.apps.AccountConfig.ready()`가 `api.drone.services`를 호출한다.
 
@@ -36,7 +36,7 @@
 
 ## 실행 단계
 - [x] 관련 frontend imports와 layout/account 코드 조사
-- [x] `HomeShell`/`GlobalNavbarShell`을 layout 계층으로 이동
+- [x] home layout alias exports를 layout 계층으로 이동
 - [x] `ChatWidget` 렌더링을 layout 계층으로 이동하고 feature shell imports 제거
 - [x] account 공통 API/hook/card를 shared 계층으로 이동 또는 래핑
 - [x] assistant-emails 직접 의존 제거

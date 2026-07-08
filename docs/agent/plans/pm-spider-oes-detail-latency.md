@@ -48,7 +48,7 @@
 - [x] 실제 mock 조건으로 로딩 시간 재측정
 
 ## 검증
-- 통과: `python3 -m py_compile make_pm_spider_raw_mock.py apps/api/api/pm_comparison/selectors.py apps/api/api/pm_comparison/services/__init__.py apps/api/api/pm_comparison/tests.py`
+- 통과: `python3 -m py_compile scripts/mock_data/pm_spider/make_raw_mock.py apps/api/api/pm_comparison/selectors.py apps/api/api/pm_comparison/services/__init__.py apps/api/api/pm_comparison/tests.py`
 - 통과: `docker compose -f docker-compose.dev.yml exec -T api python manage.py test api.pm_comparison`
 - 통과: 실제 mock 조건 OES heatmap service 2.4~2.5초, JSON 직렬화 0.16초, 응답 약 3.9MB
 - 통과: 실제 mock 조건 OES trajectory-only service 0.818초

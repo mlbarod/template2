@@ -28,6 +28,7 @@ Detailed execution workflows are delegated to `.codex/skills/*`.
 - Frontend boundary audit: `.codex/skills/frontend-boundary-audit/SKILL.md`
 - Safe file edit/output format: `.codex/skills/safe-file-edit-output/SKILL.md`
 - Offsite contract synchronization: `.codex/skills/offsite-dev-contract-sync/SKILL.md`
+- Branch merge routine: `.codex/skills/branch-merge-routine/SKILL.md`
 
 ## 0-4. Planning and Evaluation
 - For complex changes, use `docs/agent/PLANS.md`.
@@ -78,6 +79,7 @@ Detailed execution workflows are delegated to `.codex/skills/*`.
 - Assume offsite/local development may not have corporate network access.
 - Never hardcode intranet URLs.
 - External dependency URLs must remain env-driven.
+- Exception: approved internal package or driver artifact URLs may be pinned in OIDC/prod-only Compose build args when the artifact is versioned, not a credential or user-specific endpoint, unused by `docker-compose.dev.yml`, and documented in `docs/configuration.md`.
 - If auth/RAG/assistant/mail contract changes, local mock/dev wiring must stay runnable.
 - Backend tests/commands must run in Docker Compose `api` container.
 - Detailed offsite sync steps are in `offsite-dev-contract-sync` skill.

@@ -125,6 +125,13 @@ class CtProcessCommentStructureTests(SimpleTestCase):
         self.assertTrue(core_field.null)
         self.assertTrue(core_field.blank)
 
+    def test_model_indexes_support_summary_batch_query(self) -> None:
+        """요약 대상 선별 쿼리를 지원하는 partial index가 있는지 확인합니다."""
+
+        index_names = {index.name for index in CtProcessComment._meta.indexes}
+
+        self.assertIn("idx_ct_prc_cmt_pend", index_names)
+
     def test_build_summary_prompt_groups_contents_by_comment_timestamp(self) -> None:
         """comment header 다음 내용은 다음 header 전까지 같은 시간 이벤트로 묶습니다."""
 

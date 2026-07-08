@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import zlib
+import warnings
 from datetime import datetime, timezone as datetime_timezone
 from io import StringIO
 from pathlib import Path
@@ -13,6 +14,7 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import SimpleTestCase, TestCase, override_settings
 
+from api.data_movement.eqp_status_chg import selectors
 from api.data_movement.eqp_status_chg.management.commands.load_eqp_status_chg import services
 from api.data_movement.eqp_status_chg.models import EqpStatusChg, EqpStatusChgLoadJob
 from api.data_movement.eqp_status_chg.services import loader as loader_module
@@ -200,3 +202,31 @@ class EqpStatusChgLifecycleTests(TestCase):
         self.assertEqual(updated_row.eqp_status_type, "RUN")
         self.assertEqual(updated_row.chg_comment, "new")
         self.assertFalse(EqpStatusChg.objects.filter(eqp_event_key="999").exists())
+
+    def test_selector_normalizes_date_filters_without_naive_datetime_warning(self) -> None:
+        """문자열 날짜 경계를 timezone-aware 필터 값으로 변환합니다."""
+
+        EqpStatusChg.objects.create(
+            eqp_cb="EAAA301-A",
+            eqp_cb_lookup="EAAA301-A",
+            line_id="L1",
+            chg_time=datetime(2026, 7, 1, 10, 0, tzinfo=datetime_timezone.utc),
+            eqp_status_type="RUN",
+            eqp_event_key="200",
+        )
+
+        with warnings.catch_warnings(record=True) as captured:
+            warnings.simplefilter("always", RuntimeWarning)
+            logs = selectors.fetch_eqp_timeline_logs(
+                eqp_id="EAAA301-A",
+                start_at="2026-07-01",
+                end_at=datetime(2026, 7, 1, 23, 59, 59),
+            )
+
+        naive_datetime_warnings = [
+            warning
+            for warning in captured
+            if "received a naive datetime" in str(warning.message)
+        ]
+        self.assertEqual(naive_datetime_warnings, [])
+        self.assertEqual([log["id"] for log in logs], ["EQP-200"])

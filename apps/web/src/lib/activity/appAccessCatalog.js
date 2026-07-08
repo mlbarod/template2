@@ -30,6 +30,11 @@ const APP_ACCESS_RULES = [
     prefixes: ["/pm_spider"],
   },
   {
+    appId: "tttm-spider",
+    appName: "TTTM Spider",
+    prefixes: ["/tttm_spider"],
+  },
+  {
     appId: "teamstaff",
     appName: "Teamstaff",
     prefixes: ["/teamstaff"],

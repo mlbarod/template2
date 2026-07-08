@@ -14,6 +14,7 @@ import { lineDashboardRoutes } from "@/features/line-dashboard"
 import { l3SpiderRoutes } from "@/features/l3-spider"
 import { pmSpiderRoutes } from "@/features/pm-spider"
 import { teamstaffRoutes } from "@/features/teamstaff"
+import { tttmSpiderRoutes } from "@/features/tttm-spider"
 import { TkinPreventDashboardRoute, observerRoutes } from "@/features/observer"
 import { vocRoutes } from "@/features/voc"
 import { ChatWidget, assistantRoutes } from "@/features/assistant"
@@ -47,6 +48,7 @@ const protectedFeatureRoutes = [
   ...fdcTrendRoutes,
   ...l3SpiderRoutes,
   ...pmSpiderRoutes,
+  ...tttmSpiderRoutes,
   ...appstoreRoutes,
   ...accessStatsRoutes,
   ...emailsRoutes,
@@ -61,7 +63,7 @@ function AssistantWidgetOutlet() {
   const availableMailboxes = Array.isArray(mailboxesData?.results)
     ? mailboxesData.results
     : []
-  const hideChatWidget = location.pathname === "/l3_spider"
+  const hideChatWidget = ["/l3_spider", "/tttm_spider"].includes(location.pathname)
 
   return (
     <>

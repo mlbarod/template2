@@ -102,6 +102,17 @@ export const PORTAL_BRAND_REGISTRY = Object.freeze({
       alt: "PM Spider",
     },
   },
+  "tttm-spider": {
+    key: "tttm-spider",
+    name: "TTTM Spider",
+    pathPrefixes: ["/tttm_spider"],
+    mark: {
+      type: "image",
+      src: spiderLogoLightPng,
+      darkSrc: spiderLogoDarkPng,
+      alt: "TTTM Spider",
+    },
+  },
   "access-stats": {
     key: "access-stats",
     name: "접속 현황",

@@ -15,6 +15,12 @@
 | MinIO | Emails/Common | `minio` service |
 | Airflow | Account/Emails/Drone trigger | Bearer token |
 
+## 참고 문서
+
+| 문서 | 용도 |
+| --- | --- |
+| `docs/integrations/proxy-mirrors.md` | 외부 package repository public URL과 내부 proxy mirror 이름 매핑 |
+
 ## 로컬 dummy 외부계
 
 `apps/adfs_dummy`는 로컬 개발에서 다음 역할을 대체합니다.

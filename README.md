@@ -13,37 +13,34 @@
 | Env | `env` | Docker Compose 환경 변수 |
 | Proxy | `deploy/nginx` | 로컬 통합 진입점 |
 
-## 로컬에서 실행하기
+## 실행 기준
 
-개발 환경은 Docker Compose 기준입니다.
+일반 사용자는 root의 `make` 명령만 사용합니다.
+`docker-compose.dev.yml`, `docker-compose.oidc.yml`, `docker-compose.yml`은 Makefile이 감싸는 실행 구현입니다.
+
+| 명령 | 용도 | dependency source |
+| --- | --- | --- |
+| `make dev` | 로컬 개발 전용 | public registry/package source |
+| `make oidc` | 사내 OIDC 검증/스테이징 | internal mirror |
+| `make prod` | 운영 compose 조립 | internal mirror |
+
+로컬 개발은 아래 명령으로 시작합니다.
 
 ```bash
 make dev
 ```
 
-실행 진입점은 root의 `docker-compose.dev.yml`, `docker-compose.oidc.yml`, `docker-compose.yml`입니다.
-내부 조각 파일은 `compose/` 아래에 두며, 일반 작업에서는 `make` 명령만 사용합니다.
+`make dev`는 Web, API, Nginx, MinIO, dummy ADFS/RAG/LLM/Mail/Jira를 실행합니다.
+API DB는 compose 의존성으로 함께 올라가며, Airflow/FTP는 기본 실행에서 제외됩니다.
 
-`make dev`는 일반 개발에 필요한 Web, API, Nginx, MinIO, dummy 외부계를 실행합니다.
-API가 사용하는 DB는 compose 의존성으로 함께 올라가며, Airflow/FTP는 기본 실행에서 제외합니다.
+서비스 그룹은 `app`과 `infra`로 나뉩니다.
 
-Airflow/FTP 기반 데이터 적재 작업이 필요할 때만 infra를 별도로 실행합니다.
+| 그룹 | 포함 서비스 | 사용 시점 |
+| --- | --- | --- |
+| `app` | API, Web, Nginx, MinIO, MinIO init, dev dummy ADFS | 일반 앱 개발/검증 |
+| `infra` | Airflow DB, Airflow init/webserver/scheduler, FTP | 데이터 적재와 Airflow DAG 검증 |
 
-```bash
-make dev-infra-up
-make dev-app-up
-make dev-app-build
-make dev-app-down
-```
-
-실 OIDC 개발과 운영 조립도 같은 방식입니다.
-
-```bash
-make oidc
-make oidc-app-build
-make prod
-make prod-app-build
-```
+자세한 실행 명령은 `사용방법.md`를 봅니다.
 
 실행 후 주로 보는 주소는 다음과 같습니다.
 
@@ -59,6 +56,8 @@ make prod-app-build
 npm run web:dev
 npm run web:build
 npm run web:lint
+make dev-app-build
+make dev-infra-up
 make check-api
 make test-api
 make makemigrations-check

@@ -1,3 +1,17 @@
+x-airflow-common-env: &airflow-common-env
+  AIRFLOW__CORE__EXECUTOR: LocalExecutor
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:${POSTGRES_PORT:-8010}/airflow
+  AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+  AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+  AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+  AIRFLOW__WEBSERVER__BASE_URL: ${AIRFLOW_WEBSERVER_BASE_URL:-http://localhost/airflow}
+  AIRFLOW__WEBSERVER__WEB_SERVER_URL_PREFIX: /airflow
+  AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-dev-airflow-webserver-secret-key}
+  AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
+  AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
+  AIRFLOW_API_BASE_URL: ${AIRFLOW_API_BASE_URL:-http://api:8000}
+  AIRFLOW_TRIGGER_TOKEN: ${AIRFLOW_TRIGGER_TOKEN:-5ca99f0ae7b1fcd3f958ebb1c2ee4639d0a8fada21e8ff009d27f42cd2bbf31e}
+
 services:
   airflow-postgres:
     image: postgres:16
@@ -22,10 +36,7 @@ services:
           - airflow-postgres
 
   airflow-init:
-    image: airflow-with-codeserver:2.11.0
-    build:
-      context: ../airflow
-      dockerfile: Dockerfile
+    image: apache/airflow:2.11.0
     entrypoint: /bin/bash
     command:
       - -c
@@ -34,25 +45,7 @@ services:
         chown -R "$${AIRFLOW_UID:-50000}:0" /sources/{logs,dags,plugins}
         exec /entrypoint airflow version
     environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:${POSTGRES_PORT:-8010}/airflow
-      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
-      AIRFLOW__WEBSERVER__BASE_URL: ${AIRFLOW_WEBSERVER_BASE_URL:-http://localhost/airflow}
-      AIRFLOW__WEBSERVER__WEB_SERVER_URL_PREFIX: /airflow
-      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-dev-airflow-webserver-secret-key}
-      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
-      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
-      AIRFLOW_API_BASE_URL: ${AIRFLOW_API_BASE_URL:-http://api:8000}
-      AIRFLOW_TRIGGER_TOKEN: ${AIRFLOW_TRIGGER_TOKEN:-5ca99f0ae7b1fcd3f958ebb1c2ee4639d0a8fada21e8ff009d27f42cd2bbf31e}
-      L3_SPIDER_MAIL_TRIGGER_SCHEDULE: "${L3_SPIDER_MAIL_TRIGGER_SCHEDULE:-*/5 * * * *}"
-      L3_SPIDER_MAIL_TRIGGER_HTTP_TIMEOUT: "${L3_SPIDER_MAIL_TRIGGER_HTTP_TIMEOUT:-60}"
-      L3_SPIDER_MAIL_TRIGGER_LIMIT: "${L3_SPIDER_MAIL_TRIGGER_LIMIT:-20}"
-      DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_SCHEDULE: "${DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_SCHEDULE:-*/1 * * * *}"
-      DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_HTTP_TIMEOUT: "${DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_HTTP_TIMEOUT:-1800}"
-      DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_LIMIT: "${DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_LIMIT:-}"
-      DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_DRY_RUN: "${DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_DRY_RUN:-false}"
+      <<: *airflow-common-env
       _AIRFLOW_DB_MIGRATE: "true"
       _AIRFLOW_WWW_USER_CREATE: "true"
       _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_USERNAME:-airflow}
@@ -67,38 +60,16 @@ services:
       - shared-net
 
   airflow-webserver:
-    image: airflow-with-codeserver:2.11.0
-    build:
-      context: ../airflow
-      dockerfile: Dockerfile
+    image: apache/airflow:2.11.0
     command: webserver
     environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:${POSTGRES_PORT:-8010}/airflow
-      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
-      AIRFLOW__WEBSERVER__BASE_URL: ${AIRFLOW_WEBSERVER_BASE_URL:-http://localhost/airflow}
-      AIRFLOW__WEBSERVER__WEB_SERVER_URL_PREFIX: /airflow
-      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-dev-airflow-webserver-secret-key}
-      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
-      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
-      AIRFLOW_API_BASE_URL: ${AIRFLOW_API_BASE_URL:-http://api:8000}
-      AIRFLOW_TRIGGER_TOKEN: ${AIRFLOW_TRIGGER_TOKEN:-5ca99f0ae7b1fcd3f958ebb1c2ee4639d0a8fada21e8ff009d27f42cd2bbf31e}
-      L3_SPIDER_MAIL_TRIGGER_SCHEDULE: "${L3_SPIDER_MAIL_TRIGGER_SCHEDULE:-*/5 * * * *}"
-      L3_SPIDER_MAIL_TRIGGER_HTTP_TIMEOUT: "${L3_SPIDER_MAIL_TRIGGER_HTTP_TIMEOUT:-60}"
-      L3_SPIDER_MAIL_TRIGGER_LIMIT: "${L3_SPIDER_MAIL_TRIGGER_LIMIT:-20}"
-      DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_SCHEDULE: "${DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_SCHEDULE:-*/1 * * * *}"
-      DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_HTTP_TIMEOUT: "${DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_HTTP_TIMEOUT:-1800}"
-      DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_LIMIT: "${DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_LIMIT:-}"
-      DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_DRY_RUN: "${DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_DRY_RUN:-false}"
+      <<: *airflow-common-env
     user: "${AIRFLOW_UID:-50000}:0"
     volumes:
       - "../airflow/dags:/opt/airflow/dags"
       - "../airflow/logs:/opt/airflow/logs"
       - "../airflow/config:/opt/airflow/config"
       - "../airflow/plugins:/opt/airflow/plugins"
-      - "airflow_user_site:/home/airflow/.local"
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/airflow/health"]
       interval: 10s
@@ -116,38 +87,16 @@ services:
           - airflow-webserver
 
   airflow-scheduler:
-    image: airflow-with-codeserver:2.11.0
-    build:
-      context: ../airflow
-      dockerfile: Dockerfile
+    image: apache/airflow:2.11.0
     command: scheduler
     environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:${POSTGRES_PORT:-8010}/airflow
-      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
-      AIRFLOW__WEBSERVER__BASE_URL: ${AIRFLOW_WEBSERVER_BASE_URL:-http://localhost/airflow}
-      AIRFLOW__WEBSERVER__WEB_SERVER_URL_PREFIX: /airflow
-      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-dev-airflow-webserver-secret-key}
-      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
-      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
-      AIRFLOW_API_BASE_URL: ${AIRFLOW_API_BASE_URL:-http://api:8000}
-      AIRFLOW_TRIGGER_TOKEN: ${AIRFLOW_TRIGGER_TOKEN:-5ca99f0ae7b1fcd3f958ebb1c2ee4639d0a8fada21e8ff009d27f42cd2bbf31e}
-      L3_SPIDER_MAIL_TRIGGER_SCHEDULE: "${L3_SPIDER_MAIL_TRIGGER_SCHEDULE:-*/5 * * * *}"
-      L3_SPIDER_MAIL_TRIGGER_HTTP_TIMEOUT: "${L3_SPIDER_MAIL_TRIGGER_HTTP_TIMEOUT:-60}"
-      L3_SPIDER_MAIL_TRIGGER_LIMIT: "${L3_SPIDER_MAIL_TRIGGER_LIMIT:-20}"
-      DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_SCHEDULE: "${DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_SCHEDULE:-*/1 * * * *}"
-      DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_HTTP_TIMEOUT: "${DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_HTTP_TIMEOUT:-1800}"
-      DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_LIMIT: "${DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_LIMIT:-}"
-      DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_DRY_RUN: "${DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_DRY_RUN:-false}"
+      <<: *airflow-common-env
     user: "${AIRFLOW_UID:-50000}:0"
     volumes:
       - "../airflow/dags:/opt/airflow/dags"
       - "../airflow/logs:/opt/airflow/logs"
       - "../airflow/config:/opt/airflow/config"
       - "../airflow/plugins:/opt/airflow/plugins"
-      - "airflow_user_site:/home/airflow/.local"
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
       interval: 10s
@@ -161,71 +110,6 @@ services:
         condition: service_completed_successfully
     networks:
       - shared-net
-
-  airflow-code:
-    image: airflow-with-codeserver:2.11.0
-    build:
-      context: ../airflow
-      dockerfile: Dockerfile
-    entrypoint: ["/bin/bash", "-lc"]
-    command:
-      - >
-        mkdir -p
-        /home/airflow/.config/code-server
-        /home/airflow/.local/share/code-server
-        /home/airflow/.local/share/code-server/extensions
-        /home/airflow/.vscode
-        && chown -R "$${AIRFLOW_UID:-50000}:0" /home/airflow
-        && chmod 700 /home/airflow/.config /home/airflow/.config/code-server
-        && exec code-server /opt/airflow
-        --bind-addr 0.0.0.0:8081
-        --auth password
-        --disable-telemetry
-        --user-data-dir /home/airflow/.local/share/code-server
-        --extensions-dir /home/airflow/.local/share/code-server/extensions
-    environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:${POSTGRES_PORT:-8010}/airflow
-      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
-      AIRFLOW__WEBSERVER__BASE_URL: ${AIRFLOW_WEBSERVER_BASE_URL:-http://localhost/airflow}
-      AIRFLOW__WEBSERVER__WEB_SERVER_URL_PREFIX: /airflow
-      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-dev-airflow-webserver-secret-key}
-      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
-      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
-      AIRFLOW_API_BASE_URL: ${AIRFLOW_API_BASE_URL:-http://api:8000}
-      AIRFLOW_TRIGGER_TOKEN: ${AIRFLOW_TRIGGER_TOKEN:-5ca99f0ae7b1fcd3f958ebb1c2ee4639d0a8fada21e8ff009d27f42cd2bbf31e}
-      L3_SPIDER_MAIL_TRIGGER_SCHEDULE: "${L3_SPIDER_MAIL_TRIGGER_SCHEDULE:-*/5 * * * *}"
-      L3_SPIDER_MAIL_TRIGGER_HTTP_TIMEOUT: "${L3_SPIDER_MAIL_TRIGGER_HTTP_TIMEOUT:-60}"
-      L3_SPIDER_MAIL_TRIGGER_LIMIT: "${L3_SPIDER_MAIL_TRIGGER_LIMIT:-20}"
-      DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_SCHEDULE: "${DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_SCHEDULE:-*/1 * * * *}"
-      DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_HTTP_TIMEOUT: "${DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_HTTP_TIMEOUT:-1800}"
-      DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_LIMIT: "${DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_LIMIT:-}"
-      DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_DRY_RUN: "${DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_DRY_RUN:-false}"
-      HOME: /home/airflow
-      XDG_CONFIG_HOME: /home/airflow/.config
-      XDG_DATA_HOME: /home/airflow/.local/share
-      PASSWORD: ${CODE_SERVER_PASSWORD:-airflow}
-    working_dir: /opt/airflow
-    user: "${AIRFLOW_UID:-50000}:0"
-    volumes:
-      - "../airflow/dags:/opt/airflow/dags"
-      - "../airflow/logs:/opt/airflow/logs"
-      - "../airflow/config:/opt/airflow/config"
-      - "../airflow/plugins:/opt/airflow/plugins"
-      - "airflow_user_site:/home/airflow/.local"
-    ports:
-      - "${AIRFLOW_CODE_SERVER_PORT:-8081}:8081"
-    restart: always
-    depends_on:
-      airflow-webserver:
-        condition: service_started
-    networks:
-      - shared-net
-
-volumes:
-  airflow_user_site:
 
 networks:
   shared-net:

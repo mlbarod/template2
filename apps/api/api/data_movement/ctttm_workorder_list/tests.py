@@ -108,6 +108,13 @@ class CtttmWorkorderListStructureTests(SimpleTestCase):
         self.assertEqual(CtttmWorkorderList._meta.db_table, "ctttm_workorder_list")
         self.assertEqual(CtttmWorkorderListLoadJob._meta.db_table, "ctttm_workorder_list_load_job")
 
+    def test_model_indexes_support_workorder_lookup_query(self) -> None:
+        """workorder_id 기반 설명 조회와 comment 조인을 지원하는 index가 있는지 확인합니다."""
+
+        index_names = {index.name for index in CtttmWorkorderList._meta.indexes}
+
+        self.assertIn("idx_ctttm_wo_dt_id", index_names)
+
     def test_parse_source_file_name_extracts_source_type(self) -> None:
         """파일명에서 source_type과 timestamp를 추출하는지 확인합니다."""
 

@@ -27,6 +27,7 @@ class CtttmWorkorderList(models.Model):
             models.Index(fields=["line_id"], name="idx_ctttm_wol_line"),
             models.Index(fields=["eqp_id"], name="idx_ctttm_wol_eqp"),
             models.Index(fields=["eqp_id_lookup", "-inprg_date"], name="idx_ctttm_lkp_dt"),
+            models.Index(fields=["workorder_id", "-inprg_date", "-id"], name="idx_ctttm_wo_dt_id"),
         ]
 
     def __str__(self) -> str:

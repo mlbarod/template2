@@ -1,0 +1,4 @@
+interface:
+  display_name: "Branch Merge Routine"
+  short_description: "Merge a branch with impact checks."
+  default_prompt: "브랜치 변경사항을 main에 병합하고 영향도 확인 후 검증해줘"

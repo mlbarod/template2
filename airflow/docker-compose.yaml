@@ -1,10 +1,7 @@
 # 공통 설정(이미지, 환경변수, 볼륨 등)
 x-airflow-common: &airflow-common
-  image: airflow-with-codeserver:2.11.0
+  image: ${AIRFLOW_IMAGE:-apache/airflow:2.11.0}
   pull_policy: missing
-  build:
-    context: .
-    dockerfile: Dockerfile
   env_file:
     - .env
   environment: &airflow-common-env
@@ -22,7 +19,6 @@ x-airflow-common: &airflow-common
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
     - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
-    - airflow-user-site:/home/airflow/.local
   networks:
     shared-net:
     
@@ -102,48 +98,8 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
-  airflow-code:
-    <<: *airflow-common
-    entrypoint: ["/bin/bash", "-lc"]
-    command:
-      - >
-        mkdir -p
-        /home/airflow/.config/code-server
-        /home/airflow/.local/share/code-server
-        /home/airflow/.local/share/code-server/extensions
-        /home/airflow/.vscode
-        && chown -R "${AIRFLOW_UID}:0" /home/airflow
-        && chmod 700 /home/airflow/.config /home/airflow/.config/code-server
-        && exec code-server /opt/airflow
-        --bind-addr 0.0.0.0:8081
-        --auth password
-        --disable-telemetry
-        --user-data-dir /home/airflow/.local/share/code-server
-        --extensions-dir /home/airflow/.local/share/code-server/extensions
-    environment:
-      <<: *airflow-common-env
-      HOME: /home/airflow
-      XDG_CONFIG_HOME: /home/airflow/.config
-      XDG_DATA_HOME: /home/airflow/.local/share
-      PASSWORD: ${CODE_SERVER_PASSWORD:?set-me}
-    ports:
-      - "8081:8081"
-    working_dir: /opt/airflow
-    user: "${AIRFLOW_UID:-50000}:0"
-    restart: always
-    depends_on:
-      airflow-webserver:
-        condition: service_started
-    volumes:
-      - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
-      - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
-      - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
-      - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
-      - airflow-user-site:/home/airflow/.local
-
 volumes:
   postgres-db-volume:
-  airflow-user-site:
 
 networks:
   shared-net:

@@ -20,7 +20,11 @@ def list_pending_summary_comments(
 ) -> QuerySet[CtProcessComment]:
     """OpenWebUI 요약 대상 comment row를 최근 업데이트 순으로 반환합니다."""
 
-    queryset = CtProcessComment.objects.filter(update_flag="Y").order_by("-updated_at", "-id")
+    queryset = (
+        CtProcessComment.objects.filter(update_flag="Y")
+        .only("id", "workorder_id", "contents_text", "update_flag")
+        .order_by("-updated_at", "-id")
+    )
     if workorder_id:
         queryset = queryset.filter(workorder_id=workorder_id)
     return queryset[:limit]

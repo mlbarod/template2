@@ -23,6 +23,7 @@ import { formatNumber } from "../utils/format"
 import { sortLineNames } from "../utils/selection"
 
 const shortProcess = (value) => String(value ?? "").replace(/^process_/, "")
+const EMPTY_ARRAY = []
 
 // High Risk / Warning 분리 표기
 function HrWn({ hr, wn }) {
@@ -193,7 +194,7 @@ function LineTable({ rows, selectedLine, onSelectLine, onReorder }) {
 }
 
 function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill }) {
-  const { edsSteps = [], cells = [] } = matrix ?? {}
+  const { edsSteps = EMPTY_ARRAY, cells = EMPTY_ARRAY } = matrix ?? {}
   const showLineColumn = !selectedLine
   const scopedCells = useMemo(
     () => selectedLine ? cells.filter((cell) => cell.line === selectedLine) : cells,
@@ -864,7 +865,9 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
     try {
       const saved = localStorage.getItem(storageKey)
       if (saved) setCustomLineOrder(JSON.parse(saved))
-    } catch {}
+    } catch {
+      // localStorage 접근 실패 시 기본 정렬을 유지한다.
+    }
   }, [storageKey])
 
   // 순서 변경 시 저장 (null 리셋은 저장하지 않음 — 별도로 removeItem)
@@ -872,7 +875,9 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
     if (!storageKey || customLineOrder === null) return
     try {
       localStorage.setItem(storageKey, JSON.stringify(customLineOrder))
-    } catch {}
+    } catch {
+      // 저장 실패는 화면 동작을 막지 않는다.
+    }
   }, [storageKey, customLineOrder])
 
   function handleReorder(fromIdx, toIdx) {

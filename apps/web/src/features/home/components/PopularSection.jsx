@@ -31,7 +31,7 @@ const popularServices = [
   },
   {
     icon: SquarePen,
-    title: 'Full Auto율',
+    title: 'PMx Portal',
     subtitle: 'PM 자동화 Item 통합 현황 제공',
     category: 'Fast Sample',
     popular: false,
@@ -43,7 +43,7 @@ const popularServices = [
 // ------------------------------------------------------
 // 🔶 재사용 가능한 UnifiedCard 컴포넌트
 // ------------------------------------------------------
-export const UnifiedCard = ({ children, className = '', hover = true, variant = 'default' }) => {
+const UnifiedCard = ({ children, className = '', hover = true, variant = 'default' }) => {
   const baseClasses =
     'bg-card dark:bg-card border border-border/50 rounded-2xl p-6 shadow-sm transition-all duration-300'
   const hoverClasses = hover ? 'hover:shadow-lg hover:border-primary/20 hover:-translate-y-1' : ''

@@ -1,6 +1,6 @@
 services:
   minio:
-    image: minio/minio:latest
+    image: repository.samsungds.net/proxy-docker-registry-1.docker.io/minio/minio:latest
     command: server /data --console-address ":9001"
     env_file:
       - ../env/minio.env
@@ -15,7 +15,7 @@ services:
           - minio
 
   minio-init:
-    image: minio/mc:latest
+    image: repository.samsungds.net/proxy-docker-registry-1.docker.io/minio/mc:latest
     depends_on:
       - minio
     env_file:
@@ -39,6 +39,13 @@ services:
     build:
       context: ../apps/api
       dockerfile: Dockerfile
+      args:
+        PYTHON_BASE_IMAGE: repository.samsungds.net/proxy-docker-registry-1.docker.io/python:3.12-bullseye
+        APT_DEBIAN_REPOSITORY: http://repository.samsungds.net/repository/proxy-apt-mirror.kakao.com-debian
+        APT_DEBIAN_CODENAME: bullseye
+        APT_DEBIAN_ARCH: amd64
+        PIP_INDEX_URL: http://repository.samsungds.net/repository/proxy-pypi-files.pythonhosted.org/simple
+        PIP_TRUSTED_HOST: repository.samsungds.net
     env_file:
       - ../env/api.common.env
       - ../env/api.prod.env
@@ -67,6 +74,10 @@ services:
     build:
       context: ../apps/web
       args:
+        NODE_BASE_IMAGE: repository.samsungds.net/proxy-docker-registry-1.docker.io/node:20-alpine
+        ALPINE_REPOSITORY_MIRROR: http://repository.samsungds.net/repository/proxy-raw-dl-cdn.alpinelinux.org-alpine
+        NPM_REGISTRY: http://repository.samsungds.net/repository/proxy-npm-registry.npmjs.org
+        NPM_STRICT_SSL: "false"
         VITE_BACKEND_URL: /
         VITE_AIRFLOW_BASE_URL: /airflow
         VITE_AIRFLOW_USERNAME: ${AIRFLOW_USERNAME:-airflow}
@@ -75,6 +86,7 @@ services:
         VITE_PORTAL_MOSAIC_URL: ${VITE_PORTAL_MOSAIC_URL:-}
         VITE_PORTAL_CONFLUENCE_URL: ${VITE_PORTAL_CONFLUENCE_URL:-}
     env_file:
+      - ../env/web.common.env
       - ../env/web.prod.env
     depends_on:
       - api
@@ -86,7 +98,7 @@ services:
           - web
 
   nginx:
-    image: nginx:1.27-alpine
+    image: repository.samsungds.net/proxy-docker-registry-1.docker.io/nginx:1.27-alpine
     depends_on:
       web:
         condition: service_started
@@ -95,8 +107,11 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      NGINX_ENVSUBST_FILTER: "^TTTM_SPIDER_UPSTREAM$"
+      TTTM_SPIDER_UPSTREAM: ${TTTM_SPIDER_UPSTREAM:-10.172.60.187:32710}
     volumes:
-      - "../deploy/nginx/default.prod.conf:/etc/nginx/conf.d/default.conf:ro"
+      - "../deploy/nginx/default.prod.conf:/etc/nginx/templates/default.conf.template:ro"
       - "api_static:/var/www/static:ro"
       - "../deploy/nginx/certs:/etc/nginx/certs:ro"
     networks:
