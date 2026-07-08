@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Activity, AlertTriangle, Cpu, Gauge, Inbox, Layers, Loader2 } from "lucide-react"
+import { Inbox, ListFilter, Loader2, Maximize2, Minimize2 } from "lucide-react"
 import {
   Bar,
   BarChart,
-  Cell,
   CartesianGrid,
+  LabelList,
   Legend,
   ResponsiveContainer,
   Tooltip,
@@ -25,53 +25,6 @@ import { sortLineNames } from "../utils/selection"
 const shortProcess = (value) => String(value ?? "").replace(/^process_/, "")
 const EMPTY_ARRAY = []
 
-// High Risk / Warning 분리 표기
-function HrWn({ hr, wn }) {
-  if (!hr && !wn) return <span className="text-muted-foreground/40">·</span>
-  return (
-    <span className="inline-flex items-center justify-center gap-1 tabular-nums leading-none">
-      <span className="font-bold text-destructive">High Risk {formatNumber(hr)}</span>
-      <span className="text-muted-foreground/40">/</span>
-      <span className="font-semibold text-chart-4">Warning {formatNumber(wn)}</span>
-    </span>
-  )
-}
-
-const STAT_DEFS = [
-  { key: "groups", label: "분석 그룹", icon: Layers, tone: "text-foreground" },
-  { key: "highRisk", label: "High Risk", icon: Activity, tone: "text-destructive" },
-  { key: "warning", label: "Warning", icon: AlertTriangle, tone: "text-chart-4" },
-  { key: "anomalies", label: "이상 건수", icon: Gauge, tone: "text-foreground" },
-  { key: "highRiskEqpchs", label: "이상 EQPCH", icon: Cpu, tone: "text-destructive" },
-]
-
-function SummaryStats({ h }) {
-  return (
-    <Card className="min-w-0 overflow-hidden rounded-lg py-0">
-      <div className="flex flex-wrap items-center">
-        {STAT_DEFS.map(({ key, label, icon: Icon, tone }) => (
-          <div key={key} className="flex items-center gap-3 border-r px-5 py-3 last:border-r-0">
-            <Icon className={cn("size-4 shrink-0", tone)} aria-hidden="true" />
-            <div className="min-w-0">
-              <p className={cn("text-[22px] font-semibold leading-none tabular-nums", tone)}>
-                {formatNumber(h[key])}
-              </p>
-              <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                {label}
-              </p>
-            </div>
-          </div>
-        ))}
-        <div className="ml-auto px-5 py-3 text-right text-xs leading-tight text-muted-foreground">
-          Line {formatNumber(h.lines)} · Process {formatNumber(h.processes)} · EDS {formatNumber(h.edsSteps)}
-          <br />
-          Bin {formatNumber(h.binNames)} · 총 {formatNumber(h.totalRows)}행
-        </div>
-      </div>
-    </Card>
-  )
-}
-
 // 라인별 고유 색상 팔레트
 const LINE_COLORS = [
   "rgb(37, 99, 235)", "rgb(22, 163, 74)", "rgb(217, 119, 6)",
@@ -84,6 +37,13 @@ const LINE_COLORS = [
 ]
 const HIGH_RISK_BAR_COLOR = "rgb(220, 38, 38)"
 const ANOMALY_BAR_COLOR = "rgb(217, 119, 6)"
+const LINE_TOTAL_ITEMS = [
+  { key: "groups", label: "분석 그룹", className: "text-foreground" },
+  { key: "highRisk", label: "High Risk", className: "text-destructive" },
+  { key: "warning", label: "Warning", className: "text-chart-4" },
+  { key: "anomalies", label: "이상 건수", className: "text-foreground" },
+  { key: "highRiskEqpchs", label: "이상 EQPCH", className: "text-destructive" },
+]
 
 // 전 라인 요약 테이블 — 이상감지 없는 라인도 포함, 클릭 시 매트릭스 필터, 드래그로 순서 변경
 function LineTable({ rows, selectedLine, onSelectLine, onReorder }) {
@@ -117,18 +77,18 @@ function LineTable({ rows, selectedLine, onSelectLine, onReorder }) {
       <table className="w-full table-fixed border-collapse text-[13px]">
         <colgroup>
           <col className="w-7" />
-          <col />
-          <col className="w-20" />
-          <col className="w-20" />
-          <col className="w-16" />
+          <col className="w-[142px]" />
+          <col className="w-[78px]" />
+          <col className="w-[78px]" />
+          <col className="w-[78px]" />
         </colgroup>
         <thead className="sticky top-0 z-10 bg-card">
-          <tr className="border-b">
-            <th className="px-1 py-2" />
-            <th className="px-2 py-2 text-left font-semibold text-muted-foreground">Line</th>
-            <th className="px-2 py-2 text-right font-semibold text-destructive">High Risk</th>
-            <th className="px-2 py-2 text-right font-semibold text-chart-4">Warning</th>
-            <th className="px-2 py-2 text-right font-semibold text-muted-foreground">합계</th>
+          <tr className="h-[58px] border-b">
+            <th className="px-1 py-0" />
+            <th className="px-2 py-0 text-left font-semibold text-muted-foreground">Line</th>
+            <th className="px-1 py-0 text-right font-semibold text-destructive">High Risk</th>
+            <th className="px-1 py-0 text-right font-semibold text-chart-4">Warning</th>
+            <th className="py-0 pl-1 pr-4 text-right font-semibold text-muted-foreground">합계</th>
           </tr>
         </thead>
         <tbody>
@@ -146,7 +106,7 @@ function LineTable({ rows, selectedLine, onSelectLine, onReorder }) {
                 onDragEnd={handleDragEnd}
                 onClick={() => onSelectLine?.(isSelected ? null : r.line)}
                 className={cn(
-                  "border-b transition-colors cursor-pointer",
+                  "h-[54px] border-b transition-colors cursor-pointer",
                   isDragTarget && "border-t-2 border-t-primary",
                   isSelected
                     ? "bg-primary/10 hover:bg-primary/15"
@@ -155,13 +115,13 @@ function LineTable({ rows, selectedLine, onSelectLine, onReorder }) {
                 )}
               >
                 <td
-                  className="w-6 cursor-grab px-1 py-1.5 text-center text-base text-muted-foreground/50 active:cursor-grabbing"
+                  className="w-6 cursor-grab px-1 py-2 text-center text-base text-muted-foreground/50 active:cursor-grabbing"
                   onClick={(e) => e.stopPropagation()}
                 >
                   ⠿
                 </td>
                 <td className={cn(
-                  "truncate px-2 py-1.5 font-mono font-semibold",
+                  "truncate px-2 py-2 font-mono font-semibold",
                   isSelected ? "text-primary" : "text-foreground",
                 )}>
                   {r.line}
@@ -169,17 +129,17 @@ function LineTable({ rows, selectedLine, onSelectLine, onReorder }) {
                     <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">(이상 없음)</span>
                   )}
                 </td>
-                <td className="px-2 py-1.5 text-right tabular-nums">
+                <td className="px-2 py-2 text-right tabular-nums">
                   {r.hr > 0
                     ? <span className="font-bold text-destructive">{formatNumber(r.hr)}</span>
                     : <span className="text-muted-foreground/40">·</span>}
                 </td>
-                <td className="px-2 py-1.5 text-right tabular-nums">
+                <td className="px-2 py-2 text-right tabular-nums">
                   {r.wn > 0
                     ? <span className="font-semibold text-chart-4">{formatNumber(r.wn)}</span>
                     : <span className="text-muted-foreground/40">·</span>}
                 </td>
-                <td className="px-2 py-1.5 text-right tabular-nums font-medium">
+                <td className="py-2 pl-1 pr-4 text-right tabular-nums font-medium">
                   {total > 0
                     ? <span className="text-foreground">{formatNumber(total)}</span>
                     : <span className="text-muted-foreground/40">·</span>}
@@ -193,393 +153,276 @@ function LineTable({ rows, selectedLine, onSelectLine, onReorder }) {
   )
 }
 
-function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill }) {
-  const { edsSteps = EMPTY_ARRAY, cells = EMPTY_ARRAY } = matrix ?? {}
-  const showLineColumn = !selectedLine
-  const scopedCells = useMemo(
-    () => selectedLine ? cells.filter((cell) => cell.line === selectedLine) : cells,
-    [cells, selectedLine],
+function LineSummaryTotals({ headline }) {
+  return (
+    <div className="shrink-0 border-t bg-muted/40">
+      <div className="grid grid-cols-5 divide-x">
+        {LINE_TOTAL_ITEMS.map(({ key, label, className }) => (
+          <div key={key} className="min-w-0 px-2 py-2 text-center">
+            <p className={cn("truncate text-[15px] font-bold leading-none tabular-nums", className)}>
+              {formatNumber(headline?.[key] ?? 0)}
+            </p>
+            <p className="mt-1 truncate text-[10px] font-medium text-muted-foreground">
+              {label}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
   )
+}
 
-  const { rows, activeEdsSteps, cellMap, rowTotals, colTotals, grand, cellCount, lineCount, processCount } = useMemo(() => {
-    const cellMap = new Map()
-    const rowMap = new Map()
+function ColumnFilter({ values, selected, onChange }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  const isFiltered = selected.length > 0 && selected.length < values.length
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener("mousedown", handler)
+    return () => document.removeEventListener("mousedown", handler)
+  }, [open])
+
+  const allChecked = selected.length === 0
+  const isChecked = (v) => allChecked || selected.includes(v)
+
+  function toggle(v) {
+    if (allChecked) {
+      onChange(values.filter((x) => x !== v))
+    } else {
+      const next = selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v]
+      onChange(next.length === values.length ? [] : next)
+    }
+  }
+
+  return (
+    <div ref={ref} className="relative inline-flex items-center">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          "inline-flex size-5 items-center justify-center rounded hover:bg-muted/60",
+          isFiltered ? "text-primary" : "text-muted-foreground/50 hover:text-muted-foreground"
+        )}
+      >
+        <ListFilter className="size-3.5" />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 max-h-56 min-w-[160px] overflow-auto rounded-md border bg-popover shadow-md">
+          <div className="p-1">
+            <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs hover:bg-muted">
+              <input type="checkbox" checked={allChecked} onChange={() => onChange([])} className="size-3.5 accent-primary" />
+              <span className="font-medium">전체 선택</span>
+            </label>
+            <div className="my-1 border-t" />
+            {values.map((v) => (
+              <label key={v} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs hover:bg-muted">
+                <input type="checkbox" checked={isChecked(v)} onChange={() => toggle(v)} className="size-3.5 accent-primary" />
+                <span className="font-mono">{v}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onToggleMaximized, className }) {
+  const { cells = EMPTY_ARRAY } = matrix ?? {}
+  const { rows, totals, lineCount, processCount, edsCount } = useMemo(() => {
+    const scopedCells = selectedLine ? cells.filter((cell) => cell.line === selectedLine) : cells
     const lineSet = new Set()
     const processSet = new Set()
     const edsSet = new Set()
-    const rowTotals = new Map()
-    const colTotals = new Map()
-    const grand = { hr: 0, wn: 0 }
-
-    function addTotals(map, key, hr, wn) {
-      const current = map.get(key) ?? { hr: 0, wn: 0 }
-      current.hr += hr
-      current.wn += wn
-      map.set(key, current)
-    }
-
-    for (const cell of scopedCells) {
-      const hr = cell.highRisk ?? 0
-      const wn = cell.warning ?? 0
-      if (hr + wn <= 0) continue
-
-      const rowKey = selectedLine ? cell.process : `${cell.line}||${cell.process}`
-      if (!rowMap.has(rowKey)) {
-        rowMap.set(rowKey, { key: rowKey, line: cell.line, process: cell.process })
-      }
-
-      const key = `${rowKey}||${cell.edsStep}`
-      const current = cellMap.get(key) ?? { hr: 0, wn: 0 }
-      current.hr += hr
-      current.wn += wn
-      cellMap.set(key, current)
-
-      lineSet.add(cell.line)
-      processSet.add(cell.process)
-      edsSet.add(cell.edsStep)
-      addTotals(rowTotals, rowKey, hr, wn)
-      addTotals(colTotals, cell.edsStep, hr, wn)
-      grand.hr += hr
-      grand.wn += wn
-    }
-
-    const activeEdsSteps = (edsSteps.length ? edsSteps : [...edsSet]).filter((eds) => edsSet.has(eds))
-    const lineOrder = new Map(sortLineNames([...lineSet]).map((line, index) => [line, index]))
-    const rows = [...rowMap.values()].sort((a, b) => {
-      if (!selectedLine) {
+    const totals = { highRisk: 0, warning: 0, stepSeq: 0, eqpch: 0 }
+    const lineOrder = new Map(sortLineNames([...new Set(scopedCells.map((cell) => cell.line))]).map((line, index) => [line, index]))
+    const rows = scopedCells
+      .filter((cell) => (cell.highRisk ?? 0) + (cell.warning ?? 0) > 0)
+      .map((cell) => {
+        const highRisk = cell.highRisk ?? 0
+        const warning = cell.warning ?? 0
+        const stepSeq = cell.hrStepSeqs ?? 0
+        const eqpch = cell.hrEqpchs ?? 0
+        lineSet.add(cell.line)
+        processSet.add(cell.process)
+        edsSet.add(cell.edsStep)
+        totals.highRisk += highRisk
+        totals.warning += warning
+        totals.stepSeq += stepSeq
+        totals.eqpch += eqpch
+        return {
+          key: `${cell.line}||${cell.process}||${cell.edsStep}`,
+          line: cell.line,
+          process: cell.process,
+          edsStep: cell.edsStep,
+          highRisk,
+          warning,
+          stepSeq,
+          eqpch,
+        }
+      })
+      .sort((a, b) => {
         const lineDelta = (lineOrder.get(a.line) ?? 0) - (lineOrder.get(b.line) ?? 0)
-        if (lineDelta) return lineDelta
-      }
-      const left = rowTotals.get(a.key) ?? { hr: 0, wn: 0 }
-      const right = rowTotals.get(b.key) ?? { hr: 0, wn: 0 }
-      return (right.hr + right.wn) - (left.hr + left.wn)
-        || String(a.process).localeCompare(String(b.process), undefined, { numeric: true })
-    })
-
+        return lineDelta
+          || String(a.process).localeCompare(String(b.process), undefined, { numeric: true })
+          || String(a.edsStep).localeCompare(String(b.edsStep), undefined, { numeric: true })
+      })
     return {
       rows,
-      activeEdsSteps,
-      cellMap,
-      rowTotals,
-      colTotals,
-      grand,
-      cellCount: cellMap.size,
+      totals,
       lineCount: lineSet.size,
       processCount: processSet.size,
+      edsCount: edsSet.size,
     }
-  }, [scopedCells, edsSteps, selectedLine])
+  }, [cells, selectedLine])
 
-  const hasRows = rows.length > 0 && activeEdsSteps.length > 0
+  const hasRows = rows.length > 0
+
+  const [filters, setFilters] = useState({ lineName: [], processId: [], edsStep: [] })
+
+  const uniqueLineNames = useMemo(() => [...new Set(rows.map((r) => r.line))].sort(), [rows])
+  const uniqueProcessIds = useMemo(() => [...new Set(rows.map((r) => r.process))].sort(), [rows])
+  const uniqueEdsSteps = useMemo(() => [...new Set(rows.map((r) => String(r.edsStep)))].sort(), [rows])
+
+  const filteredRows = useMemo(() => {
+    if (!filters.lineName.length && !filters.processId.length && !filters.edsStep.length) return rows
+    return rows.filter((row) => {
+      if (filters.lineName.length && !filters.lineName.includes(row.line)) return false
+      if (filters.processId.length && !filters.processId.includes(row.process)) return false
+      if (filters.edsStep.length && !filters.edsStep.includes(String(row.edsStep))) return false
+      return true
+    })
+  }, [rows, filters])
+
+  const filteredTotals = useMemo(() => filteredRows.reduce(
+    (acc, row) => ({
+      highRisk: acc.highRisk + row.highRisk,
+      warning: acc.warning + row.warning,
+      stepSeq: acc.stepSeq + row.stepSeq,
+      eqpch: acc.eqpch + row.eqpch,
+    }),
+    { highRisk: 0, warning: 0, stepSeq: 0, eqpch: 0 }
+  ), [filteredRows])
 
   return (
-    <Card className="flex h-[560px] min-w-0 flex-col overflow-hidden rounded-lg py-0">
+    <Card className={cn("flex h-full min-w-0 flex-col overflow-hidden rounded-lg py-0 gap-0", className)}>
       <div className="flex h-11 shrink-0 items-center gap-2 border-b bg-muted/50 px-4">
-        <CardTitle className="text-[15px]">Process ID x EDS Step 이상감지 요약</CardTitle>
+        <CardTitle className="text-[15px]">라인별 세부 요약</CardTitle>
         <Badge variant={selectedLine ? "secondary" : "outline"} className="min-w-[86px] justify-center text-xs">
           {selectedLine ? `${selectedLine} 선택` : "전체 라인"}
         </Badge>
         {!selectedLine ? <Badge variant="outline" className="text-xs">{formatNumber(lineCount)} Line</Badge> : null}
         <Badge variant="outline" className="text-xs">{formatNumber(processCount)} Process</Badge>
-        <Badge variant="outline" className="text-xs">{formatNumber(activeEdsSteps.length)} EDS</Badge>
-        <Badge variant="secondary" className="text-xs">{formatNumber(cellCount)} cells</Badge>
+        <Badge variant="outline" className="text-xs">{formatNumber(edsCount)} EDS</Badge>
+        <Badge variant="secondary" className="text-xs">
+          {formatNumber(filteredRows.length)}{filteredRows.length !== rows.length ? `/${formatNumber(rows.length)}` : ""} rows
+        </Badge>
         <span className="ml-auto text-[13px] text-muted-foreground">
-          High Risk <span className="font-semibold text-destructive">{formatNumber(grand.hr)}</span>
+          High Risk <span className="font-semibold text-destructive">{formatNumber(totals.highRisk)}</span>
           <span className="px-1 text-muted-foreground/40">/</span>
-          Warning <span className="font-semibold text-chart-4">{formatNumber(grand.wn)}</span>
+          Warning <span className="font-semibold text-chart-4">{formatNumber(totals.warning)}</span>
         </span>
+        <button
+          type="button"
+          onClick={onToggleMaximized}
+          className="inline-flex size-7 shrink-0 items-center justify-center rounded border bg-background text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={isMaximized ? "라인별 세부 요약 축소" : "라인별 세부 요약 최대화"}
+          title={isMaximized ? "축소" : "최대화"}
+        >
+          {isMaximized ? (
+            <Minimize2 className="size-4" aria-hidden="true" />
+          ) : (
+            <Maximize2 className="size-4" aria-hidden="true" />
+          )}
+        </button>
       </div>
-      <CardContent className="min-h-0 flex-1 overflow-auto p-3">
+      <CardContent className="min-h-0 flex-1 overflow-auto p-0">
         {!hasRows ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            선택 범위에 표시할 Process x EDS 이상감지가 없습니다.
+            선택 범위에 표시할 라인별 세부 요약이 없습니다.
           </div>
         ) : (
-          <table className="w-full min-w-max border-collapse text-[13px] leading-tight">
+          <table className="w-full min-w-[760px] border-collapse text-[13px] leading-tight">
             <colgroup>
-              {showLineColumn ? <col className="w-32" /> : null}
+              <col className="w-32" />
               <col className="w-36" />
-              {activeEdsSteps.map((eds) => (
-                <col key={eds} className="w-[160px]" />
-              ))}
-              <col className="w-40" />
+              <col className="w-36" />
+              <col className="w-24" />
+              <col className="w-24" />
+              <col className="w-24" />
+              <col className="w-24" />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-card">
-              <tr className="text-muted-foreground">
-                {showLineColumn ? (
-                  <th className="sticky left-0 z-20 border-b bg-card px-3 py-2 text-left font-semibold">line_name</th>
-                ) : null}
-                <th className={cn(
-                  "sticky z-20 border-b bg-card px-3 py-2 text-left font-semibold",
-                  showLineColumn ? "left-32" : "left-0",
-                )}>
-                  Process ID
+              <tr className="h-[58px] border-b text-muted-foreground">
+                <th className="sticky left-0 z-20 bg-card px-3 py-0 text-left font-semibold">
+                  <span className="flex items-center gap-1.5">
+                    Line_name
+                    <ColumnFilter values={uniqueLineNames} selected={filters.lineName} onChange={(v) => setFilters((f) => ({ ...f, lineName: v }))} />
+                  </span>
                 </th>
-                {activeEdsSteps.map((eds) => (
-                  <th key={eds} className="border-b bg-card px-2 py-2 text-center font-semibold">{eds}</th>
-                ))}
-                <th className="border-b bg-card px-2 py-2 text-center font-semibold">합계</th>
+                <th className="px-3 py-0 text-left font-semibold">
+                  <span className="flex items-center gap-1.5">
+                    process_id
+                    <ColumnFilter values={uniqueProcessIds} selected={filters.processId} onChange={(v) => setFilters((f) => ({ ...f, processId: v }))} />
+                  </span>
+                </th>
+                <th className="px-3 py-0 text-left font-semibold">
+                  <span className="flex items-center gap-1.5">
+                    eds_step
+                    <ColumnFilter values={uniqueEdsSteps} selected={filters.edsStep} onChange={(v) => setFilters((f) => ({ ...f, edsStep: v }))} />
+                  </span>
+                </th>
+                <th className="px-3 py-0 text-right font-semibold text-destructive">High Risk</th>
+                <th className="px-3 py-0 text-right font-semibold text-chart-4">Warning</th>
+                <th className="px-3 py-0 text-right font-semibold">step_seq</th>
+                <th className="px-3 py-0 text-right font-semibold">eqpch</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => {
-                const rowTotal = rowTotals.get(row.key) ?? { hr: 0, wn: 0 }
-                return (
-                  <tr key={row.key} className="hover:bg-muted/30">
-                    {showLineColumn ? (
-                      <td className="sticky left-0 z-[1] border-b bg-card px-3 py-2 font-mono font-semibold text-foreground">
-                        {row.line}
-                      </td>
-                    ) : null}
-                    <td className={cn(
-                      "sticky z-[1] border-b bg-card px-3 py-2 font-mono font-semibold text-foreground",
-                      showLineColumn ? "left-32" : "left-0",
-                    )}>
-                      {shortProcess(row.process)}
-                    </td>
-                    {activeEdsSteps.map((eds) => {
-                      const cell = cellMap.get(`${row.key}||${eds}`)
-                      if (!cell) {
-                        return <td key={eds} className="border-b px-1.5 py-1.5 text-center text-muted-foreground/40">·</td>
-                      }
-                      return (
-                        <td key={eds} className="border-b px-1.5 py-1.5">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onDrill?.({ line: row.line, process: row.process, edsStep: eds })
-                            }}
-                            title={`${row.line} · ${shortProcess(row.process)} · ${eds} · High Risk ${cell.hr} · Warning ${cell.wn}`}
-                            className="flex h-8 w-full min-w-16 items-center justify-center rounded-md transition hover:bg-muted/50 hover:ring-1 hover:ring-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          >
-                            <HrWn hr={cell.hr} wn={cell.wn} />
-                          </button>
-                        </td>
-                      )
-                    })}
-                    <td className="border-b px-2 py-2 text-center">
-                      <HrWn hr={rowTotal.hr} wn={rowTotal.wn} />
-                    </td>
-                  </tr>
-                )
-              })}
+              {filteredRows.map((row) => (
+                <tr
+                  key={row.key}
+                  onClick={() => onDrill?.({ line: row.line, process: row.process, edsStep: row.edsStep })}
+                  className="h-[54px] cursor-pointer border-b hover:bg-muted/30"
+                >
+                  <td className="sticky left-0 z-[1] bg-card px-3 py-2 font-mono font-semibold text-foreground">
+                    {row.line}
+                  </td>
+                  <td className="px-3 py-2 font-mono font-semibold text-foreground">
+                    {shortProcess(row.process)}
+                  </td>
+                  <td className="px-3 py-2 font-mono text-foreground">
+                    {row.edsStep}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums font-semibold text-destructive">
+                    {formatNumber(row.highRisk)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums font-semibold text-chart-4">
+                    {formatNumber(row.warning)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums font-semibold">
+                    {formatNumber(row.stepSeq)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums font-semibold">
+                    {formatNumber(row.eqpch)}
+                  </td>
+                </tr>
+              ))}
             </tbody>
             <tfoot>
               <tr className="bg-muted/50 font-semibold">
-                {showLineColumn ? (
-                  <td className="sticky left-0 z-[1] bg-muted/50 px-3 py-2">합계</td>
-                ) : null}
-                <td className={cn(
-                  "sticky z-[1] bg-muted/50 px-3 py-2",
-                  showLineColumn ? "left-32" : "left-0",
-                )}>
-                  {showLineColumn ? "" : "합계"}
-                </td>
-                {activeEdsSteps.map((eds) => {
-                  const colTotal = colTotals.get(eds) ?? { hr: 0, wn: 0 }
-                  return (
-                    <td key={eds} className="px-2 py-2 text-center">
-                      <HrWn hr={colTotal.hr} wn={colTotal.wn} />
-                    </td>
-                  )
-                })}
-                <td className="px-2 py-2 text-center">
-                  <HrWn hr={grand.hr} wn={grand.wn} />
-                </td>
+                <td className="sticky left-0 z-[1] bg-muted/50 px-3 py-2">합계</td>
+                <td className="px-3 py-2" />
+                <td className="px-3 py-2" />
+                <td className="px-3 py-2 text-right tabular-nums text-destructive">{formatNumber(filteredTotals.highRisk)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-chart-4">{formatNumber(filteredTotals.warning)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{formatNumber(filteredTotals.stepSeq)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{formatNumber(filteredTotals.eqpch)}</td>
               </tr>
             </tfoot>
           </table>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-function EquipmentBinRankingCard({ rows, selectedLine }) {
-  const chartRows = useMemo(() => {
-    const sourceRows = selectedLine
-      ? (rows ?? []).filter((row) => row.line === selectedLine)
-      : (rows ?? [])
-    const lineColorMap = new Map(
-      sortLineNames([...new Set(sourceRows.map((row) => row.line))]).map((line, index) => [
-        line,
-        LINE_COLORS[index % LINE_COLORS.length],
-      ]),
-    )
-    return sourceRows
-      .map((row) => ({
-        ...row,
-        label: selectedLine ? row.equipment : `${row.line} · ${row.equipment}`,
-        color: lineColorMap.get(row.line) ?? LINE_COLORS[0],
-      }))
-      .sort((a, b) => {
-        return (b.binItems ?? 0) - (a.binItems ?? 0)
-          || (b.highRisk ?? 0) - (a.highRisk ?? 0)
-          || String(a.label).localeCompare(String(b.label), undefined, { numeric: true })
-      })
-      .slice(0, 12)
-  }, [rows, selectedLine])
-
-  const detailRows = useMemo(() => {
-    return chartRows.flatMap((row) => {
-      const details = Array.isArray(row.details) ? row.details : []
-      return details.map((detail, detailIndex) => {
-        const highRisk = detail.highRisk ?? 0
-        const warning = detail.warning ?? 0
-        return {
-          key: `${row.line}||${row.equipment}||${detail.process ?? ""}||${detail.edsStep ?? ""}||${detailIndex}`,
-          equipmentLabel: row.label,
-          process: detail.process,
-          edsStep: detail.edsStep,
-          binItems: detail.binItems ?? 0,
-          highRisk,
-          warning,
-          total: detail.total ?? highRisk + warning,
-        }
-      })
-    })
-  }, [chartRows])
-
-  const totalBinItems = chartRows.reduce((sum, row) => sum + (row.binItems ?? 0), 0)
-
-  return (
-    <Card className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg py-0">
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b bg-muted/50 px-4">
-        <CardTitle className="text-[15px]">설비별 이상감지 bin_item Ranking</CardTitle>
-        <Badge variant={selectedLine ? "secondary" : "outline"} className="min-w-[86px] justify-center text-xs">
-          {selectedLine ? `${selectedLine} 선택` : "전체 라인"}
-        </Badge>
-        <Badge variant="outline" className="text-xs">Top {formatNumber(chartRows.length)}</Badge>
-        <Badge variant="outline" className="text-xs">상세 {formatNumber(detailRows.length)}</Badge>
-        <span className="ml-auto text-[13px] text-muted-foreground">
-          bin_item <span className="font-semibold text-foreground">{formatNumber(totalBinItems)}</span>
-        </span>
-      </div>
-      <CardContent className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_240px] gap-3 p-3">
-        {chartRows.length === 0 ? (
-          <div className="row-span-2 flex h-full items-center justify-center text-sm text-muted-foreground">
-            표시할 설비별 이상감지 bin_item ranking이 없습니다.
-          </div>
-        ) : (
-          <>
-            <div className="min-h-0">
-              <ResponsiveContainer width="100%" height="100%" debounce={60}>
-                <BarChart
-                  data={chartRows}
-                  layout="vertical"
-                  margin={{ top: 8, right: 14, left: 8, bottom: 8 }}
-                  barCategoryGap="18%"
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal vertical />
-                  <XAxis
-                    type="number"
-                    tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }}
-                    tickLine={false}
-                    axisLine={false}
-                    allowDecimals={false}
-                    tickFormatter={(value) => formatNumber(value)}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="label"
-                    width={178}
-                    tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      background: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "6px",
-                      fontSize: 13,
-                    }}
-                    formatter={(value, name) => {
-                      if (name === "binItems") return [formatNumber(value), "이상감지 bin_item"]
-                      if (name === "highRisk") return [formatNumber(value), "High Risk"]
-                      if (name === "warning") return [formatNumber(value), "Warning"]
-                      return [formatNumber(value), name]
-                    }}
-                    labelFormatter={(_, payload) => {
-                      const row = payload?.[0]?.payload
-                      return row ? `${row.line} · ${row.equipment}` : ""
-                    }}
-                    cursor={{ fill: "hsl(var(--muted))", opacity: 0.45 }}
-                  />
-                  <Legend
-                    iconType="square"
-                    iconSize={8}
-                    wrapperStyle={{ fontSize: 12, paddingTop: 4 }}
-                    formatter={(value) => value === "binItems" ? "이상감지 bin_item" : value}
-                  />
-                  <Bar
-                    dataKey="binItems"
-                    name="binItems"
-                    fill={LINE_COLORS[0]}
-                    radius={[0, 3, 3, 0]}
-                    maxBarSize={26}
-                  >
-                    {chartRows.map((row) => (
-                      <Cell key={`${row.line}-${row.equipment}`} fill={row.color} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="min-h-0 overflow-hidden rounded-md border">
-              {detailRows.length === 0 ? (
-                <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                  Process ID / EDS Step 상세가 없습니다.
-                </div>
-              ) : (
-                <div className="h-full overflow-auto">
-                  <table className="w-full min-w-[620px] border-collapse text-[12px] leading-tight">
-                    <colgroup>
-                      <col className="w-[34%]" />
-                      <col className="w-[16%]" />
-                      <col className="w-[16%]" />
-                      <col className="w-[12%]" />
-                      <col className="w-[12%]" />
-                      <col className="w-[10%]" />
-                    </colgroup>
-                    <thead className="sticky top-0 z-10 bg-card">
-                      <tr className="border-b text-muted-foreground">
-                        <th className="px-2 py-2 text-left font-semibold">설비</th>
-                        <th className="px-2 py-2 text-left font-semibold">Process ID</th>
-                        <th className="px-2 py-2 text-left font-semibold">EDS Step</th>
-                        <th className="px-2 py-2 text-right font-semibold text-destructive">High Risk</th>
-                        <th className="px-2 py-2 text-right font-semibold text-chart-4">Warning</th>
-                        <th className="px-2 py-2 text-right font-semibold">합계</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {detailRows.map((row) => (
-                        <tr key={row.key} className="border-b last:border-b-0 hover:bg-muted/30">
-                          <td className="truncate px-2 py-1.5 font-mono font-semibold text-foreground">
-                            {row.equipmentLabel}
-                          </td>
-                          <td className="truncate px-2 py-1.5 font-mono text-foreground">
-                            {shortProcess(row.process)}
-                          </td>
-                          <td className="truncate px-2 py-1.5 font-mono text-foreground">
-                            {row.edsStep}
-                          </td>
-                          <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-destructive">
-                            {formatNumber(row.highRisk)}
-                          </td>
-                          <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-chart-4">
-                            {formatNumber(row.warning)}
-                          </td>
-                          <td className="px-2 py-1.5 text-right tabular-nums font-semibold">
-                            {formatNumber(row.total)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </>
         )}
       </CardContent>
     </Card>
@@ -608,6 +451,28 @@ const RANGE_OPTIONS = [
   { label: "90일", value: 90 },
   { label: "전체", value: 0 },
 ]
+
+function TrendValueLabel({ x, y, width, height, value }) {
+  const numericValue = Number(value ?? 0)
+  const labelX = Number(x ?? 0)
+  const labelY = Number(y ?? 0)
+  const labelWidth = Number(width ?? 0)
+  const labelHeight = Number(height ?? 0)
+  if (numericValue <= 0 || labelHeight < 8 || labelWidth < 20) return null
+  return (
+    <text
+      x={labelX + labelWidth / 2}
+      y={Math.max(12, labelY - 6)}
+      textAnchor="middle"
+      fill="hsl(var(--foreground))"
+      fontSize={11}
+      fontWeight={700}
+      pointerEvents="none"
+    >
+      {formatNumber(numericValue)}
+    </text>
+  )
+}
 
 // 트렌드 바 차트 카드 — recharts BarChart
 function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
@@ -689,7 +554,7 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
   }, [filteredPoints, metric, grouping, effectiveLineNames])
 
   return (
-    <Card className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg py-0">
+    <Card className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg py-0 gap-0">
       <div className="shrink-0 flex flex-wrap items-center gap-2 border-b bg-muted/50 px-4 py-1.5">
           <CardTitle className="text-[15px]">일자별 이상감지 트렌드</CardTitle>
           <Badge
@@ -742,7 +607,7 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%" debounce={60}>
-            <BarChart data={chartData} margin={{ top: 4, right: 12, left: 0, bottom: 4 }} barCategoryGap="30%">
+            <BarChart data={chartData} margin={{ top: 20, right: 12, left: 0, bottom: 4 }} barCategoryGap="30%">
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal vertical />
               <XAxis
                 dataKey="date"
@@ -785,7 +650,9 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
                   fill={metric === "hr" ? HIGH_RISK_BAR_COLOR : ANOMALY_BAR_COLOR}
                   radius={[3, 3, 0, 0]}
                   maxBarSize={48}
-                />
+                >
+                  <LabelList dataKey="value" content={TrendValueLabel} />
+                </Bar>
               ) : (seriesKeys.length <= 20 ? seriesKeys : seriesKeys.slice(0, 20)).map((key, i) => (
                 <Bar
                   key={key}
@@ -795,7 +662,9 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
                   fill={LINE_COLORS[i % LINE_COLORS.length]}
                   radius={i === seriesKeys.length - 1 ? [3, 3, 0, 0] : [0, 0, 0, 0]}
                   maxBarSize={48}
-                />
+                >
+                  <LabelList dataKey={key} content={TrendValueLabel} />
+                </Bar>
               ))}
             </BarChart>
           </ResponsiveContainer>
@@ -858,6 +727,7 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
   const storageKey = user?.email ? `l3spider:lineOrder:${user.email}` : null
 
   const [customLineOrder, setCustomLineOrder] = useState(null)
+  const [isDetailMaximized, setIsDetailMaximized] = useState(false)
 
   // 사용자 확인 후 저장된 순서 복원 (사용자 변경 시 재실행)
   useEffect(() => {
@@ -940,56 +810,64 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
 
   return (
     <main className="grid gap-4 px-5 pb-5 pt-3">
-      <SummaryStats h={h} />
+      <div className="grid h-[calc(100vh-150px)] min-h-[760px] min-w-0 grid-cols-[420px_minmax(0,1fr)] grid-rows-[minmax(360px,4fr)_minmax(340px,5fr)] gap-4">
+        {isDetailMaximized ? (
+          <ProcessEdsSummaryCard
+            className="col-span-2 row-span-2"
+            matrix={data.matrix}
+            selectedLine={activeLine}
+            onDrill={onDrill}
+            isMaximized={isDetailMaximized}
+            onToggleMaximized={() => setIsDetailMaximized(false)}
+          />
+        ) : (
+          <>
+            <Card className="row-span-2 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg py-0 gap-0">
+              <div className="flex h-10 shrink-0 items-center gap-2 border-b bg-muted/50 px-4">
+                <CardTitle className="text-[15px]">라인별 이상감지 요약</CardTitle>
+                <Badge variant="outline" className="text-xs">{formatNumber(allLineOptions.length)}개</Badge>
+                {customLineOrder && (
+                  <button
+                    type="button"
+                    onClick={resetLineOrder}
+                    className="text-[13px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                  >
+                    순서초기화
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => onSelectLine?.(null)}
+                  disabled={!activeLine}
+                  className={cn(
+                    "ml-auto text-[13px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline",
+                    !activeLine && "invisible pointer-events-none",
+                  )}
+                >
+                  해제
+                </button>
+              </div>
+              <CardContent className="min-h-0 flex-1 p-0">
+                <LineTable rows={orderedLineSummary} selectedLine={activeLine} onSelectLine={onSelectLine} onReorder={handleReorder} />
+              </CardContent>
+              <LineSummaryTotals headline={h} />
+            </Card>
 
-      <div className="grid h-[520px] min-w-0 grid-cols-[420px_minmax(0,1fr)] gap-4">
-        <Card className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg py-0">
-          <div className="flex h-10 shrink-0 items-center gap-2 border-b bg-muted/50 px-4">
-            <CardTitle className="text-[15px]">라인별 이상감지 요약</CardTitle>
-            <Badge variant="outline" className="text-xs">{formatNumber(allLineOptions.length)}개</Badge>
-            {customLineOrder && (
-              <button
-                type="button"
-                onClick={resetLineOrder}
-                className="text-[13px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-              >
-                순서초기화
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => onSelectLine?.(null)}
-              disabled={!activeLine}
-              className={cn(
-                "ml-auto text-[13px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline",
-                !activeLine && "invisible pointer-events-none",
-              )}
-            >
-              해제
-            </button>
-          </div>
-          <CardContent className="min-h-0 flex-1 p-0">
-            <LineTable rows={orderedLineSummary} selectedLine={activeLine} onSelectLine={onSelectLine} onReorder={handleReorder} />
-          </CardContent>
-        </Card>
+            <TrendChartCard
+              trendPoints={trendQuery.data?.points ?? []}
+              allLineNames={trendLineNames}
+              focusLine={activeLine ?? undefined}
+            />
 
-        <TrendChartCard
-          trendPoints={trendQuery.data?.points ?? []}
-          allLineNames={trendLineNames}
-          focusLine={activeLine ?? undefined}
-        />
-      </div>
-
-      <div className="grid h-[620px] min-w-0 grid-cols-[minmax(0,1fr)_720px] gap-4">
-        <ProcessEdsSummaryCard
-          matrix={data.matrix}
-          selectedLine={activeLine}
-          onDrill={onDrill}
-        />
-        <EquipmentBinRankingCard
-          rows={data.equipmentRanking ?? []}
-          selectedLine={activeLine}
-        />
+            <ProcessEdsSummaryCard
+              matrix={data.matrix}
+              selectedLine={activeLine}
+              onDrill={onDrill}
+              isMaximized={isDetailMaximized}
+              onToggleMaximized={() => setIsDetailMaximized(true)}
+            />
+          </>
+        )}
       </div>
     </main>
   )
