@@ -19,7 +19,6 @@ x-airflow-common: &airflow-common
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
     - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
-    - airflow-user-site:/home/airflow/.local
   networks:
     shared-net:
     
@@ -101,7 +100,6 @@ services:
 
 volumes:
   postgres-db-volume:
-  airflow-user-site:
 
 networks:
   shared-net:

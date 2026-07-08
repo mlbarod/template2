@@ -89,7 +89,6 @@ services:
       - "../airflow/config:/opt/airflow/config"
       - "../airflow/plugins:/opt/airflow/plugins"
       - "../airflow/odbc:/usr/local/odbc:ro"
-      - "airflow_user_site:/home/airflow/.local"
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/airflow/health"]
       interval: 10s
@@ -120,7 +119,6 @@ services:
       - "../airflow/config:/opt/airflow/config"
       - "../airflow/plugins:/opt/airflow/plugins"
       - "../airflow/odbc:/usr/local/odbc:ro"
-      - "airflow_user_site:/home/airflow/.local"
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
       interval: 10s
@@ -134,9 +132,6 @@ services:
         condition: service_completed_successfully
     networks:
       - shared-net
-
-volumes:
-  airflow_user_site:
 
 networks:
   shared-net:
