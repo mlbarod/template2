@@ -92,6 +92,22 @@ class L3SpiderServiceTests(SimpleTestCase):
                     "display_status": "Normal (Ref)",
                     "comment": None,
                 },
+                {
+                    "tkin_time": pd.Timestamp("2025-01-15 02:00:00"),
+                    "step_seq": "S1",
+                    "ppid": "PPID_A",
+                    "root_lot_id": "ROOT",
+                    "lot_id": "LOT",
+                    "wafer_id": "W03",
+                    "eqc": "EQC_A",
+                    "bin_name": "BIN_B",
+                    "bin_value": 1.4,
+                    "prop_over_50": 0.6,
+                    "lsl": 0.0,
+                    "usl": 2.0,
+                    "display_status": "Warning",
+                    "comment": "주의",
+                },
             ]
         )
         frame.to_parquet(target / "sample", engine="pyarrow")
@@ -207,6 +223,40 @@ class L3SpiderServiceTests(SimpleTestCase):
         self.assertEqual(summary["anomalies"][0]["binName"], "BIN_A")
         self.assertEqual(rows[0]["stepSeq"], "S1")
         self.assertIn("displayStatus", rows[0])
+
+    def test_daily_summary_returns_equipment_bin_item_ranking(self) -> None:
+        """일별 요약이 설비별 이상 bin item ranking을 반환하는지 확인합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_sample(root)
+
+            with override_settings(L3_SPIDER_DATA_ROOT=str(root)), patch.object(
+                services,
+                "_get_exclusion_rules",
+                return_value=[],
+            ):
+                daily = services.get_daily_summary({"dates": ["2025-01-15"]})
+
+        self.assertEqual(daily["equipmentRanking"], [
+            {
+                "line": "L1",
+                "equipment": "EQC_A",
+                "binItems": 2,
+                "highRisk": 1,
+                "warning": 1,
+                "details": [
+                    {
+                        "process": "P1",
+                        "edsStep": "EDS_M",
+                        "binItems": 2,
+                        "highRisk": 1,
+                        "warning": 1,
+                        "total": 2,
+                    }
+                ],
+            }
+        ])
 
     def test_extensionless_filename_key_supplies_step_and_ppid(self) -> None:
         """확장자 없는 STEP#PPID#N 파일명이 summary/data 필터에 반영되는지 확인합니다."""

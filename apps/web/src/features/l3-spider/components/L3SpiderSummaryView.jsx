@@ -3,6 +3,7 @@ import { Activity, AlertTriangle, Cpu, Gauge, Inbox, Layers, Loader2 } from "luc
 import {
   Bar,
   BarChart,
+  Cell,
   CartesianGrid,
   Legend,
   ResponsiveContainer,
@@ -23,14 +24,14 @@ import { sortLineNames } from "../utils/selection"
 
 const shortProcess = (value) => String(value ?? "").replace(/^process_/, "")
 
-// High Risk / Warning 분리 표기 (빨강 / 주황)
+// High Risk / Warning 분리 표기
 function HrWn({ hr, wn }) {
   if (!hr && !wn) return <span className="text-muted-foreground/40">·</span>
   return (
-    <span className="inline-flex items-center justify-center gap-0.5 tabular-nums leading-none">
-      <span className="font-bold text-destructive">{formatNumber(hr)}</span>
+    <span className="inline-flex items-center justify-center gap-1 tabular-nums leading-none">
+      <span className="font-bold text-destructive">High Risk {formatNumber(hr)}</span>
       <span className="text-muted-foreground/40">/</span>
-      <span className="font-semibold text-chart-4">{formatNumber(wn)}</span>
+      <span className="font-semibold text-chart-4">Warning {formatNumber(wn)}</span>
     </span>
   )
 }
@@ -72,14 +73,16 @@ function SummaryStats({ h }) {
 
 // 라인별 고유 색상 팔레트
 const LINE_COLORS = [
-  "hsl(217 91% 58%)", "hsl(142 71% 42%)", "hsl(38 92% 48%)",
-  "hsl(262 83% 58%)", "hsl(326 78% 52%)", "hsl(189 94% 38%)",
-  "hsl(15 88% 54%)", "hsl(88 67% 40%)", "hsl(245 72% 60%)",
-  "hsl(168 76% 36%)", "hsl(284 72% 56%)", "hsl(348 83% 57%)",
-  "hsl(199 89% 48%)", "hsl(113 54% 43%)", "hsl(29 92% 52%)",
-  "hsl(229 76% 55%)", "hsl(310 68% 50%)", "hsl(54 90% 42%)",
-  "hsl(175 72% 34%)", "hsl(3 78% 57%)",
+  "rgb(37, 99, 235)", "rgb(22, 163, 74)", "rgb(217, 119, 6)",
+  "rgb(124, 58, 237)", "rgb(219, 39, 119)", "rgb(8, 145, 178)",
+  "rgb(220, 38, 38)", "rgb(101, 163, 13)", "rgb(79, 70, 229)",
+  "rgb(13, 148, 136)", "rgb(147, 51, 234)", "rgb(225, 29, 72)",
+  "rgb(2, 132, 199)", "rgb(21, 128, 61)", "rgb(234, 88, 12)",
+  "rgb(67, 56, 202)", "rgb(190, 24, 93)", "rgb(161, 98, 7)",
+  "rgb(15, 118, 110)", "rgb(185, 28, 28)",
 ]
+const HIGH_RISK_BAR_COLOR = "rgb(220, 38, 38)"
+const ANOMALY_BAR_COLOR = "rgb(217, 119, 6)"
 
 // 전 라인 요약 테이블 — 이상감지 없는 라인도 포함, 클릭 시 매트릭스 필터, 드래그로 순서 변경
 function LineTable({ rows, selectedLine, onSelectLine, onReorder }) {
@@ -114,16 +117,16 @@ function LineTable({ rows, selectedLine, onSelectLine, onReorder }) {
         <colgroup>
           <col className="w-7" />
           <col />
-          <col className="w-14" />
-          <col className="w-14" />
+          <col className="w-20" />
+          <col className="w-20" />
           <col className="w-16" />
         </colgroup>
         <thead className="sticky top-0 z-10 bg-card">
           <tr className="border-b">
             <th className="px-1 py-2" />
             <th className="px-2 py-2 text-left font-semibold text-muted-foreground">Line</th>
-            <th className="px-2 py-2 text-right font-semibold text-destructive">HR</th>
-            <th className="px-2 py-2 text-right font-semibold text-chart-4">WN</th>
+            <th className="px-2 py-2 text-right font-semibold text-destructive">High Risk</th>
+            <th className="px-2 py-2 text-right font-semibold text-chart-4">Warning</th>
             <th className="px-2 py-2 text-right font-semibold text-muted-foreground">합계</th>
           </tr>
         </thead>
@@ -279,9 +282,9 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill }) {
         <Badge variant="outline" className="text-xs">{formatNumber(activeEdsSteps.length)} EDS</Badge>
         <Badge variant="secondary" className="text-xs">{formatNumber(cellCount)} cells</Badge>
         <span className="ml-auto text-[13px] text-muted-foreground">
-          HR <span className="font-semibold text-destructive">{formatNumber(grand.hr)}</span>
+          High Risk <span className="font-semibold text-destructive">{formatNumber(grand.hr)}</span>
           <span className="px-1 text-muted-foreground/40">/</span>
-          WN <span className="font-semibold text-chart-4">{formatNumber(grand.wn)}</span>
+          Warning <span className="font-semibold text-chart-4">{formatNumber(grand.wn)}</span>
         </span>
       </div>
       <CardContent className="min-h-0 flex-1 overflow-auto p-3">
@@ -295,9 +298,9 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill }) {
               {showLineColumn ? <col className="w-32" /> : null}
               <col className="w-36" />
               {activeEdsSteps.map((eds) => (
-                <col key={eds} className="w-[82px]" />
+                <col key={eds} className="w-[160px]" />
               ))}
-              <col className="w-24" />
+              <col className="w-40" />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-card">
               <tr className="text-muted-foreground">
@@ -384,6 +387,198 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill }) {
               </tr>
             </tfoot>
           </table>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function EquipmentBinRankingCard({ rows, selectedLine }) {
+  const chartRows = useMemo(() => {
+    const sourceRows = selectedLine
+      ? (rows ?? []).filter((row) => row.line === selectedLine)
+      : (rows ?? [])
+    const lineColorMap = new Map(
+      sortLineNames([...new Set(sourceRows.map((row) => row.line))]).map((line, index) => [
+        line,
+        LINE_COLORS[index % LINE_COLORS.length],
+      ]),
+    )
+    return sourceRows
+      .map((row) => ({
+        ...row,
+        label: selectedLine ? row.equipment : `${row.line} · ${row.equipment}`,
+        color: lineColorMap.get(row.line) ?? LINE_COLORS[0],
+      }))
+      .sort((a, b) => {
+        return (b.binItems ?? 0) - (a.binItems ?? 0)
+          || (b.highRisk ?? 0) - (a.highRisk ?? 0)
+          || String(a.label).localeCompare(String(b.label), undefined, { numeric: true })
+      })
+      .slice(0, 12)
+  }, [rows, selectedLine])
+
+  const detailRows = useMemo(() => {
+    return chartRows.flatMap((row) => {
+      const details = Array.isArray(row.details) ? row.details : []
+      return details.map((detail, detailIndex) => {
+        const highRisk = detail.highRisk ?? 0
+        const warning = detail.warning ?? 0
+        return {
+          key: `${row.line}||${row.equipment}||${detail.process ?? ""}||${detail.edsStep ?? ""}||${detailIndex}`,
+          equipmentLabel: row.label,
+          process: detail.process,
+          edsStep: detail.edsStep,
+          binItems: detail.binItems ?? 0,
+          highRisk,
+          warning,
+          total: detail.total ?? highRisk + warning,
+        }
+      })
+    })
+  }, [chartRows])
+
+  const totalBinItems = chartRows.reduce((sum, row) => sum + (row.binItems ?? 0), 0)
+
+  return (
+    <Card className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg py-0">
+      <div className="flex h-11 shrink-0 items-center gap-2 border-b bg-muted/50 px-4">
+        <CardTitle className="text-[15px]">설비별 이상감지 bin_item Ranking</CardTitle>
+        <Badge variant={selectedLine ? "secondary" : "outline"} className="min-w-[86px] justify-center text-xs">
+          {selectedLine ? `${selectedLine} 선택` : "전체 라인"}
+        </Badge>
+        <Badge variant="outline" className="text-xs">Top {formatNumber(chartRows.length)}</Badge>
+        <Badge variant="outline" className="text-xs">상세 {formatNumber(detailRows.length)}</Badge>
+        <span className="ml-auto text-[13px] text-muted-foreground">
+          bin_item <span className="font-semibold text-foreground">{formatNumber(totalBinItems)}</span>
+        </span>
+      </div>
+      <CardContent className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_240px] gap-3 p-3">
+        {chartRows.length === 0 ? (
+          <div className="row-span-2 flex h-full items-center justify-center text-sm text-muted-foreground">
+            표시할 설비별 이상감지 bin_item ranking이 없습니다.
+          </div>
+        ) : (
+          <>
+            <div className="min-h-0">
+              <ResponsiveContainer width="100%" height="100%" debounce={60}>
+                <BarChart
+                  data={chartRows}
+                  layout="vertical"
+                  margin={{ top: 8, right: 14, left: 8, bottom: 8 }}
+                  barCategoryGap="18%"
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal vertical />
+                  <XAxis
+                    type="number"
+                    tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }}
+                    tickLine={false}
+                    axisLine={false}
+                    allowDecimals={false}
+                    tickFormatter={(value) => formatNumber(value)}
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="label"
+                    width={178}
+                    tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      background: "hsl(var(--card))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "6px",
+                      fontSize: 13,
+                    }}
+                    formatter={(value, name) => {
+                      if (name === "binItems") return [formatNumber(value), "이상감지 bin_item"]
+                      if (name === "highRisk") return [formatNumber(value), "High Risk"]
+                      if (name === "warning") return [formatNumber(value), "Warning"]
+                      return [formatNumber(value), name]
+                    }}
+                    labelFormatter={(_, payload) => {
+                      const row = payload?.[0]?.payload
+                      return row ? `${row.line} · ${row.equipment}` : ""
+                    }}
+                    cursor={{ fill: "hsl(var(--muted))", opacity: 0.45 }}
+                  />
+                  <Legend
+                    iconType="square"
+                    iconSize={8}
+                    wrapperStyle={{ fontSize: 12, paddingTop: 4 }}
+                    formatter={(value) => value === "binItems" ? "이상감지 bin_item" : value}
+                  />
+                  <Bar
+                    dataKey="binItems"
+                    name="binItems"
+                    fill={LINE_COLORS[0]}
+                    radius={[0, 3, 3, 0]}
+                    maxBarSize={26}
+                  >
+                    {chartRows.map((row) => (
+                      <Cell key={`${row.line}-${row.equipment}`} fill={row.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="min-h-0 overflow-hidden rounded-md border">
+              {detailRows.length === 0 ? (
+                <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                  Process ID / EDS Step 상세가 없습니다.
+                </div>
+              ) : (
+                <div className="h-full overflow-auto">
+                  <table className="w-full min-w-[620px] border-collapse text-[12px] leading-tight">
+                    <colgroup>
+                      <col className="w-[34%]" />
+                      <col className="w-[16%]" />
+                      <col className="w-[16%]" />
+                      <col className="w-[12%]" />
+                      <col className="w-[12%]" />
+                      <col className="w-[10%]" />
+                    </colgroup>
+                    <thead className="sticky top-0 z-10 bg-card">
+                      <tr className="border-b text-muted-foreground">
+                        <th className="px-2 py-2 text-left font-semibold">설비</th>
+                        <th className="px-2 py-2 text-left font-semibold">Process ID</th>
+                        <th className="px-2 py-2 text-left font-semibold">EDS Step</th>
+                        <th className="px-2 py-2 text-right font-semibold text-destructive">High Risk</th>
+                        <th className="px-2 py-2 text-right font-semibold text-chart-4">Warning</th>
+                        <th className="px-2 py-2 text-right font-semibold">합계</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detailRows.map((row) => (
+                        <tr key={row.key} className="border-b last:border-b-0 hover:bg-muted/30">
+                          <td className="truncate px-2 py-1.5 font-mono font-semibold text-foreground">
+                            {row.equipmentLabel}
+                          </td>
+                          <td className="truncate px-2 py-1.5 font-mono text-foreground">
+                            {shortProcess(row.process)}
+                          </td>
+                          <td className="truncate px-2 py-1.5 font-mono text-foreground">
+                            {row.edsStep}
+                          </td>
+                          <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-destructive">
+                            {formatNumber(row.highRisk)}
+                          </td>
+                          <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-chart-4">
+                            {formatNumber(row.warning)}
+                          </td>
+                          <td className="px-2 py-1.5 text-right tabular-nums font-semibold">
+                            {formatNumber(row.total)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </>
         )}
       </CardContent>
     </Card>
@@ -517,12 +712,12 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
             <button type="button" onClick={() => setMetric("hr")}
               className={cn("rounded px-2 py-0.5 font-medium transition-colors",
                 metric === "hr" ? "bg-destructive/10 text-destructive" : "text-muted-foreground hover:text-foreground")}>
-              HR
+              High Risk
             </button>
             <button type="button" onClick={() => setMetric("total")}
               className={cn("rounded px-2 py-0.5 font-medium transition-colors",
                 metric === "total" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground")}>
-              HR+WN
+              High Risk+Warning
             </button>
           </div>
           {/* 계열 토글 */}
@@ -585,8 +780,8 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
               {grouping === "sum" ? (
                 <Bar
                   dataKey="value"
-                  name={metric === "hr" ? "전체 High Risk" : "전체 이상 건수 (HR+WN)"}
-                  fill={metric === "hr" ? "hsl(var(--destructive))" : "hsl(var(--chart-4))"}
+                  name={metric === "hr" ? "전체 High Risk" : "전체 이상 건수 (High Risk+Warning)"}
+                  fill={metric === "hr" ? HIGH_RISK_BAR_COLOR : ANOMALY_BAR_COLOR}
                   radius={[3, 3, 0, 0]}
                   maxBarSize={48}
                 />
@@ -780,11 +975,17 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
         />
       </div>
 
-      <ProcessEdsSummaryCard
-        matrix={data.matrix}
-        selectedLine={activeLine}
-        onDrill={onDrill}
-      />
+      <div className="grid h-[620px] min-w-0 grid-cols-[minmax(0,1fr)_720px] gap-4">
+        <ProcessEdsSummaryCard
+          matrix={data.matrix}
+          selectedLine={activeLine}
+          onDrill={onDrill}
+        />
+        <EquipmentBinRankingCard
+          rows={data.equipmentRanking ?? []}
+          selectedLine={activeLine}
+        />
+      </div>
     </main>
   )
 }
