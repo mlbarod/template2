@@ -2401,21 +2401,22 @@ def get_trend(*, user: Any | None = None) -> dict[str, object]:
         for lid, pid, sseq in combos
     }
 
-    agg: dict[tuple[str, str], dict[str, int]] = {}
+    agg: dict[tuple[str, str, str], dict[str, int]] = {}
     for r in rows:
         date = r["date"]
         if completed_dates is not None and date not in completed_dates:
             continue
         line_name = name_map.get((r["line_id"], r["process_id"], r["step_seq"]), r["line_id"])
-        key = (date, line_name)
+        process_id = r["process_id"]
+        key = (date, line_name, process_id)
         cur = agg.get(key, {"hr": 0, "wn": 0})
         cur["hr"] += r["hr"]
         cur["wn"] += r["wn"]
         agg[key] = cur
 
     points = [
-        {"date": date, "lineName": line_name, "hr": v["hr"], "wn": v["wn"]}
-        for (date, line_name), v in sorted(agg.items())
+        {"date": date, "lineName": line_name, "processId": process_id, "hr": v["hr"], "wn": v["wn"]}
+        for (date, line_name, process_id), v in sorted(agg.items())
     ]
     result = {"points": points}
     _trend_cache.set("all", result)

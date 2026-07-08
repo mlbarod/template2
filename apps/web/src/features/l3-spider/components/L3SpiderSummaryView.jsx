@@ -74,7 +74,7 @@ function LineTable({ rows, selectedLine, onSelectLine, onReorder }) {
 
   return (
     <div className="h-full min-h-0 overflow-y-auto">
-      <table className="w-full table-fixed border-collapse text-[13px]">
+      <table className="w-full table-fixed border-collapse text-[14px]">
         <colgroup>
           <col className="w-7" />
           <col className="w-[142px]" />
@@ -85,9 +85,9 @@ function LineTable({ rows, selectedLine, onSelectLine, onReorder }) {
         <thead className="sticky top-0 z-10 bg-card">
           <tr className="h-[58px] border-b">
             <th className="px-1 py-0" />
-            <th className="px-2 py-0 text-left font-semibold text-muted-foreground">Line</th>
-            <th className="px-1 py-0 text-right font-semibold text-destructive">High Risk</th>
+            <th className="px-2 py-0 text-left font-semibold text-muted-foreground">line_name</th>
             <th className="px-1 py-0 text-right font-semibold text-chart-4">Warning</th>
+            <th className="px-1 py-0 text-right font-semibold text-destructive">High Risk</th>
             <th className="py-0 pl-1 pr-4 text-right font-semibold text-muted-foreground">합계</th>
           </tr>
         </thead>
@@ -125,25 +125,30 @@ function LineTable({ rows, selectedLine, onSelectLine, onReorder }) {
                   isSelected ? "text-primary" : "text-foreground",
                 )}>
                   {r.line}
-                  {!r.active && (
-                    <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">(이상 없음)</span>
-                  )}
                 </td>
-                <td className="px-2 py-2 text-right tabular-nums">
-                  {r.hr > 0
-                    ? <span className="font-bold text-destructive">{formatNumber(r.hr)}</span>
-                    : <span className="text-muted-foreground/40">·</span>}
-                </td>
-                <td className="px-2 py-2 text-right tabular-nums">
-                  {r.wn > 0
-                    ? <span className="font-semibold text-chart-4">{formatNumber(r.wn)}</span>
-                    : <span className="text-muted-foreground/40">·</span>}
-                </td>
-                <td className="py-2 pl-1 pr-4 text-right tabular-nums font-medium">
-                  {total > 0
-                    ? <span className="text-foreground">{formatNumber(total)}</span>
-                    : <span className="text-muted-foreground/40">·</span>}
-                </td>
+                {r.active ? (
+                  <>
+                    <td className="px-2 py-2 text-right tabular-nums">
+                      {r.wn > 0
+                        ? <span className="font-semibold text-chart-4">{formatNumber(r.wn)}</span>
+                        : <span className="text-muted-foreground/40">·</span>}
+                    </td>
+                    <td className="px-2 py-2 text-right tabular-nums">
+                      {r.hr > 0
+                        ? <span className="font-bold text-destructive">{formatNumber(r.hr)}</span>
+                        : <span className="text-muted-foreground/40">·</span>}
+                    </td>
+                    <td className="py-2 pl-1 pr-4 text-right tabular-nums font-medium">
+                      {total > 0
+                        ? <span className="text-foreground">{formatNumber(total)}</span>
+                        : <span className="text-muted-foreground/40">·</span>}
+                    </td>
+                  </>
+                ) : (
+                  <td colSpan={3} className="py-2 pl-2 pr-4 text-center text-[11px] font-normal text-muted-foreground">
+                    이상없음
+                  </td>
+                )}
               </tr>
             )
           })}
@@ -156,6 +161,9 @@ function LineTable({ rows, selectedLine, onSelectLine, onReorder }) {
 function LineSummaryTotals({ headline }) {
   return (
     <div className="shrink-0 border-t bg-muted/40">
+      <div className="flex items-center justify-center border-b py-1">
+        <span className="text-[15px] font-semibold text-muted-foreground">Total</span>
+      </div>
       <div className="grid grid-cols-5 divide-x">
         {LINE_TOTAL_ITEMS.map(({ key, label, className }) => (
           <div key={key} className="min-w-0 px-2 py-2 text-center">
@@ -319,15 +327,10 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
         <Badge variant="secondary" className="text-xs">
           {formatNumber(filteredRows.length)}{filteredRows.length !== rows.length ? `/${formatNumber(rows.length)}` : ""} rows
         </Badge>
-        <span className="ml-auto text-[13px] text-muted-foreground">
-          High Risk <span className="font-semibold text-destructive">{formatNumber(totals.highRisk)}</span>
-          <span className="px-1 text-muted-foreground/40">/</span>
-          Warning <span className="font-semibold text-chart-4">{formatNumber(totals.warning)}</span>
-        </span>
         <button
           type="button"
           onClick={onToggleMaximized}
-          className="inline-flex size-7 shrink-0 items-center justify-center rounded border bg-background text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="ml-auto inline-flex size-7 shrink-0 items-center justify-center rounded border bg-background text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={isMaximized ? "라인별 세부 요약 축소" : "라인별 세부 요약 최대화"}
           title={isMaximized ? "축소" : "최대화"}
         >
@@ -344,7 +347,7 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
             선택 범위에 표시할 라인별 세부 요약이 없습니다.
           </div>
         ) : (
-          <table className="w-full min-w-[760px] border-collapse text-[13px] leading-tight">
+          <table className="w-full min-w-[760px] border-collapse text-[14px] leading-tight">
             <colgroup>
               <col className="w-32" />
               <col className="w-36" />
@@ -374,10 +377,10 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
                     <ColumnFilter values={uniqueEdsSteps} selected={filters.edsStep} onChange={(v) => setFilters((f) => ({ ...f, edsStep: v }))} />
                   </span>
                 </th>
-                <th className="px-3 py-0 text-right font-semibold text-destructive">High Risk</th>
                 <th className="px-3 py-0 text-right font-semibold text-chart-4">Warning</th>
+                <th className="px-3 py-0 text-right font-semibold text-destructive">High Risk</th>
                 <th className="px-3 py-0 text-right font-semibold">step_seq</th>
-                <th className="px-3 py-0 text-right font-semibold">eqpch</th>
+                <th className="px-3 py-0 text-right font-semibold">EQPCH</th>
               </tr>
             </thead>
             <tbody>
@@ -393,14 +396,14 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
                   <td className="px-3 py-2 font-mono font-semibold text-foreground">
                     {shortProcess(row.process)}
                   </td>
-                  <td className="px-3 py-2 font-mono text-foreground">
+                  <td className="px-3 py-2 font-mono font-semibold text-foreground">
                     {row.edsStep}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums font-semibold text-destructive">
-                    {formatNumber(row.highRisk)}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums font-semibold text-chart-4">
                     {formatNumber(row.warning)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums font-semibold text-destructive">
+                    {formatNumber(row.highRisk)}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums font-semibold">
                     {formatNumber(row.stepSeq)}
@@ -416,8 +419,8 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
                 <td className="sticky left-0 z-[1] bg-muted/50 px-3 py-2">합계</td>
                 <td className="px-3 py-2" />
                 <td className="px-3 py-2" />
-                <td className="px-3 py-2 text-right tabular-nums text-destructive">{formatNumber(filteredTotals.highRisk)}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-chart-4">{formatNumber(filteredTotals.warning)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-destructive">{formatNumber(filteredTotals.highRisk)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{formatNumber(filteredTotals.stepSeq)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{formatNumber(filteredTotals.eqpch)}</td>
               </tr>
@@ -464,9 +467,7 @@ function TrendValueLabel({ x, y, width, height, value }) {
       x={labelX + labelWidth / 2}
       y={Math.max(12, labelY - 6)}
       textAnchor="middle"
-      fill="hsl(var(--foreground))"
-      fontSize={11}
-      fontWeight={700}
+      style={{ fill: "hsl(var(--foreground))", fontSize: 11, fontWeight: 700 }}
       pointerEvents="none"
     >
       {formatNumber(numericValue)}
@@ -486,11 +487,11 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
     [trendPoints, focusLine],
   )
 
-  // focusLine 선택 시 seriesKeys를 해당 라인만으로 좁힘
-  const effectiveLineNames = useMemo(
-    () => focusLine ? [focusLine] : allLineNames,
-    [focusLine, allLineNames],
-  )
+  // focusLine 선택 시 seriesKeys를 해당 라인의 process_id로 전환
+  const effectiveSeriesKeys = useMemo(() => {
+    if (!focusLine) return allLineNames
+    return sortLineNames([...new Set(scopedPoints.map((p) => p.processId).filter(Boolean))])
+  }, [focusLine, allLineNames, scopedPoints])
 
   // 날짜 범위 필터 — 전체 데이터에서 최신 기준 N일치만
   const filteredPoints = useMemo(() => {
@@ -501,10 +502,12 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
     return scopedPoints.filter((p) => p.date >= cutoff)
   }, [scopedPoints, rangeDays])
 
-  // 데이터 변환: [{date, lineName, hr, wn}] → recharts용 [{date, ...series}]
+  // 데이터 변환: [{date, lineName, processId, hr, wn}] → recharts용 [{date, ...series}]
   const { chartData, seriesKeys } = useMemo(() => {
     if (!filteredPoints.length) return { chartData: [], seriesKeys: [] }
     const getValue = (p) => metric === "hr" ? p.hr : p.hr + p.wn
+    // focusLine 선택 시 process_id 기준 피벗, 아니면 lineName 기준
+    const getKey = focusLine ? (p) => p.processId : (p) => p.lineName
 
     if (grouping === "sum") {
       const byDate = new Map()
@@ -523,15 +526,15 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
       return { chartData, seriesKeys: ["value"] }
     }
 
-    // perLine: pivot — 날짜 갭은 0으로 채움
-    // 날짜 × 라인 조합이 2000 초과 시 렌더링 폭발 방지를 위해 sum으로 폴백
+    // perLine / perProcess: pivot — 날짜 갭은 0으로 채움
+    // 날짜 × 시리즈 조합이 2000 초과 시 렌더링 폭발 방지를 위해 sum으로 폴백
     const dateSet = new Set()
     for (const p of filteredPoints) dateSet.add(p.date)
     const rawDates = [...dateSet].sort()
     const dates = rawDates.length > 1
       ? makeDateRange(rawDates[0], rawDates[rawDates.length - 1])
       : rawDates
-    if (dates.length * effectiveLineNames.length > 2000) {
+    if (dates.length * effectiveSeriesKeys.length > 2000) {
       const byDate = new Map()
       for (const p of filteredPoints) byDate.set(p.date, (byDate.get(p.date) ?? 0) + getValue(p))
       const chartData = [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b))
@@ -539,19 +542,20 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
       return { chartData, seriesKeys: ["value"] }
     }
 
-    const byDateLine = new Map()
+    const byDateSeries = new Map()
     for (const p of filteredPoints) {
-      if (!byDateLine.has(p.date)) byDateLine.set(p.date, {})
-      byDateLine.get(p.date)[p.lineName] = (byDateLine.get(p.date)[p.lineName] ?? 0) + getValue(p)
+      const k = getKey(p)
+      if (!byDateSeries.has(p.date)) byDateSeries.set(p.date, {})
+      byDateSeries.get(p.date)[k] = (byDateSeries.get(p.date)[k] ?? 0) + getValue(p)
     }
     const chartData = dates.map((d) => {
-      const lineValues = byDateLine.get(d) ?? {}
+      const vals = byDateSeries.get(d) ?? {}
       const row = { date: fmtDate(d) }
-      for (const ln of effectiveLineNames) row[ln] = lineValues[ln] ?? 0
+      for (const k of effectiveSeriesKeys) row[k] = vals[k] ?? 0
       return row
     })
-    return { chartData, seriesKeys: effectiveLineNames }
-  }, [filteredPoints, metric, grouping, effectiveLineNames])
+    return { chartData, seriesKeys: effectiveSeriesKeys }
+  }, [filteredPoints, metric, grouping, effectiveSeriesKeys, focusLine])
 
   return (
     <Card className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg py-0 gap-0">
@@ -596,7 +600,7 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
             <button type="button" onClick={() => setGrouping("perLine")}
               className={cn("rounded px-2 py-0.5 font-medium transition-colors",
                 grouping === "perLine" ? "bg-background text-foreground shadow-sm ring-1 ring-border" : "text-muted-foreground hover:text-foreground")}>
-              라인별
+              {focusLine ? "process_id별" : "라인별"}
             </button>
           </div>
       </div>
@@ -611,13 +615,13 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal vertical />
               <XAxis
                 dataKey="date"
-                tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }}
+                tick={{ fontSize: 12, style: { fill: "hsl(var(--muted-foreground))" } }}
                 tickLine={false}
                 axisLine={false}
                 interval="preserveStartEnd"
               />
               <YAxis
-                tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }}
+                tick={{ fontSize: 12, style: { fill: "hsl(var(--muted-foreground))" } }}
                 tickLine={false}
                 axisLine={false}
                 width={52}
