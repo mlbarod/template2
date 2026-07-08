@@ -9,6 +9,7 @@ COMPOSE_PROD=docker compose -f docker-compose.yml
 # - FTP: ftp
 INFRA_SERVICES=airflow-postgres airflow-init airflow-webserver airflow-scheduler ftp
 INFRA_BUILD_SERVICES=airflow-init airflow-webserver airflow-scheduler
+PROD_INFRA_SERVICES=$(INFRA_SERVICES) prometheus node-exporter cadvisor grafana
 
 # app은 실제 애플리케이션 기능을 구성하는 서비스입니다.
 # dev는 로컬 dummy 외부계(adfs)를 app으로 취급합니다.
@@ -113,7 +114,7 @@ prod-app-down:
 
 # prod infra만 올립니다.
 prod-infra-up: network
-	$(COMPOSE_PROD) up -d $(INFRA_SERVICES)
+	$(COMPOSE_PROD) up -d $(PROD_INFRA_SERVICES)
 
 # prod infra 이미지 중 빌드가 필요한 Airflow 이미지만 다시 빌드합니다.
 prod-infra-build: network
@@ -121,8 +122,8 @@ prod-infra-build: network
 
 # prod infra 컨테이너만 중지하고 제거합니다.
 prod-infra-down:
-	$(COMPOSE_PROD) stop $(INFRA_SERVICES)
-	$(COMPOSE_PROD) rm -f $(INFRA_SERVICES)
+	$(COMPOSE_PROD) stop $(PROD_INFRA_SERVICES)
+	$(COMPOSE_PROD) rm -f $(PROD_INFRA_SERVICES)
 
 # 모든 실행 진입점의 compose project를 내립니다.
 down:
