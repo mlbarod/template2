@@ -5,7 +5,9 @@ ARG APT_DEBIAN_REPOSITORY=
 ARG APT_DEBIAN_CODENAME=bookworm
 ARG APT_DEBIAN_ARCH=amd64
 ARG PIP_INDEX_URL=
+ARG PIP_EXTRA_INDEX_URL=
 ARG PIP_TRUSTED_HOST=
+ARG INSTALL_BIGDATAQUERY_PYTHON=false
 ARG INSTALL_BIGDATAQUERY_ODBC=false
 ARG BIGDATAQUERY_ODBC_DEB_URL=
 
@@ -19,8 +21,13 @@ RUN if [ -n "$APT_DEBIAN_REPOSITORY" ]; then \
 
 RUN if [ -n "$PIP_INDEX_URL" ]; then \
         printf '[global]\nindex-url = %s\n' "$PIP_INDEX_URL" > /etc/pip.conf; \
+        if [ -n "$PIP_EXTRA_INDEX_URL" ]; then \
+            printf 'extra-index-url = %s\n' "$PIP_EXTRA_INDEX_URL" >> /etc/pip.conf; \
+        fi; \
         if [ -n "$PIP_TRUSTED_HOST" ]; then \
-            printf 'trusted-host = %s\n' "$PIP_TRUSTED_HOST" >> /etc/pip.conf; \
+            for host in $PIP_TRUSTED_HOST; do \
+                printf 'trusted-host = %s\n' "$host" >> /etc/pip.conf; \
+            done; \
         fi; \
     fi
 
@@ -44,6 +51,10 @@ RUN if [ "$INSTALL_BIGDATAQUERY_ODBC" = "true" ]; then \
             cp /opt/cloudera/impalaodbc/ErrorMessages/en-US/* /opt/cloudera/impalaodbc/lib/64/en-US/; \
         fi; \
         rm -rf /var/lib/apt/lists/*; \
+    fi
+
+RUN if [ "$INSTALL_BIGDATAQUERY_PYTHON" = "true" ]; then \
+        python -m pip install --no-cache-dir bigdataquery; \
     fi
 
 RUN mkdir -p /opt/airflow/logs /usr/local/odbc \

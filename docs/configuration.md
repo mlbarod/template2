@@ -41,6 +41,7 @@
 - Airflow Compose 공통 env에는 Airflow runtime과 DAG 공통 연결/인증 값만 둡니다. DAG별 schedule/timeout/limit/dry-run 기본값은 각 DAG 코드에 둡니다.
 - OIDC 개발과 운영 Compose에서 외부 registry image를 pull할 때는 `repository.samsungds.net` 사내 registry를 사용합니다. Docker Hub image는 `repository.samsungds.net/proxy-docker-registry-1.docker.io/<image>` 형식으로 적습니다.
 - OIDC 개발과 운영 Compose의 Docker build는 사내 package mirror build args를 사용합니다. Debian apt는 `http://repository.samsungds.net/repository/proxy-apt-mirror.kakao.com-debian`의 `bullseye main`, 일반 pip는 `http://repository.samsungds.net/repository/proxy-pypi-files.pythonhosted.org/simple`, npm은 `http://repository.samsungds.net/repository/proxy-npm-registry.npmjs.org`, Alpine은 `http://repository.samsungds.net/repository/proxy-raw-dl-cdn.alpinelinux.org-alpine`을 사용합니다.
+- OIDC/prod Airflow 이미지는 `bigdataquery` Python 패키지를 빌드 시 설치합니다. 신규 PyPI mirror 적재 전까지 `PIP_EXTRA_INDEX_URL`에 기존 `repo.samsungds.net` PyPI simple URL을 임시로 고정해 함께 참조합니다.
 - Airflow 공식 `apache/airflow:2.11.0` 이미지는 Debian bookworm 기반이므로 OIDC/prod Airflow Dockerfile은 같은 Debian mirror의 `bookworm main`을 사용합니다.
 - OIDC/prod Airflow 이미지는 BigDataQuery용 Cloudera Impala ODBC 드라이버를 빌드 시 설치합니다. apt/pip source는 위 repo 표준 mirror를 사용하고, ODBC 드라이버 `.deb`는 승인된 사내 artifact URL을 `BIGDATAQUERY_ODBC_DEB_URL` build arg에 고정합니다. 이 예외는 dev Compose에서 사용하지 않는 versioned driver artifact에만 허용합니다.
 - Airflow ODBC 설정 파일은 repo에 저장하지 않습니다. 운영에서 `airflow/odbc/odbc.ini`, `airflow/odbc/odbcinst.ini`를 제공하면 Compose가 `/usr/local/odbc`에 read-only로 mount합니다.
