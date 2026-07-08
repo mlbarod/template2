@@ -595,6 +595,11 @@ def summarize_pending_ct_process_comments(
     for comment in pending_comments:
         contents_text = (comment.contents_text or "").strip()
         if not contents_text:
+            if not dry_run:
+                CtProcessComment.objects.filter(pk=comment.pk, update_flag="Y").update(
+                    update_flag="N",
+                    updated_at=timezone.now(),
+                )
             outcomes.append(
                 SummaryRowOutcome(
                     workorder_id=comment.workorder_id,

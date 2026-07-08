@@ -672,9 +672,10 @@ class CtProcessCommentSummaryTests(TestCase):
         self.assertIsNone(comment.llm_summary)
 
     def test_summarize_skips_empty_contents_without_api_call(self) -> None:
-        """contents_text가 비어 있으면 외부 호출 없이 건너뛰고 flag를 유지합니다."""
+        """contents_text가 비어 있으면 외부 호출 없이 건너뛰고 flag를 완료 처리합니다."""
 
-        comment = CtProcessComment.objects.create(workorder_id="WO1", contents_text="  ", update_flag="Y")
+        null_comment = CtProcessComment.objects.create(workorder_id="WO1", contents_text=None, update_flag="Y")
+        blank_comment = CtProcessComment.objects.create(workorder_id="WO2", contents_text="  ", update_flag="Y")
         session = Mock()
 
         run_summary = summary_module.summarize_pending_ct_process_comments(
@@ -683,9 +684,11 @@ class CtProcessCommentSummaryTests(TestCase):
             config=_build_openwebui_config(),
         )
 
-        comment.refresh_from_db()
-        self.assertEqual(run_summary.skipped_count, 1)
-        self.assertEqual(comment.update_flag, "Y")
+        null_comment.refresh_from_db()
+        blank_comment.refresh_from_db()
+        self.assertEqual(run_summary.skipped_count, 2)
+        self.assertEqual(null_comment.update_flag, "N")
+        self.assertEqual(blank_comment.update_flag, "N")
         session.post.assert_not_called()
 
     def test_summarize_dry_run_does_not_call_api_or_update_row(self) -> None:
