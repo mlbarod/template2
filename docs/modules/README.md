@@ -12,6 +12,7 @@
 | Assistant/RAG | `apps/web/src/features/assistant` | `api.assistant`, `api.rag` | `docs/api/assistant.md` | RAG, LLM, Account permission group |
 | Line Dashboard/Drone | `apps/web/src/features/line-dashboard` | `api.drone` | `docs/api/line-dashboard.md` | `DroneSOP`, target/channel/recipient/delivery, Jira/Mail/Messenger |
 | Observer | `apps/web/src/features/observer` | `api.observer` | `docs/api/observer.md` | 기본 DB 기준정보와 로그 |
+| PM SPIDER | `apps/web/src/features/pm-spider` | `api.pm_comparison` | `docs/modules/pm-comparison-dashboard-spec.md` | PM SPIDER raw/result Parquet |
 | AppStore | `apps/web/src/features/appstore` | `api.appstore` | `docs/api/appstore.md` | `AppStoreApp`, 댓글, 좋아요, cover image |
 | VOC | `apps/web/src/features/voc` | `api.voc` | `docs/api/voc.md` | `VocPost`, `VocReply`, ActivityLog |
 | Activity/Health | API only | `api.activity`, `api.health` | `docs/api/activity-health.md` | `ActivityLog`, runtime health |

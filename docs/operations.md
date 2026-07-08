@@ -2,41 +2,63 @@
 
 이 문서는 로컬 실행, 테스트, 마이그레이션 확인, management command를 정리합니다.
 
-## 로컬 실행
+## 실행 진입점
+
+일반 작업에서는 root의 `make` target을 사용합니다.
+root compose 파일은 Makefile이 감싸는 실행 구현이고, `compose/` 아래 파일은 내부 조립용입니다.
+
+| 환경 | 기본 명령 | 용도 | dependency source |
+| --- | --- | --- | --- |
+| `dev` | `make dev` | 로컬 개발 전용 | public registry/package source |
+| `oidc` | `make oidc` | 사내 OIDC 검증/스테이징 | internal mirror |
+| `prod` | `make prod` | 운영 compose 조립 | internal mirror |
+
+`dev`는 로컬 PC에서만 사용하는 개발 환경입니다.
+`oidc`와 `prod`는 Docker image와 package manager source를 내부 mirror로 고정합니다.
+
+## app / infra 구분
+
+| 그룹 | 포함 서비스 | 설명 |
+| --- | --- | --- |
+| `app` | API, Web, Nginx, MinIO, MinIO init | 실제 앱 실행에 필요한 서비스 |
+| `dev app` 추가 | dummy ADFS/RAG/LLM/Mail/Jira | 로컬 외부계 대체 서비스 |
+| `infra` | Airflow DB, Airflow init/webserver/scheduler, FTP | 데이터 적재와 Airflow DAG 검증용 기반 서비스 |
+
+로컬 개발 기본 실행:
 
 ```bash
 make dev
 ```
 
-root compose 파일은 실행 진입점이고, `compose/` 아래 파일은 내부 조립용입니다.
-일반 작업에서는 아래 `make` target을 사용합니다.
-
-`make dev`는 일반 개발에 필요한 Web, API, Nginx, MinIO, dummy ADFS를 실행합니다.
-API가 의존하는 DB는 compose 의존성으로 함께 올라가며, Airflow/FTP는 기본 실행에서 제외합니다.
-
-Airflow/FTP 기반 데이터 적재 작업이 필요하면 infra를 별도로 실행합니다.
+app만 조작:
 
 ```bash
-make dev-infra-up
 make dev-app-up
-make dev-app-down
-```
-
-app 이미지 재빌드가 필요할 때는 app만 다시 빌드합니다.
-
-```bash
 make dev-app-build
+make dev-app-down
+make oidc-app-up
 make oidc-app-build
+make oidc-app-down
+make prod-app-up
 make prod-app-build
+make prod-app-down
 ```
 
-infra는 Airflow, FTP, DB만 포함합니다. 데이터 적재 작업이 필요한 경우 infra만 별도로 올리거나 내릴 수 있습니다.
+Airflow/FTP 기반 데이터 적재 작업이 필요하면 infra를 별도로 조작합니다.
 
 ```bash
 make dev-infra-up
 make dev-infra-build
 make dev-infra-down
+make oidc-infra-up
+make oidc-infra-build
+make oidc-infra-down
+make prod-infra-up
+make prod-infra-build
+make prod-infra-down
 ```
+
+운영 compose에는 Airflow/FTP 외에 monitoring 서비스도 포함됩니다.
 
 주요 주소:
 
@@ -80,6 +102,7 @@ make makemigrations-check
 | `load_m_tkin_prevent` | `m_tkin_prevent` incoming 파일 적재 |
 | `load_ctttm_workorder_list` | `ctttm_workorder_list` incoming 파일 적재 |
 | `load_ct_process_comment` | `ct_process_comment` incoming 파일 적재 |
+| `summarize_ct_process_comment` | `ct_process_comment` OpenWebUI 요약 처리 |
 | `load_eqp_status_chg` | `eqp_status_chg` incoming 파일 적재 |
 | `load_mi_tip_update_hist` | `mi_tip_update_hist` incoming 파일 적재 |
 | `load_racb_list` | `racb_list` incoming 파일 적재 |
@@ -99,6 +122,7 @@ docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_dummy
 docker compose -f docker-compose.dev.yml exec -T api python manage.py load_m_tkin_prevent
 docker compose -f docker-compose.dev.yml exec -T api python manage.py load_ctttm_workorder_list
 docker compose -f docker-compose.dev.yml exec -T api python manage.py load_ct_process_comment
+docker compose -f docker-compose.dev.yml exec -T api python manage.py summarize_ct_process_comment
 docker compose -f docker-compose.dev.yml exec -T api python manage.py load_eqp_status_chg
 docker compose -f docker-compose.dev.yml exec -T api python manage.py load_mi_tip_update_hist
 docker compose -f docker-compose.dev.yml exec -T api python manage.py load_racb_list

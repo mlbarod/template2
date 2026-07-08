@@ -14,7 +14,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-DEFAULT_ROOT = Path(__file__).resolve().parent / "data" / "l3_spider" / "daily_anomaly"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_ROOT = REPO_ROOT / "data" / "l3_spider" / "daily_anomaly"
 DEFAULT_DATES = ["2026-06-17", "2026-06-18"]
 
 LINE_PROCESS_IDS = {

@@ -2,7 +2,17 @@
 
 ARG NODE_BASE_IMAGE=node:20-alpine
 FROM ${NODE_BASE_IMAGE} AS deps
+ARG ALPINE_REPOSITORY_MIRROR=
+ARG NPM_REGISTRY=
+ARG NPM_STRICT_SSL=true
 WORKDIR /app
+RUN if [ -n "$ALPINE_REPOSITORY_MIRROR" ]; then \
+        sed -i "s@https://dl-cdn.alpinelinux.org/alpine@${ALPINE_REPOSITORY_MIRROR}@g" /etc/apk/repositories; \
+    fi
+RUN if [ -n "$NPM_REGISTRY" ]; then \
+        npm config set registry "$NPM_REGISTRY"; \
+    fi \
+    && npm config set strict-ssl "$NPM_STRICT_SSL"
 COPY package.json package-lock.json ./
 RUN npm install --legacy-peer-deps
 
@@ -28,8 +38,18 @@ ENV VITE_PORTAL_CONFLUENCE_URL=${VITE_PORTAL_CONFLUENCE_URL}
 RUN npm run build
 
 FROM ${NODE_BASE_IMAGE} AS runner
+ARG ALPINE_REPOSITORY_MIRROR=
+ARG NPM_REGISTRY=
+ARG NPM_STRICT_SSL=true
 WORKDIR /app
 ENV NODE_ENV=production
+RUN if [ -n "$ALPINE_REPOSITORY_MIRROR" ]; then \
+        sed -i "s@https://dl-cdn.alpinelinux.org/alpine@${ALPINE_REPOSITORY_MIRROR}@g" /etc/apk/repositories; \
+    fi
+RUN if [ -n "$NPM_REGISTRY" ]; then \
+        npm config set registry "$NPM_REGISTRY"; \
+    fi \
+    && npm config set strict-ssl "$NPM_STRICT_SSL"
 COPY --from=builder /app/dist ./dist
 RUN npm install -g serve
 EXPOSE 3000

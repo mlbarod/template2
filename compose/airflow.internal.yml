@@ -12,9 +12,22 @@ x-airflow-common-env: &airflow-common-env
   AIRFLOW_API_BASE_URL: ${AIRFLOW_API_BASE_URL:-http://api:8000}
   AIRFLOW_TRIGGER_TOKEN: ${AIRFLOW_TRIGGER_TOKEN:-5ca99f0ae7b1fcd3f958ebb1c2ee4639d0a8fada21e8ff009d27f42cd2bbf31e}
 
+x-airflow-internal-build: &airflow-internal-build
+  context: ../airflow
+  dockerfile: Dockerfile
+  args:
+    AIRFLOW_BASE_IMAGE: repository.samsungds.net/proxy-docker-registry-1.docker.io/apache/airflow:2.11.0
+    APT_DEBIAN_REPOSITORY: http://repository.samsungds.net/repository/proxy-apt-mirror.kakao.com-debian
+    APT_DEBIAN_CODENAME: bookworm
+    APT_DEBIAN_ARCH: amd64
+    PIP_INDEX_URL: http://repository.samsungds.net/repository/proxy-pypi-files.pythonhosted.org/simple
+    PIP_TRUSTED_HOST: repository.samsungds.net
+    INSTALL_BIGDATAQUERY_ODBC: "true"
+    BIGDATAQUERY_ODBC_DEB_URL: http://nexus.adpaas.cloud.samsungds.net/repository/dataservice/odbc/linux/debian/clouderaimpalaodbc_2.8.3.1008-2_amd64.deb
+
 services:
   airflow-postgres:
-    image: repository.samsungds.net/docker.io/postgres:16
+    image: repository.samsungds.net/proxy-docker-registry-1.docker.io/postgres:16
     environment:
       POSTGRES_USER: airflow
       POSTGRES_PASSWORD: airflow
@@ -36,13 +49,9 @@ services:
           - airflow-postgres
 
   airflow-init:
-    image: airflow-with-codeserver:2.11.0
+    image: airflow:2.11.0-internal
     pull_policy: never
-    build:
-      context: ../airflow
-      dockerfile: Dockerfile
-      args:
-        AIRFLOW_BASE_IMAGE: repository.samsungds.net/docker.io/apache/airflow:2.11.0
+    build: *airflow-internal-build
     entrypoint: /bin/bash
     command:
       - -c
@@ -59,6 +68,7 @@ services:
     user: "0:0"
     volumes:
       - "../airflow:/sources"
+      - "../airflow/odbc:/usr/local/odbc:ro"
     depends_on:
       airflow-postgres:
         condition: service_healthy
@@ -66,13 +76,9 @@ services:
       - shared-net
 
   airflow-webserver:
-    image: airflow-with-codeserver:2.11.0
+    image: airflow:2.11.0-internal
     pull_policy: never
-    build:
-      context: ../airflow
-      dockerfile: Dockerfile
-      args:
-        AIRFLOW_BASE_IMAGE: repository.samsungds.net/docker.io/apache/airflow:2.11.0
+    build: *airflow-internal-build
     command: webserver
     environment:
       <<: *airflow-common-env
@@ -82,6 +88,7 @@ services:
       - "../airflow/logs:/opt/airflow/logs"
       - "../airflow/config:/opt/airflow/config"
       - "../airflow/plugins:/opt/airflow/plugins"
+      - "../airflow/odbc:/usr/local/odbc:ro"
       - "airflow_user_site:/home/airflow/.local"
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/airflow/health"]
@@ -100,13 +107,9 @@ services:
           - airflow-webserver
 
   airflow-scheduler:
-    image: airflow-with-codeserver:2.11.0
+    image: airflow:2.11.0-internal
     pull_policy: never
-    build:
-      context: ../airflow
-      dockerfile: Dockerfile
-      args:
-        AIRFLOW_BASE_IMAGE: repository.samsungds.net/docker.io/apache/airflow:2.11.0
+    build: *airflow-internal-build
     command: scheduler
     environment:
       <<: *airflow-common-env
@@ -116,6 +119,7 @@ services:
       - "../airflow/logs:/opt/airflow/logs"
       - "../airflow/config:/opt/airflow/config"
       - "../airflow/plugins:/opt/airflow/plugins"
+      - "../airflow/odbc:/usr/local/odbc:ro"
       - "airflow_user_site:/home/airflow/.local"
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
@@ -128,53 +132,6 @@ services:
         condition: service_healthy
       airflow-init:
         condition: service_completed_successfully
-    networks:
-      - shared-net
-
-  airflow-code:
-    image: airflow-with-codeserver:2.11.0
-    pull_policy: never
-    build:
-      context: ../airflow
-      dockerfile: Dockerfile
-      args:
-        AIRFLOW_BASE_IMAGE: repository.samsungds.net/docker.io/apache/airflow:2.11.0
-    entrypoint: ["/bin/bash", "-lc"]
-    command:
-      - >
-        mkdir -p
-        /home/airflow/.config/code-server
-        /home/airflow/.local/share/code-server
-        /home/airflow/.local/share/code-server/extensions
-        /home/airflow/.vscode
-        && chown -R "$${AIRFLOW_UID:-50000}:0" /home/airflow
-        && chmod 700 /home/airflow/.config /home/airflow/.config/code-server
-        && exec code-server /opt/airflow
-        --bind-addr 0.0.0.0:8081
-        --auth password
-        --disable-telemetry
-        --user-data-dir /home/airflow/.local/share/code-server
-        --extensions-dir /home/airflow/.local/share/code-server/extensions
-    environment:
-      <<: *airflow-common-env
-      HOME: /home/airflow
-      XDG_CONFIG_HOME: /home/airflow/.config
-      XDG_DATA_HOME: /home/airflow/.local/share
-      PASSWORD: ${CODE_SERVER_PASSWORD:-airflow}
-    working_dir: /opt/airflow
-    user: "${AIRFLOW_UID:-50000}:0"
-    volumes:
-      - "../airflow/dags:/opt/airflow/dags"
-      - "../airflow/logs:/opt/airflow/logs"
-      - "../airflow/config:/opt/airflow/config"
-      - "../airflow/plugins:/opt/airflow/plugins"
-      - "airflow_user_site:/home/airflow/.local"
-    ports:
-      - "${AIRFLOW_CODE_SERVER_PORT:-8081}:8081"
-    restart: always
-    depends_on:
-      airflow-webserver:
-        condition: service_started
     networks:
       - shared-net
 

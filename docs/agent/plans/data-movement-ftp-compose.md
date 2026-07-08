@@ -22,7 +22,7 @@
   - Portainer 서비스 추가
 
 ## 설계
-- `repository.samsungds.net/docker.io/fauria/vsftpd` 이미지를 사용한다.
+- `repository.samsungds.net/proxy-docker-registry-1.docker.io/fauria/vsftpd` 이미지를 사용한다.
 - FTP service는 `DATA_MOVEMENT_HOST_PATH`를 API와 동일하게 mount한다.
 - 기본 host path는 `./data/data_movement`로 맞춘다.
 - `FTP_PASV_ADDRESS`, `FTP_USER`, `FTP_PASS`, port range는 env로 override 가능하게 둔다.

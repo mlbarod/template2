@@ -36,10 +36,7 @@ services:
           - airflow-postgres
 
   airflow-init:
-    image: airflow-with-codeserver:2.11.0
-    build:
-      context: ../airflow
-      dockerfile: Dockerfile
+    image: apache/airflow:2.11.0
     entrypoint: /bin/bash
     command:
       - -c
@@ -63,10 +60,7 @@ services:
       - shared-net
 
   airflow-webserver:
-    image: airflow-with-codeserver:2.11.0
-    build:
-      context: ../airflow
-      dockerfile: Dockerfile
+    image: apache/airflow:2.11.0
     command: webserver
     environment:
       <<: *airflow-common-env
@@ -94,10 +88,7 @@ services:
           - airflow-webserver
 
   airflow-scheduler:
-    image: airflow-with-codeserver:2.11.0
-    build:
-      context: ../airflow
-      dockerfile: Dockerfile
+    image: apache/airflow:2.11.0
     command: scheduler
     environment:
       <<: *airflow-common-env
@@ -119,50 +110,6 @@ services:
         condition: service_healthy
       airflow-init:
         condition: service_completed_successfully
-    networks:
-      - shared-net
-
-  airflow-code:
-    image: airflow-with-codeserver:2.11.0
-    build:
-      context: ../airflow
-      dockerfile: Dockerfile
-    entrypoint: ["/bin/bash", "-lc"]
-    command:
-      - >
-        mkdir -p
-        /home/airflow/.config/code-server
-        /home/airflow/.local/share/code-server
-        /home/airflow/.local/share/code-server/extensions
-        /home/airflow/.vscode
-        && chown -R "$${AIRFLOW_UID:-50000}:0" /home/airflow
-        && chmod 700 /home/airflow/.config /home/airflow/.config/code-server
-        && exec code-server /opt/airflow
-        --bind-addr 0.0.0.0:8081
-        --auth password
-        --disable-telemetry
-        --user-data-dir /home/airflow/.local/share/code-server
-        --extensions-dir /home/airflow/.local/share/code-server/extensions
-    environment:
-      <<: *airflow-common-env
-      HOME: /home/airflow
-      XDG_CONFIG_HOME: /home/airflow/.config
-      XDG_DATA_HOME: /home/airflow/.local/share
-      PASSWORD: ${CODE_SERVER_PASSWORD:-airflow}
-    working_dir: /opt/airflow
-    user: "${AIRFLOW_UID:-50000}:0"
-    volumes:
-      - "../airflow/dags:/opt/airflow/dags"
-      - "../airflow/logs:/opt/airflow/logs"
-      - "../airflow/config:/opt/airflow/config"
-      - "../airflow/plugins:/opt/airflow/plugins"
-      - "airflow_user_site:/home/airflow/.local"
-    ports:
-      - "${AIRFLOW_CODE_SERVER_PORT:-8081}:8081"
-    restart: always
-    depends_on:
-      airflow-webserver:
-        condition: service_started
     networks:
       - shared-net
 

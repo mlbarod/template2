@@ -48,7 +48,7 @@ loader는 파일명에서 source를 추출한 뒤 MST는 55개 컬럼, MNU는 49
 
 ## FTP
 
-OIDC/운영 Compose의 `ftp` service는 `repository.samsungds.net/docker.io/fauria/vsftpd` 이미지를 사용합니다. dev Compose는 외부 개발용 public image 이름을 유지합니다.
+OIDC/운영 Compose의 `ftp` service는 `repository.samsungds.net/proxy-docker-registry-1.docker.io/fauria/vsftpd` 이미지를 사용합니다. dev Compose는 외부 개발용 public image 이름을 유지합니다.
 FTP에서 보이는 `data_movement` 디렉터리는 API의 `/data/data_movement`와 같은 host path입니다.
 
 기본 접속 설정은 env로 바꿀 수 있습니다.

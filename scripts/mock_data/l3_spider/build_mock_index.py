@@ -9,10 +9,10 @@ daily_anomaly 안의 mock parquet 파일들을 스캔해서 SQLite 인덱스를 
       쿼리가 기대한 대로 나오는지 mock 데이터로 미리 확인하는 것.
 
 사용법:
-  python build_mock_index.py --root /data/l3_spider/daily_anomaly
+  python scripts/mock_data/l3_spider/build_mock_index.py --root /data/l3_spider/daily_anomaly
 
   # 인덱스 새로 만들지 않고 기존 것만 검증
-  python build_mock_index.py --root /data/l3_spider/daily_anomaly --verify-only
+  python scripts/mock_data/l3_spider/build_mock_index.py --root /data/l3_spider/daily_anomaly --verify-only
 
 옵션:
   --root   daily_anomaly 최상위 경로 (필수)

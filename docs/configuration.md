@@ -17,6 +17,20 @@
 | `env/minio.env` | MinIO | local MinIO 계정과 endpoint |
 | `env/grafana.env` | Grafana | 모니터링 콘솔 관리자 계정과 기본 보안 설정 |
 
+## 환경별 dependency source 정책
+
+이 repo의 실행 환경은 dependency source 기준으로 아래처럼 나눕니다.
+
+| 환경 | 실행 명령 | 용도 | Docker image | package manager |
+| --- | --- | --- | --- | --- |
+| `dev` | `make dev` | 로컬 개발 전용 | public registry | public source |
+| `oidc` | `make oidc` | 사내 OIDC 검증/스테이징 | internal mirror | internal mirror |
+| `prod` | `make prod` | 운영 compose 조립 | internal mirror | internal mirror |
+
+`dev`는 로컬 PC에서만 사용하는 개발 환경입니다.
+내부 mirror 주소인 `repository.samsungds.net`에 의존하지 않습니다.
+`oidc`와 `prod`는 외부 public 저장소를 직접 사용하지 않고 내부 mirror를 사용합니다.
+
 ## Env / Compose 관리 원칙
 
 - 공통 기본값은 `*.common.env`에 두고, dev/OIDC/prod 차이는 환경별 env 파일에만 둡니다.
@@ -25,9 +39,28 @@
 - 서비스 고유 infra 설정은 `env/minio.env`, `env/grafana.env`처럼 서비스별 env 파일에 둡니다.
 - Compose 계층은 app과 infra를 분리합니다. 앱 컨테이너는 `compose/*.app.yml`, 운영 보조 서비스는 `compose/*.infra.yml` 또는 infra에서 include하는 파일에 둡니다.
 - Airflow Compose 공통 env에는 Airflow runtime과 DAG 공통 연결/인증 값만 둡니다. DAG별 schedule/timeout/limit/dry-run 기본값은 각 DAG 코드에 둡니다.
-- OIDC 개발과 운영 Compose에서 외부 registry image를 pull할 때는 `repository.samsungds.net` 사내 registry를 사용합니다. Docker Hub image는 `repository.samsungds.net/docker.io/<image>` 형식으로 적고, dev Compose는 외부 개발용 public image 이름을 유지합니다.
+- OIDC 개발과 운영 Compose에서 외부 registry image를 pull할 때는 `repository.samsungds.net` 사내 registry를 사용합니다. Docker Hub image는 `repository.samsungds.net/proxy-docker-registry-1.docker.io/<image>` 형식으로 적습니다.
+- OIDC 개발과 운영 Compose의 Docker build는 사내 package mirror build args를 사용합니다. Debian apt는 `http://repository.samsungds.net/repository/proxy-apt-mirror.kakao.com-debian`의 `bullseye main`, 일반 pip는 `http://repository.samsungds.net/repository/proxy-pypi-files.pythonhosted.org/simple`, npm은 `http://repository.samsungds.net/repository/proxy-npm-registry.npmjs.org`, Alpine은 `http://repository.samsungds.net/repository/proxy-raw-dl-cdn.alpinelinux.org-alpine`을 사용합니다.
+- Airflow 공식 `apache/airflow:2.11.0` 이미지는 Debian bookworm 기반이므로 OIDC/prod Airflow Dockerfile은 같은 Debian mirror의 `bookworm main`을 사용합니다.
+- OIDC/prod Airflow 이미지는 BigDataQuery용 Cloudera Impala ODBC 드라이버를 빌드 시 설치합니다. apt/pip source는 위 repo 표준 mirror를 사용하고, ODBC 드라이버 `.deb`는 승인된 사내 artifact URL을 `BIGDATAQUERY_ODBC_DEB_URL` build arg에 고정합니다. 이 예외는 dev Compose에서 사용하지 않는 versioned driver artifact에만 허용합니다.
+- Airflow ODBC 설정 파일은 repo에 저장하지 않습니다. 운영에서 `airflow/odbc/odbc.ini`, `airflow/odbc/odbcinst.ini`를 제공하면 Compose가 `/usr/local/odbc`에 read-only로 mount합니다.
+- dev Compose는 Dockerfile의 public 기본값과 public package source를 유지합니다.
+- torch 전용 wheel index가 필요한 Docker build를 추가할 때는 `http://repository.samsungds.net/repository/proxy-pypi-download.pytorch.org-whl/simple`과 trusted host `repository.samsungds.net`를 별도 pip 설정으로 사용합니다.
 - password/token/key/secret 값은 실제 운영에서는 배포 secret manager나 외부 env injection으로 관리합니다. repo env 파일에는 로컬/템플릿 값만 둡니다.
 - env/Compose 변경 후 `bash scripts/agent/check_compose_configs.sh`로 dev/OIDC/prod Compose 병합 결과를 확인합니다.
+
+현재 Compose와 Docker build에서 사용하는 사내 mirror 매핑은 아래 항목으로 제한합니다.
+전체 proxy mirror catalog는 `docs/integrations/proxy-mirrors.md`를 봅니다.
+
+| type | public | mirror | repo 적용 형식 |
+| --- | --- | --- | --- |
+| `docker` | `https://registry-1.docker.io/` | `proxy-docker-registry-1.docker.io` | `repository.samsungds.net/proxy-docker-registry-1.docker.io/<image>` |
+| `docker` | `https://gcr.io` | `proxy-docker-gcr.io` | `repository.samsungds.net/proxy-docker-gcr.io/<image>` |
+| `apt` | `http://mirror.kakao.com/debian/` | `proxy-apt-mirror.kakao.com-debian` | `http://repository.samsungds.net/repository/proxy-apt-mirror.kakao.com-debian` |
+| `raw` | `https://dl-cdn.alpinelinux.org/alpine` | `proxy-raw-dl-cdn.alpinelinux.org-alpine` | `http://repository.samsungds.net/repository/proxy-raw-dl-cdn.alpinelinux.org-alpine` |
+| `npm` | `https://registry.npmjs.org` | `proxy-npm-registry.npmjs.org` | `http://repository.samsungds.net/repository/proxy-npm-registry.npmjs.org` |
+| `pypi` | `https://files.pythonhosted.org` | `proxy-pypi-files.pythonhosted.org` | `http://repository.samsungds.net/repository/proxy-pypi-files.pythonhosted.org/simple` |
+| `pypi` | `https://download.pytorch.org/whl/` | `proxy-pypi-download.pytorch.org-whl` | `http://repository.samsungds.net/repository/proxy-pypi-download.pytorch.org-whl/simple` |
 
 ## 주요 설정 그룹
 

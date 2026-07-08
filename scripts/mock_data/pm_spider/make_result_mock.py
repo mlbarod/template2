@@ -1,9 +1,9 @@
 """
-make_pm_spider_result_mock.py — PM SPIDER 결과 모의 데이터 생성
+make_result_mock.py — PM SPIDER 결과 모의 데이터 생성
 score_data와 decomp_data 구조를 생성합니다.
 
 실행:
-  python make_pm_spider_result_mock.py
+  python scripts/mock_data/pm_spider/make_result_mock.py
 """
 from pathlib import Path
 import numpy as np
@@ -21,7 +21,8 @@ RECIPE_ID  = "RCP001"
 TYPES      = ["ag", "process"]
 
 # 호스트 경로 (docker mount: data/pm_spider → /data/pm_spider)
-BASE_RESULT = Path(__file__).parent / "data" / "pm_spider" / "result"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+BASE_RESULT = REPO_ROOT / "data" / "pm_spider" / "result"
 
 # 3개 PM cycle (trend 테스트용)
 PM_DATES = ["2026-03-10", "2026-04-21", "2026-05-29"]

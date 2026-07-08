@@ -1,6 +1,6 @@
 services:
   minio:
-    image: repository.samsungds.net/docker.io/minio/minio:latest
+    image: repository.samsungds.net/proxy-docker-registry-1.docker.io/minio/minio:latest
     command: server /data --console-address ":9001"
     env_file:
       - ../env/minio.env
@@ -15,7 +15,7 @@ services:
           - minio
 
   minio-init:
-    image: repository.samsungds.net/docker.io/minio/mc:latest
+    image: repository.samsungds.net/proxy-docker-registry-1.docker.io/minio/mc:latest
     depends_on:
       - minio
     env_file:
@@ -39,7 +39,12 @@ services:
     build:
       context: ../apps/api
       args:
-        PYTHON_BASE_IMAGE: repository.samsungds.net/docker.io/python:3.12-bookworm
+        PYTHON_BASE_IMAGE: repository.samsungds.net/proxy-docker-registry-1.docker.io/python:3.12-bullseye
+        APT_DEBIAN_REPOSITORY: http://repository.samsungds.net/repository/proxy-apt-mirror.kakao.com-debian
+        APT_DEBIAN_CODENAME: bullseye
+        APT_DEBIAN_ARCH: amd64
+        PIP_INDEX_URL: http://repository.samsungds.net/repository/proxy-pypi-files.pythonhosted.org/simple
+        PIP_TRUSTED_HOST: repository.samsungds.net
     env_file:
       - ../env/api.common.env
       - ../env/api.oidc.dev.env
@@ -76,7 +81,10 @@ services:
     build:
       context: ../apps/web
       args:
-        NODE_BASE_IMAGE: repository.samsungds.net/docker.io/node:20-alpine
+        NODE_BASE_IMAGE: repository.samsungds.net/proxy-docker-registry-1.docker.io/node:20-alpine
+        ALPINE_REPOSITORY_MIRROR: http://repository.samsungds.net/repository/proxy-raw-dl-cdn.alpinelinux.org-alpine
+        NPM_REGISTRY: http://repository.samsungds.net/repository/proxy-npm-registry.npmjs.org
+        NPM_STRICT_SSL: "false"
     env_file:
       - ../env/web.common.env
       - ../env/web.oidc.dev.env
@@ -94,7 +102,7 @@ services:
           - web
 
   nginx:
-    image: repository.samsungds.net/docker.io/nginx:1.27-alpine
+    image: repository.samsungds.net/proxy-docker-registry-1.docker.io/nginx:1.27-alpine
     depends_on:
       web:
         condition: service_started

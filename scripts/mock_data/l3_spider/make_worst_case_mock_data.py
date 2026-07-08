@@ -9,7 +9,7 @@ worst 조건 (차트는 드릴한 leaf로 필터됨을 반영):
     → 스크롤 부하(subplot 30개)의 최악 케이스. 사용자 예시(25 eqpch × 200)를 상회.
   - EQPCH 선택 시 → bin-trellis: subplot 3개(해당 eqc의 bin들)
 
-기존 make_mock_data_l3_spider.py 와 달리 numpy 벡터화로 대량 행을 빠르게 생성합니다.
+기존 make_mock_data.py 와 달리 numpy 벡터화로 대량 행을 빠르게 생성합니다.
 2026-06-17/18 등 다른 날짜는 건드리지 않습니다.
 """
 from __future__ import annotations
@@ -21,7 +21,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-DEFAULT_ROOT = Path(__file__).resolve().parent / "data" / "l3_spider" / "daily_anomaly"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_ROOT = REPO_ROOT / "data" / "l3_spider" / "daily_anomaly"
 DATE = "2026-06-20"
 
 # 구조(파일 수를 낮게 유지해 파일당 대용량을 감당) — 그래도 라인/매트릭스는 브라우징 가능

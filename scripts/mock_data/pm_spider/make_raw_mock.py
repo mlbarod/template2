@@ -55,7 +55,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--root",
         type=Path,
-        default=Path(__file__).parent / "data" / "pm_spider" / "data",
+        default=Path(__file__).resolve().parents[3] / "data" / "pm_spider" / "data",
         help="raw data 루트 경로입니다. 기본값은 ./data/pm_spider/data 입니다.",
     )
     parser.add_argument(
