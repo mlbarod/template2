@@ -77,10 +77,10 @@ function LineTable({ rows, selectedLine, onSelectLine, onReorder }) {
       <table className="w-full table-fixed border-collapse text-[14px]">
         <colgroup>
           <col className="w-7" />
-          <col className="w-[142px]" />
-          <col className="w-[78px]" />
-          <col className="w-[78px]" />
-          <col className="w-[78px]" />
+          <col className="w-[110px]" />
+          <col className="w-[68px]" />
+          <col className="w-[68px]" />
+          <col className="w-[68px]" />
         </colgroup>
         <thead className="sticky top-0 z-10 bg-card">
           <tr className="h-[58px] border-b">
@@ -380,7 +380,7 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
                 <th className="px-3 py-0 text-right font-semibold text-chart-4">Warning</th>
                 <th className="px-3 py-0 text-right font-semibold text-destructive">High Risk</th>
                 <th className="px-3 py-0 text-right font-semibold">step_seq</th>
-                <th className="px-3 py-0 text-right font-semibold">EQPCH</th>
+                <th className="pl-3 pr-6 py-0 text-right font-semibold">EQPCH</th>
               </tr>
             </thead>
             <tbody>
@@ -408,7 +408,7 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
                   <td className="px-3 py-2 text-right tabular-nums font-semibold">
                     {formatNumber(row.stepSeq)}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums font-semibold">
+                  <td className="pl-3 pr-6 py-2 text-right tabular-nums font-semibold">
                     {formatNumber(row.eqpch)}
                   </td>
                 </tr>
@@ -422,7 +422,7 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
                 <td className="px-3 py-2 text-right tabular-nums text-chart-4">{formatNumber(filteredTotals.warning)}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-destructive">{formatNumber(filteredTotals.highRisk)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{formatNumber(filteredTotals.stepSeq)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{formatNumber(filteredTotals.eqpch)}</td>
+                <td className="pl-3 pr-6 py-2 text-right tabular-nums">{formatNumber(filteredTotals.eqpch)}</td>
               </tr>
             </tfoot>
           </table>
@@ -467,7 +467,7 @@ function TrendValueLabel({ x, y, width, height, value }) {
       x={labelX + labelWidth / 2}
       y={Math.max(12, labelY - 6)}
       textAnchor="middle"
-      fill="hsl(var(--foreground))"
+      fill="var(--foreground)"
       fontSize={11}
       fontWeight={700}
       pointerEvents="none"
@@ -614,16 +614,16 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
         ) : (
           <ResponsiveContainer width="100%" height="100%" debounce={60}>
             <BarChart data={chartData} margin={{ top: 20, right: 12, left: 0, bottom: 4 }} barCategoryGap="30%">
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal vertical />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal vertical />
               <XAxis
                 dataKey="date"
-                tick={{ fontSize: 12, style: { fill: "hsl(var(--muted-foreground))" } }}
+                tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
                 tickLine={false}
                 axisLine={false}
                 interval="preserveStartEnd"
               />
               <YAxis
-                tick={{ fontSize: 12, style: { fill: "hsl(var(--muted-foreground))" } }}
+                tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
                 tickLine={false}
                 axisLine={false}
                 width={52}
@@ -631,14 +631,14 @@ function TrendChartCard({ trendPoints, allLineNames, focusLine }) {
               />
               <Tooltip
                 contentStyle={{
-                  background: "hsl(var(--card))",
-                  border: "1px solid hsl(var(--border))",
+                  background: "var(--card)",
+                  border: "1px solid var(--border)",
                   borderRadius: "6px",
                   fontSize: 13,
                 }}
                 formatter={(value, name) => [formatNumber(value), name === "value" ? (metric === "hr" ? "High Risk" : "이상 건수") : name]}
                 labelFormatter={(label) => `날짜: ${label}`}
-                cursor={{ fill: "hsl(var(--muted))", opacity: 0.5 }}
+                cursor={{ fill: "var(--muted)", opacity: 0.5 }}
               />
               <Legend
                 layout="vertical"
