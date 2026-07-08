@@ -239,7 +239,7 @@ function ColumnFilter({ values, selected, onChange }) {
 
 function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onToggleMaximized, className }) {
   const { cells = EMPTY_ARRAY } = matrix ?? {}
-  const { rows, totals, lineCount, processCount, edsCount } = useMemo(() => {
+  const { rows, lineCount, processCount, edsCount } = useMemo(() => {
     const scopedCells = selectedLine ? cells.filter((cell) => cell.line === selectedLine) : cells
     const lineSet = new Set()
     const processSet = new Set()
@@ -467,7 +467,9 @@ function TrendValueLabel({ x, y, width, height, value }) {
       x={labelX + labelWidth / 2}
       y={Math.max(12, labelY - 6)}
       textAnchor="middle"
-      style={{ fill: "hsl(var(--foreground))", fontSize: 11, fontWeight: 700 }}
+      fill="hsl(var(--foreground))"
+      fontSize={11}
+      fontWeight={700}
       pointerEvents="none"
     >
       {formatNumber(numericValue)}
