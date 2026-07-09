@@ -315,7 +315,7 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
   ), [filteredRows])
 
   return (
-    <Card className={cn("flex h-full min-w-0 flex-col overflow-hidden rounded-lg py-0 gap-0", className)}>
+    <Card className={cn("flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg py-0 gap-0", className)}>
       <div className="flex h-11 shrink-0 items-center gap-2 border-b bg-muted/50 px-4">
         <CardTitle className="text-[15px]">라인별 세부 요약</CardTitle>
         <Badge variant={selectedLine ? "secondary" : "outline"} className="min-w-[86px] justify-center text-xs">
@@ -804,9 +804,9 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
       )
     }
     return (
-      <main className="grid gap-5 px-6 pb-6 pt-4">
-        <Card className="rounded-lg">
-          <CardContent className="flex min-h-64 items-center justify-center p-6 text-sm text-muted-foreground">
+      <main className="flex min-h-0 flex-1 min-w-0 overflow-hidden px-5 pb-5 pt-3">
+        <Card className="flex min-h-0 flex-1 rounded-lg">
+          <CardContent className="flex min-h-0 flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
             {message}
           </CardContent>
         </Card>
@@ -815,8 +815,8 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
   }
 
   return (
-    <main className="grid gap-4 px-5 pb-5 pt-3">
-      <div className="grid h-[calc(100vh-150px)] min-h-[760px] min-w-0 grid-cols-[420px_minmax(0,1fr)] grid-rows-[minmax(360px,4fr)_minmax(340px,5fr)] gap-4">
+    <main className="flex min-h-0 flex-1 min-w-0 overflow-hidden px-5 pb-5 pt-3">
+      <div className="grid h-full min-h-0 flex-1 min-w-0 grid-cols-[420px_minmax(0,1fr)] grid-rows-[minmax(0,4fr)_minmax(0,5fr)] gap-4 overflow-hidden">
         {isDetailMaximized ? (
           <ProcessEdsSummaryCard
             className="col-span-2 row-span-2"
