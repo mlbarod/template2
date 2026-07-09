@@ -14,6 +14,7 @@ import {
 
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardTitle } from "@/components/ui/card"
+import { Tooltip as UITooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
 import { useAuth } from "@/lib/auth"
@@ -38,9 +39,9 @@ const LINE_COLORS = [
 const HIGH_RISK_BAR_COLOR = "rgb(220, 38, 38)"
 const ANOMALY_BAR_COLOR = "rgb(217, 119, 6)"
 const LINE_TOTAL_ITEMS = [
-  { key: "groups", label: "분석 그룹", className: "text-foreground" },
-  { key: "highRisk", label: "High Risk", className: "text-destructive" },
+  { key: "groups", label: "분석 그룹", className: "text-foreground", tooltip: "이상 감지 분석 대상인 (line_id × process_id × eds_step) 조합의 수입니다." },
   { key: "warning", label: "Warning", className: "text-chart-4" },
+  { key: "highRisk", label: "High Risk", className: "text-destructive" },
   { key: "anomalies", label: "이상 건수", className: "text-foreground" },
   { key: "highRiskEqpchs", label: "이상 EQPCH", className: "text-destructive" },
 ]
@@ -165,16 +166,36 @@ function LineSummaryTotals({ headline }) {
         <span className="text-[15px] font-semibold text-muted-foreground">Total</span>
       </div>
       <div className="grid grid-cols-5 divide-x">
-        {LINE_TOTAL_ITEMS.map(({ key, label, className }) => (
-          <div key={key} className="min-w-0 px-2 py-2 text-center">
-            <p className={cn("truncate text-[15px] font-bold leading-none tabular-nums", className)}>
-              {formatNumber(headline?.[key] ?? 0)}
-            </p>
-            <p className="mt-1 truncate text-[10px] font-medium text-muted-foreground">
-              {label}
-            </p>
-          </div>
-        ))}
+        {LINE_TOTAL_ITEMS.map(({ key, label, className, tooltip }) => {
+          const cell = (
+            <div key={key} className="min-w-0 px-2 py-2 text-center">
+              <p className={cn("truncate text-[15px] font-bold leading-none tabular-nums", className)}>
+                {formatNumber(headline?.[key] ?? 0)}
+              </p>
+              <p className="mt-1 truncate text-[10px] font-medium text-muted-foreground">
+                {label}
+              </p>
+            </div>
+          )
+          if (!tooltip) return cell
+          return (
+            <UITooltip key={key}>
+              <TooltipTrigger asChild>
+                <div className="min-w-0 cursor-default px-2 py-2 text-center">
+                  <p className={cn("truncate text-[15px] font-bold leading-none tabular-nums", className)}>
+                    {formatNumber(headline?.[key] ?? 0)}
+                  </p>
+                  <p className="mt-1 truncate text-[10px] font-medium text-muted-foreground">
+                    {label}
+                  </p>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-[220px] text-center text-xs">
+                {tooltip}
+              </TooltipContent>
+            </UITooltip>
+          )
+        })}
       </div>
     </div>
   )
@@ -315,7 +336,7 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
   ), [filteredRows])
 
   return (
-    <Card className={cn("flex h-full min-w-0 flex-col overflow-hidden rounded-lg py-0 gap-0", className)}>
+    <Card className={cn("flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg py-0 gap-0", className)}>
       <div className="flex h-11 shrink-0 items-center gap-2 border-b bg-muted/50 px-4">
         <CardTitle className="text-[15px]">라인별 세부 요약</CardTitle>
         <Badge variant={selectedLine ? "secondary" : "outline"} className="min-w-[86px] justify-center text-xs">
@@ -804,9 +825,9 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
       )
     }
     return (
-      <main className="grid gap-5 px-6 pb-6 pt-4">
-        <Card className="rounded-lg">
-          <CardContent className="flex min-h-64 items-center justify-center p-6 text-sm text-muted-foreground">
+      <main className="flex min-h-0 flex-1 min-w-0 overflow-hidden px-5 pb-5 pt-3">
+        <Card className="flex min-h-0 flex-1 rounded-lg">
+          <CardContent className="flex min-h-0 flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
             {message}
           </CardContent>
         </Card>
@@ -815,8 +836,8 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
   }
 
   return (
-    <main className="grid gap-4 px-5 pb-5 pt-3">
-      <div className="grid h-[calc(100vh-150px)] min-h-[760px] min-w-0 grid-cols-[420px_minmax(0,1fr)] grid-rows-[minmax(360px,4fr)_minmax(340px,5fr)] gap-4">
+    <main className="flex min-h-0 flex-1 min-w-0 overflow-hidden px-5 pb-5 pt-3">
+      <div className="grid h-full min-h-0 flex-1 min-w-0 grid-cols-[420px_minmax(0,1fr)] grid-rows-[minmax(0,4fr)_minmax(0,5fr)] gap-4 overflow-hidden">
         {isDetailMaximized ? (
           <ProcessEdsSummaryCard
             className="col-span-2 row-span-2"

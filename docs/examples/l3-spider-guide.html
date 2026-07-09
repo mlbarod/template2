@@ -284,14 +284,13 @@
       <h1>L3 Spider 실제 화면 기준 사용 설명서</h1>
       <p class="lead">
         L3 Spider는 날짜별 이상감지 결과를 Summary에서 빠르게 훑고, Chart에서 Line/Process/EDS/Step/PPID/EQPCH 단위로 파고드는 화면입니다.
-        각 캡처의 빨간 번호는 실제 UI 영역을 가리키며, 아래 설명은 그 영역이 무엇을 하는지 정리합니다.
+        각 캡처의 번호는 실제 UI 영역을 가리키며, 아래 설명은 그 영역이 무엇을 하는지 정리합니다.
       </p>
       <div class="facts">
         <span class="fact">캡처 경로 <b>/l3_spider</b></span>
         <span class="fact">문서 위치 <b>docs/examples/l3-spider-guide.html</b></span>
         <span class="fact">캡처 실행일 <b>2026-07-04</b></span>
         <span class="fact">화면 데이터 날짜 <b>2026-06-20</b></span>
-        <span class="fact">Chart 선택 <b>FAB_A / ABCD / eds_001 / step_001 / ppid_a / eqp_301_pm1</b></span>
       </div>
     </div>
   </header>
@@ -309,23 +308,18 @@
         <a href="l3-spider-guide-assets/summary-overview.png">
           <img src="l3-spider-guide-assets/summary-overview.png" alt="L3 Spider Summary 탭 실제 화면 캡처" />
         </a>
-        <figcaption class="caption">Summary 탭 실제 캡처. 번호는 날짜, 관리 버튼, 탭, KPI, 라인별 집계, 이상 매트릭스를 가리킵니다.</figcaption>
+        <figcaption class="caption">Summary 탭 실제 캡처. 번호는 날짜, 관리 버튼, 탭, 하단 Total 지표, 라인별 집계, 라인별 세부 요약을 가리킵니다.</figcaption>
       </figure>
 
       <ol class="callouts">
         <li><span class="num">1</span><div><b>Date 선택</b><p>조회 기준 날짜입니다. 날짜를 바꾸면 Summary 집계와 Chart 선택 후보가 같은 날짜 기준으로 다시 계산됩니다.</p></div></li>
         <li><span class="num">2</span><div><b>운영 버튼</b><p><b>메일 설정</b>은 자동 알림 rule을 관리하고, <b>제외 필터</b>는 노이즈 조합을 집계에서 빼며, <b>새로고침</b>은 최신 메타데이터를 다시 불러옵니다.</p></div></li>
         <li><span class="num">3</span><div><b>Summary / Chart 탭</b><p>Summary는 날짜 전체 집계, Chart는 선택 조건별 scatter trellis 분석 화면입니다.</p></div></li>
-        <li><span class="num">4</span><div><b>KPI 카드</b><p>분석 그룹, High Risk, Warning, 이상 건수, 이상 EQPCH 수를 한 줄로 보여줍니다. 오른쪽에는 Line/Process/EDS/Bin 요약도 함께 표시됩니다.</p></div></li>
+        <li><span class="num">4</span><div><b>하단 Total 지표</b><p>분석 그룹, High Risk, Warning, 이상 건수, 이상 EQPCH 수를 한 줄로 보여줍니다.</p></div></li>
         <li><span class="num">5</span><div><b>라인별 현황</b><p>Line별 HR/WN/합계를 비교합니다. 이상이 없는 라인도 흐리게 표시되어 전체 커버리지와 이상 집중 라인을 같이 볼 수 있습니다.</p></div></li>
-        <li><span class="num">6</span><div><b>Anomaly Summary</b><p>Line, Process, EDS Step별 High Risk/Warning 건수를 보여줍니다. 셀을 클릭하면 같은 조건으로 Chart 탭이 열립니다.</p></div></li>
-        <li><span class="num">7</span><div><b>High Risk 발생 범위</b><p><code>step_seq 수 / EQPCH 수</code>를 보여줍니다. 건수가 같아도 여러 step과 장비 채널에 퍼졌는지 판단할 때 봅니다.</p></div></li>
+        <li><span class="num">6</span><div><b>라인별 세부 요약</b><p>Line, Process, EDS Step별 High Risk/Warning 건수를 보여줍니다. 셀을 클릭하면 같은 조건으로 Chart 탭이 열립니다.</p></div></li>
       </ol>
 
-      <div class="note">
-        Summary에서 셀 값이 <code>7,481 / 13,889</code>처럼 보이면 앞 숫자는 High Risk, 뒤 숫자는 Warning입니다.
-        빨간 값이 큰 셀을 먼저 보고, 오른쪽 High Risk 발생 범위에서 번진 정도를 확인한 뒤 Chart로 들어가는 흐름이 가장 빠릅니다.
-      </div>
     </div>
   </section>
 
@@ -342,7 +336,6 @@
         <a href="l3-spider-guide-assets/chart-workflow.png">
           <img src="l3-spider-guide-assets/chart-workflow.png" alt="L3 Spider Chart 탭 실제 화면 캡처" />
         </a>
-        <figcaption class="caption">Chart 탭 실제 캡처. FAB_A → ABCD → eds_001 → step_001 → ppid_a → eqp_301_pm1 조합을 선택한 상태입니다.</figcaption>
       </figure>
 
       <ol class="callouts">

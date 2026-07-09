@@ -1,10 +1,18 @@
-import { Check, CircleHelp, Loader2, RefreshCw } from "lucide-react"
+import { BookOpen, Check, CircleHelp, Loader2, RefreshCw } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { motion } from "framer-motion"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardTitle } from "@/components/ui/card"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
@@ -356,26 +364,50 @@ export function L3SpiderDataSelector({
             <RefreshCw className={cn("size-4", isLoading && "animate-spin")} />
             새로고침
           </Button>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="outline"
-                size="icon-sm"
-                asChild
-              >
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon-sm"
+                    aria-label="L3 Spider 도움말 문서 열기"
+                    title="도움말 문서"
+                  >
+                    <CircleHelp className="size-4" aria-hidden="true" />
+                  </Button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent>도움말 문서</TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuLabel className="text-xs text-muted-foreground">L3 Spider 도움말</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
                 <a
                   href="/l3-spider/user_guide.html"
                   target="_blank"
                   rel="noopener noreferrer"
+                  aria-label="L3 Spider 페이지 설명서 열기"
+                >
+                  <BookOpen className="size-4" aria-hidden="true" />
+                  페이지 설명서
+                </a>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <a
+                  href="/l3-spider/algorithm_guide.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   aria-label="L3 Spider 알고리즘 설명서 열기"
-                  title="알고리즘 설명서"
                 >
                   <CircleHelp className="size-4" aria-hidden="true" />
+                  알고리즘 설명서
                 </a>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>알고리즘 설명서</TooltipContent>
-          </Tooltip>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
       {showBody ? (

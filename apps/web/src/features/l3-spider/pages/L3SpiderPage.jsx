@@ -4,6 +4,7 @@ import { useSearchParams } from "react-router-dom"
 
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { cn } from "@/lib/utils"
 
 import { L3SpiderChart } from "../components/L3SpiderChart"
 import { L3SpiderDataSelector } from "../components/L3SpiderDataSelector"
@@ -215,7 +216,10 @@ export function L3SpiderPage() {
   return (
     <div
       ref={pageRef}
-      className="relative flex h-full min-h-0 min-w-0 flex-col overflow-y-auto"
+      className={cn(
+        "relative flex h-full min-h-0 min-w-0 flex-col",
+        activeTab === "summary" ? "overflow-hidden" : "overflow-y-auto",
+      )}
       onScroll={handlePageScroll}
     >
       <L3SpiderDataSelector
@@ -297,28 +301,30 @@ export function L3SpiderPage() {
           />
         </main>
       )}
-      <div className="fixed bottom-6 right-6 z-40 grid gap-2">
-        <Button
-          type="button"
-          size="icon"
-          variant="outline"
-          className="rounded-full bg-background shadow-lg"
-          aria-label="화면 맨 위로 이동"
-          onClick={handleScrollToTop}
-        >
-          <ArrowUp className="size-4" aria-hidden="true" />
-        </Button>
-        <Button
-          type="button"
-          size="icon"
-          variant="outline"
-          className="rounded-full bg-background shadow-lg"
-          aria-label="화면 맨 아래로 이동"
-          onClick={handleScrollToBottom}
-        >
-          <ArrowDown className="size-4" aria-hidden="true" />
-        </Button>
-      </div>
+      {activeTab === "chart" ? (
+        <div className="fixed bottom-6 right-6 z-40 grid gap-2">
+          <Button
+            type="button"
+            size="icon"
+            variant="outline"
+            className="rounded-full bg-background shadow-lg"
+            aria-label="화면 맨 위로 이동"
+            onClick={handleScrollToTop}
+          >
+            <ArrowUp className="size-4" aria-hidden="true" />
+          </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant="outline"
+            className="rounded-full bg-background shadow-lg"
+            aria-label="화면 맨 아래로 이동"
+            onClick={handleScrollToBottom}
+          >
+            <ArrowDown className="size-4" aria-hidden="true" />
+          </Button>
+        </div>
+      ) : null}
     </div>
   )
 }
