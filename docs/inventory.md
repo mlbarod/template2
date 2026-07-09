@@ -93,9 +93,10 @@
 | `env/api.dev.env` | 로컬 dummy ADFS/RAG/LLM/Mail/Jira 및 dev 자동 소속 설정 |
 | `env/api.oidc.dev.env` | 실제 OIDC 개발 연결용 API 설정 |
 | `env/api.prod.env` | 운영 배포용 API 설정 템플릿 |
+| `env/airflow.common.env` | Airflow DAG API trigger와 실패 callback 설정 |
 | `env/web.dev.env` | 로컬 web 개발 설정 |
 | `env/web.oidc.dev.env` | 실제 OIDC 개발 연결용 web 설정 |
 | `env/web.prod.env` | 운영 web 설정 템플릿 |
 | `env/minio.env` | 로컬 MinIO 계정과 endpoint |
 
-주요 env group은 `DJANGO_*`, `DJANGO_DB_*`, `DEV_AUTO_AFFILIATION_*`, `L3_SPIDER_*`, `FDC_HARD_SPEC_*`, `PM_COMPARISON_*`, `DATA_MOVEMENT_*`, `FTP_*`, `OIDC_*`, `ADFS_*`, `AIRFLOW_TRIGGER_TOKEN`, `EMAIL_POP3_*`, `DRONE_*`, `KNOX_MESSENGER_*`, `ASSISTANT_*`, `RAG_*`, `MAIL_API_*`, `MINIO_*`, `VITE_*`입니다.
+주요 env group은 `DJANGO_*`, `DJANGO_DB_*`, `DEV_AUTO_AFFILIATION_*`, `L3_SPIDER_*`, `FDC_HARD_SPEC_*`, `PM_COMPARISON_*`, `DATA_MOVEMENT_*`, `FTP_*`, `OIDC_*`, `ADFS_*`, `AIRFLOW_*`, `EMAIL_POP3_*`, `DRONE_*`, `KNOX_MESSENGER_*`, `ASSISTANT_*`, `RAG_*`, `MAIL_API_*`, `MINIO_*`, `VITE_*`입니다.

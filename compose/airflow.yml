@@ -9,8 +9,6 @@ x-airflow-common-env: &airflow-common-env
   AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-dev-airflow-webserver-secret-key}
   AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
   AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
-  AIRFLOW_API_BASE_URL: ${AIRFLOW_API_BASE_URL:-http://api:8000}
-  AIRFLOW_TRIGGER_TOKEN: ${AIRFLOW_TRIGGER_TOKEN:-5ca99f0ae7b1fcd3f958ebb1c2ee4639d0a8fada21e8ff009d27f42cd2bbf31e}
 
 services:
   airflow-postgres:
@@ -50,6 +48,8 @@ services:
       _AIRFLOW_WWW_USER_CREATE: "true"
       _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_USERNAME:-airflow}
       _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_PASSWORD:-airflow}
+    env_file:
+      - ../env/airflow.common.env
     user: "0:0"
     volumes:
       - "../airflow:/sources"
@@ -64,6 +64,8 @@ services:
     command: webserver
     environment:
       <<: *airflow-common-env
+    env_file:
+      - ../env/airflow.common.env
     user: "${AIRFLOW_UID:-50000}:0"
     volumes:
       - "../airflow/dags:/opt/airflow/dags"
@@ -91,6 +93,8 @@ services:
     command: scheduler
     environment:
       <<: *airflow-common-env
+    env_file:
+      - ../env/airflow.common.env
     user: "${AIRFLOW_UID:-50000}:0"
     volumes:
       - "../airflow/dags:/opt/airflow/dags"

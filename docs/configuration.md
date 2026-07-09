@@ -10,6 +10,7 @@
 | `env/api.dev.env` | 로컬 API | dummy ADFS/RAG/LLM/Mail/Jira 연결 |
 | `env/api.oidc.dev.env` | OIDC 개발 API | 실제 OIDC/RAG 개발 연결용 override |
 | `env/api.prod.env` | 운영 API | 운영 배포 템플릿 |
+| `env/airflow.common.env` | Airflow DAG 공통 | DAG API trigger와 task 실패 callback 설정 |
 | `env/web.common.env` | Web 공통 | 모든 Web 환경에서 공유하는 브라우저 노출 설정 |
 | `env/web.dev.env` | 로컬 Web | local browser/backend URL |
 | `env/web.oidc.dev.env` | OIDC 개발 Web | nginx 경유 OIDC 개발 URL |
@@ -80,7 +81,7 @@
 | `DATA_MOVEMENT_*` / 파일 적재 데이터 | `DATA_MOVEMENT_HOST_PATH`, `DATA_MOVEMENT_FILE_READY_MIN_AGE_SECONDS`, `DATA_MOVEMENT_FILE_READY_STABILITY_SECONDS`, `DATA_MOVEMENT_M_TKIN_PREVENT_DIR`, `DATA_MOVEMENT_CTTTM_WORKORDER_LIST_DIR`, `DATA_MOVEMENT_CT_PROCESS_COMMENT_DIR`, `DATA_MOVEMENT_EQP_STATUS_CHG_DIR`, `DATA_MOVEMENT_MI_TIP_UPDATE_HIST_DIR`, `DATA_MOVEMENT_RACB_LIST_DIR`, `DATA_MOVEMENT_MES_LINE_MAPPING_INFO_DIR`, `DATA_MOVEMENT_STATION_MASTER_DIR` | FTP 등으로 수신한 파일의 host mount와 테이블별 root 경로. 하위 `incoming/processing` 사용. 최근 수정 파일과 stat 값이 변하는 파일은 이번 적재에서 제외 |
 | `FTP_*` / Data Movement FTP | `FTP_USER`, `FTP_PASS`, `FTP_PORT`, `FTP_PASV_ADDRESS`, `FTP_PASV_MIN_PORT`, `FTP_PASV_MAX_PORT` | `data_movement` 업로드용 FTP 계정, 접속 port, passive mode address/port |
 | `OIDC_*` / `ADFS_*` / Auth/OIDC | `OIDC_CLIENT_ID`, `OIDC_ISSUER`, `ADFS_AUTH_URL`, `ADFS_LOGOUT_URL`, `OIDC_REDIRECT_URI`, `ADFS_CER_PATH`, `ALLOWED_REDIRECT_HOSTS` | ADFS/OIDC 로그인 |
-| Airflow trigger | `AIRFLOW_TRIGGER_TOKEN` | 수집/동기화 trigger 보호용 Bearer token |
+| Airflow DAG env | `env/airflow.common.env`의 `AIRFLOW_API_BASE_URL`, `AIRFLOW_TRIGGER_TOKEN`, `AIRFLOW_FAILURE_ALERT_KNOX_IDS`, `KNOX_MESSENGER_API_BASE_URL`, `KNOX_MESSENGER_AUTHORIZATION`, `KNOX_MESSENGER_SYSTEM_ID` | DAG API trigger와 Airflow task 실패 callback용 환경 변수. callback 제목/메모 파일/TTL/timeout 기본값은 DAG 코드에서 관리하며 필요 시 같은 env 파일에서 `AIRFLOW_FAILURE_ALERT_CHATROOM_TITLE`, `AIRFLOW_FAILURE_ALERT_CHATROOM_ID_FILE`, `AIRFLOW_FAILURE_ALERT_MESSAGE_TTL`, `KNOX_MESSENGER_TIMEOUT_SECONDS`를 override |
 | Airflow DAG overrides | `L3_SPIDER_MAIL_TRIGGER_*`, `DATA_MOVEMENT_LOAD_*`, `DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_*` | 필요할 때만 외부 env injection으로 덮어쓰는 DAG별 schedule/timeout/limit/dry-run 옵션. 기본값은 각 DAG 코드에 둠 |
 | Emails POP3/OCR | `EMAIL_POP3_*`, `EMAIL_OCR_INTERNAL_TOKEN`, `EMAIL_EXCLUDED_SUBJECT_PREFIXES` | 메일 수집과 OCR worker |
 | Drone POP3/Jira/Mail/Messenger | `DRONE_*`, `KNOX_MESSENGER_*` | Drone SOP 수집과 채널별 전송 |

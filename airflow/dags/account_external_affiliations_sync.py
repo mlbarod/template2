@@ -8,6 +8,8 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.utils.dates import days_ago
 
+from failure_alerts import notify_airflow_task_failure
+
 AIRFLOW_API_BASE_URL = (os.getenv("AIRFLOW_API_BASE_URL") or "http://api:8000").strip().rstrip("/")
 AIRFLOW_TRIGGER_TOKEN = os.getenv("AIRFLOW_TRIGGER_TOKEN") or ""
 ACCOUNT_EXTERNAL_AFFILIATIONS_SYNC_TRIGGER_URL = (
@@ -76,6 +78,7 @@ def run_account_external_affiliations_sync(**_context):
 default_args = {
     "owner": "airflow",
     "depends_on_past": False,
+    "on_failure_callback": notify_airflow_task_failure,
 }
 
 with DAG(
