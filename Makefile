@@ -30,7 +30,8 @@ PROD_APP_BUILD_SERVICES=api web
 	dev dev-app-up dev-app-build dev-app-down dev-infra-up dev-infra-build dev-infra-down \
 	oidc oidc-app-up oidc-app-build oidc-app-down oidc-infra-up oidc-infra-build oidc-infra-down \
 	prod prod-app-up prod-app-build prod-app-down prod-infra-up prod-infra-build prod-infra-down \
-	down test-api check-api makemigrations-check
+	down test-api check-api makemigrations-check \
+	y5push
 
 # shared-net은 compose 파일에서 external network로 사용합니다.
 network:
@@ -143,3 +144,9 @@ check-api:
 
 makemigrations-check:
 	$(COMPOSE_DEV) exec -T api python manage.py makemigrations --check --dry-run
+
+# 현재 변경사항 전체를 커밋한 뒤 y5 브랜치로 푸시합니다.
+# 사용: make y5push msg="커밋 메시지"
+y5push:
+	@test -n "$(strip $(msg))" || (echo '사용: make y5push msg="커밋 메시지"'; exit 1)
+	./y5push "$(msg)"
