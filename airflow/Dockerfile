@@ -25,8 +25,14 @@ RUN if [ -n "$PIP_INDEX_URL" ]; then \
             printf 'extra-index-url = %s\n' "$PIP_EXTRA_INDEX_URL" >> /etc/pip.conf; \
         fi; \
         if [ -n "$PIP_TRUSTED_HOST" ]; then \
+            first_host=true; \
             for host in $PIP_TRUSTED_HOST; do \
-                printf 'trusted-host = %s\n' "$host" >> /etc/pip.conf; \
+                if [ "$first_host" = "true" ]; then \
+                    printf 'trusted-host = %s\n' "$host" >> /etc/pip.conf; \
+                    first_host=false; \
+                else \
+                    printf '    %s\n' "$host" >> /etc/pip.conf; \
+                fi; \
             done; \
         fi; \
     fi
