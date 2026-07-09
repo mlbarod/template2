@@ -1938,6 +1938,7 @@ def _empty_daily_summary() -> dict[str, object]:
         },
         "matrix": {"lines": [], "processes": [], "edsSteps": [], "cells": []},
         "equipmentRanking": [],
+        "runStats": {"totalRows": 0, "combinations": 0, "byLine": []},
     }
 
 
@@ -2271,6 +2272,12 @@ def get_daily_summary(selection: dict[str, object], *, user: Any | None = None) 
         result["equipmentRanking"] = _daily_equipment_ranking_from_parquet(ranking_paths, rules)
     except (FileNotFoundError, NotADirectoryError) as exc:
         raise L3SpiderServiceError(str(exc), status_code=404) from exc
+    run_stats = selectors.query_run_stats(dates)
+    if not file_df.empty and "line_name" in file_df.columns:
+        id_to_name = dict(zip(file_df["line_id"].astype(str), file_df["line_name"].astype(str)))
+        for entry in run_stats["byLine"]:
+            entry["lineName"] = id_to_name.get(str(entry["lineId"]), entry["lineId"])
+    result["runStats"] = run_stats
     _daily_summary_cache.set(cache_key, result)
     return result
 

@@ -9,7 +9,6 @@ import {
   ImageIcon,
   Mail,
   Radar,
-  RefreshCw,
   ShieldCheck,
   Sparkles,
 } from "lucide-react"
@@ -47,7 +46,6 @@ const PAGE_SECTIONS = [
   { id: "mail-list", label: "메일 목록", icon: Mail },
   { id: "mail-form", label: "메일 Rule", icon: Bell },
   { id: "exclusion", label: "제외 필터", icon: Filter },
-  { id: "workflow", label: "업무 흐름", icon: RefreshCw },
 ]
 
 const ALGORITHM_SECTIONS = [
@@ -148,12 +146,6 @@ const PAGE_SCREENSHOTS = [
   },
 ]
 
-const WORKFLOWS = [
-  ["당일 이상 훑기", ["상단 Date에서 분석 날짜를 고릅니다.", "Summary KPI로 전체 High Risk, Warning, 이상 EQPCH 규모를 봅니다.", "라인별 현황에서 이상이 몰린 Line을 확인합니다.", "Anomaly Summary 또는 High Risk 발생 셀을 클릭해 Chart로 이동합니다."]],
-  ["원인 지점 파고들기", ["Chart에서 Line Name, Process ID, EDS Step을 선택합니다.", "Step Seq, PPID, EQPCH 또는 Bin Name으로 대상을 좁힙니다.", "Scatter Plot에서 빨간 점의 시간대, wafer 분포, limit 초과 위치를 봅니다.", "필요하면 Raw Data를 내려받거나 All Charts로 보고서 이미지를 만듭니다."]],
-  ["반복 감시 설정", ["같은 조건을 매일 확인해야 하면 메일 설정에서 Rule 추가를 엽니다.", "severity 조건, 수신자, 발송 시각, 패턴 필드를 입력합니다.", "Rule을 활성화하고 저장한 뒤 다음 배치 처리 결과를 확인합니다."]],
-  ["노이즈 관리", ["설비 이벤트나 데이터 품질 이슈로 의미 없는 조합을 찾습니다.", "제외 필터에 대상 패턴과 적용 기간, 메모를 등록합니다.", "Summary 수치가 의도대로 줄었는지 새로고침 후 확인합니다."]],
-]
 
 const FAQS = [
   ["High Risk와 Warning은 무엇이 다른가요?", "High Risk는 control limit 위반과 반복성이 함께 확인된 강한 신호이고, Warning은 관찰이 필요한 초기 신호입니다."],
@@ -281,30 +273,6 @@ function PageGuideContent() {
             <NumberedCallouts points={section.points} />
           </section>
         ))}
-        <section id="workflow" className="scroll-mt-6 space-y-5">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-primary">06 Recommended workflow</p>
-            <h3 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">실제 업무에서 보는 순서</h3>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            {WORKFLOWS.map(([title, items]) => (
-              <div key={title} className="rounded-lg border bg-card p-4">
-                <h4 className="text-base font-semibold text-foreground">{title}</h4>
-                <ol className="mt-3 grid gap-2 text-sm leading-6 text-muted-foreground">
-                  {items.map((item, index) => (
-                    <li key={item} className="flex gap-2">
-                      <span className="font-mono text-xs text-primary">{String(index + 1).padStart(2, "0")}</span>
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            ))}
-          </div>
-          <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground">
-            색상 기준: High Risk는 강한 이상 신호, Warning은 관찰 대상, Normal reference는 정상 기준, 분포 차트의 Line 그룹은 비교 기준입니다.
-          </div>
-        </section>
       </div>
     </div>
   )

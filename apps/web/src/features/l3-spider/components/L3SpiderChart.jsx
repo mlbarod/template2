@@ -73,7 +73,7 @@ export function L3SpiderChart({
     <Card className="grid min-w-0 gap-0 overflow-hidden rounded-lg py-0">
       <CardHeader className="border-b bg-muted/50 px-4 py-2.5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <CardTitle className="text-sm">Scatter Plot — Trellis by {trellisLabel}</CardTitle>
             {rows.length > 0 && (
               <>
@@ -81,6 +81,39 @@ export function L3SpiderChart({
                 <Badge variant="secondary">{trellisCount} {trellisLabel}</Badge>
               </>
             )}
+            <div className="flex items-center gap-3 pl-1">
+              {xAxisMode === 'eqc_tkin_time' ? (
+                <>
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <span className="text-[10px] font-bold leading-none" style={{ color: '#dc2626' }}>★</span>
+                    High Risk
+                  </span>
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <span className="inline-block size-2.5 rounded-full" style={{ background: '#ea580c' }} />
+                    Warning
+                  </span>
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <span className="inline-block size-2.5 rounded-full border-2" style={{ borderColor: '#4b5563' }} />
+                    Normal
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <span className="inline-block size-2.5 rounded-full" style={{ background: '#dc2626' }} />
+                    High Risk
+                  </span>
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <span className="inline-block size-2.5 rounded-full border-2" style={{ borderColor: '#ea580c' }} />
+                    Warning
+                  </span>
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <span className="inline-block size-2.5 rounded-full border-2" style={{ borderColor: '#4b5563' }} />
+                    Normal
+                  </span>
+                </>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5">

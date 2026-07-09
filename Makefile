@@ -31,7 +31,7 @@ PROD_APP_BUILD_SERVICES=api web
 	oidc oidc-app-up oidc-app-build oidc-app-down oidc-infra-up oidc-infra-build oidc-infra-down \
 	prod prod-app-up prod-app-build prod-app-down prod-infra-up prod-infra-build prod-infra-down \
 	down test-api check-api makemigrations-check \
-	y5push
+	y5push y5pull
 
 # shared-net은 compose 파일에서 external network로 사용합니다.
 network:
@@ -150,3 +150,7 @@ makemigrations-check:
 y5push:
 	@test -n "$(strip $(msg))" || (echo '사용: make y5push msg="커밋 메시지"'; exit 1)
 	./y5push "$(msg)"
+
+# 원격 main 브랜치 상태로 현재 작업트리를 강제 동기화합니다.
+y5pull:
+	./y5pull
