@@ -1,7 +1,8 @@
 import { groupConfig } from "./observerMeta";
+import { OBSERVER_COLOR_CLASSES } from "./observerColorClasses";
 import { getContinuousRangeEnd } from "./logs";
 
-const FALLBACK_CLASS = "observer-color-fallback";
+const FALLBACK_CLASS = OBSERVER_COLOR_CLASSES.FALLBACK;
 
 function getItemLabel(logType, log) {
   if (logType === "ESOP") return log.lotId || log.eventType;

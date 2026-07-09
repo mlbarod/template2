@@ -1,67 +1,69 @@
+import { OBSERVER_COLOR_CLASSES } from "./observerColorClasses";
+
 export const ESOP_CHANGE_TYPE_LEGENDS = [
   {
     key: "ENGR_FOUP_SPLIT_STEP",
-    className: "observer-color-esop-foup-split-step",
+    className: OBSERVER_COLOR_CLASSES.ESOP_FOUP_SPLIT_STEP,
     label: "ENGR_FOUP_SPLIT_STEP",
   },
   {
     key: "ENGR_PRODUCTION",
-    className: "observer-color-esop-production",
+    className: OBSERVER_COLOR_CLASSES.ESOP_PRODUCTION,
     label: "ENGR_PRODUCTION",
   },
   {
     key: "ENGR_FOUP_SPLIT",
-    className: "observer-color-esop-foup-split",
+    className: OBSERVER_COLOR_CLASSES.ESOP_FOUP_SPLIT,
     label: "ENGR_FOUP_SPLIT",
   },
   {
     key: "ENGR_PRODUCTION_ANY",
-    className: "observer-color-esop-production-any",
+    className: OBSERVER_COLOR_CLASSES.ESOP_PRODUCTION_ANY,
     label: "ENGR_PRODUCTION_ANY",
   },
   {
     key: "ENGR_LOGICAL_SPLIT",
-    className: "observer-color-esop-logical-split",
+    className: OBSERVER_COLOR_CLASSES.ESOP_LOGICAL_SPLIT,
     label: "ENGR_LOGICAL_SPLIT",
   },
   {
     key: "ENGR_FOUP_SPLIT_STEP_SKEW",
-    className: "observer-color-esop-foup-split-step-skew",
+    className: OBSERVER_COLOR_CLASSES.ESOP_FOUP_SPLIT_STEP_SKEW,
     label: "ENGR_FOUP_SPLIT_STEP_SKEW",
   },
   {
     key: "ENGR_FOUP_SPLIT_STEP_ANY",
-    className: "observer-color-esop-foup-split-step-any",
+    className: OBSERVER_COLOR_CLASSES.ESOP_FOUP_SPLIT_STEP_ANY,
     label: "ENGR_FOUP_SPLIT_STEP_ANY",
   },
   {
     key: "ENGR_FOUP_SPLIT_SKEW",
-    className: "observer-color-esop-foup-split-skew",
+    className: OBSERVER_COLOR_CLASSES.ESOP_FOUP_SPLIT_SKEW,
     label: "ENGR_FOUP_SPLIT_SKEW",
   },
   {
     key: "ENGR_FOUP_SPLIT_STEP_RISK",
-    className: "observer-color-esop-foup-split-step-risk",
+    className: OBSERVER_COLOR_CLASSES.ESOP_FOUP_SPLIT_STEP_RISK,
     label: "ENGR_FOUP_SPLIT_STEP_RISK",
   },
   {
     key: "ENGR_BATCH_SKEW",
-    className: "observer-color-esop-batch-skew",
+    className: OBSERVER_COLOR_CLASSES.ESOP_BATCH_SKEW,
     label: "ENGR_BATCH_SKEW",
   },
   {
     key: "ENGR_FOUP_SPLIT_ANY",
-    className: "observer-color-esop-foup-split-any",
+    className: OBSERVER_COLOR_CLASSES.ESOP_FOUP_SPLIT_ANY,
     label: "ENGR_FOUP_SPLIT_ANY",
   },
   {
     key: "ENGR_LOGICAL_SPLIT_SKEW",
-    className: "observer-color-esop-logical-split-skew",
+    className: OBSERVER_COLOR_CLASSES.ESOP_LOGICAL_SPLIT_SKEW,
     label: "ENGR_LOGICAL_SPLIT_SKEW",
   },
   {
     key: "ENGR_FOUP_SPLIT_STEP_SKEW_ANY",
-    className: "observer-color-esop-foup-split-step-skew-any",
+    className: OBSERVER_COLOR_CLASSES.ESOP_FOUP_SPLIT_STEP_SKEW_ANY,
     label: "ENGR_FOUP_SPLIT_STEP_SKEW_ANY",
   },
 ];
@@ -73,7 +75,7 @@ export const ESOP_CHANGE_TYPE_CLASS_MAP = ESOP_CHANGE_TYPE_LEGENDS.reduce(
   }),
   {
     ENGR_FOUP_SPLIT_STEP_SKEw_ANY:
-      "observer-color-esop-foup-split-step-skew-any",
+      OBSERVER_COLOR_CLASSES.ESOP_FOUP_SPLIT_STEP_SKEW_ANY,
   }
 );
 
@@ -103,7 +105,7 @@ export function getEsopChangeTypeLegendsForLogs(logs = []) {
       })
       .map((eventType) => ({
         key: eventType,
-        className: "observer-color-esop",
+        className: OBSERVER_COLOR_CLASSES.ESOP_DEFAULT,
         label: eventType,
       })),
   ];

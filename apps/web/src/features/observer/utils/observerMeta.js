@@ -1,43 +1,43 @@
 import { ESOP_CHANGE_TYPE_CLASS_MAP } from "./esopChangeTypes";
+import { OBSERVER_COLOR_CLASSES } from "./observerColorClasses";
 
 /**
  * 각 로그 타입(logType)별 컬러 매핑.
- * 클래스 이름은 observer.css에서 디자인 토큰 기반 색상으로 연결됩니다.
+ * 클래스 이름은 observer.css의 Radix scale 클래스로 연결됩니다.
  */
 export const groupConfig = {
   EQP: {
     stateClasses: {
-      RUN: "observer-color-eqp-run",
-      DOWN: "observer-color-eqp-down",
-      PM: "observer-color-eqp-pm",
-      IDLE: "observer-color-eqp-idle",
-      LOCAL: "observer-color-eqp-local",
+      RUN: OBSERVER_COLOR_CLASSES.EQP_RUN,
+      DOWN: OBSERVER_COLOR_CLASSES.EQP_DOWN,
+      PM: OBSERVER_COLOR_CLASSES.EQP_PM,
+      IDLE: OBSERVER_COLOR_CLASSES.EQP_IDLE,
+      LOCAL: OBSERVER_COLOR_CLASSES.EQP_LOCAL,
     },
   },
   TIP: {
     stateClasses: {
-      L1_CNT: "observer-color-tip-open",
-      L2_CNT: "observer-color-tip-open",
-      L3_CNT: "observer-color-tip-open",
-      DOING: "observer-color-tip-open",
+      L1_CNT: OBSERVER_COLOR_CLASSES.TIP_OPEN,
+      L2_CNT: OBSERVER_COLOR_CLASSES.TIP_OPEN,
+      L3_CNT: OBSERVER_COLOR_CLASSES.TIP_OPEN,
+      DOING: OBSERVER_COLOR_CLASSES.TIP_OPEN,
 
-      L1_TIP: "observer-color-tip-close",
+      L1_TIP: OBSERVER_COLOR_CLASSES.TIP_CLOSE,
+      L2_TIP: OBSERVER_COLOR_CLASSES.TIP_CLOSE,
+      L3_TIP: OBSERVER_COLOR_CLASSES.TIP_CLOSE,
     },
   },
   RACB: {
-    stateClasses: {
-      ALARM: "observer-color-racb-alarm",
-      WARN: "observer-color-racb-warn",
-    },
+    defaultClass: OBSERVER_COLOR_CLASSES.RACB,
   },
   CTTTM: {
     stateClasses: {
-      CBM: "observer-color-ctttm-cbm",
-      NSP: "observer-color-ctttm-nsp",
+      CBM: OBSERVER_COLOR_CLASSES.CTTTM_CBM,
+      NSP: OBSERVER_COLOR_CLASSES.CTTTM_NSP,
     },
   },
   ESOP: {
-    defaultClass: "observer-color-esop",
+    defaultClass: OBSERVER_COLOR_CLASSES.ESOP_DEFAULT,
     stateClasses: ESOP_CHANGE_TYPE_CLASS_MAP,
   },
 };

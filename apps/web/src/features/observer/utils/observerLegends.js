@@ -1,25 +1,23 @@
+import { OBSERVER_COLOR_CLASSES } from "./observerColorClasses";
 import { ESOP_CHANGE_TYPE_LEGENDS } from "./esopChangeTypes";
 
 export const observerLegends = {
   EQP: [
-    { key: "RUN", className: "observer-color-eqp-run", label: "RUN" },
-    { key: "DOWN", className: "observer-color-eqp-down", label: "DOWN" },
-    { key: "PM", className: "observer-color-eqp-pm", label: "PM" },
-    { key: "IDLE", className: "observer-color-eqp-idle", label: "IDLE" },
-    { key: "LOCAL", className: "observer-color-eqp-local", label: "LOCAL" },
+    { key: "RUN", className: OBSERVER_COLOR_CLASSES.EQP_RUN, label: "RUN" },
+    { key: "DOWN", className: OBSERVER_COLOR_CLASSES.EQP_DOWN, label: "DOWN" },
+    { key: "PM", className: OBSERVER_COLOR_CLASSES.EQP_PM, label: "PM" },
+    { key: "IDLE", className: OBSERVER_COLOR_CLASSES.EQP_IDLE, label: "IDLE" },
+    { key: "LOCAL", className: OBSERVER_COLOR_CLASSES.EQP_LOCAL, label: "LOCAL" },
   ],
   TIP: [
-    { key: "OPEN", className: "observer-color-tip-open", label: "OPEN" },
-    { key: "CLOSE", className: "observer-color-tip-close", label: "CLOSE" },
+    { key: "OPEN", className: OBSERVER_COLOR_CLASSES.TIP_OPEN, label: "OPEN" },
+    { key: "CLOSE", className: OBSERVER_COLOR_CLASSES.TIP_CLOSE, label: "CLOSE" },
   ],
   CTTTM: [
-    { key: "CBM", className: "observer-color-ctttm-cbm", label: "CBM" },
-    { key: "NSP", className: "observer-color-ctttm-nsp", label: "NSP" },
+    { key: "CBM", className: OBSERVER_COLOR_CLASSES.CTTTM_CBM, label: "CBM" },
+    { key: "NSP", className: OBSERVER_COLOR_CLASSES.CTTTM_NSP, label: "NSP" },
   ],
-  RACB: [
-    { key: "ALARM", className: "observer-color-racb-alarm", label: "ALARM" },
-    { key: "WARN", className: "observer-color-racb-warn", label: "WARN" },
-  ],
+  RACB: [{ key: "RACB", className: OBSERVER_COLOR_CLASSES.RACB, label: "RACB" }],
   ESOP: ESOP_CHANGE_TYPE_LEGENDS,
 };
 

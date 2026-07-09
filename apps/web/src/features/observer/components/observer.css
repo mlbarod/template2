@@ -1,5 +1,34 @@
+@import "@radix-ui/colors/amber.css";
+@import "@radix-ui/colors/amber-dark.css";
+@import "@radix-ui/colors/blue.css";
+@import "@radix-ui/colors/blue-dark.css";
+@import "@radix-ui/colors/cyan.css";
+@import "@radix-ui/colors/cyan-dark.css";
+@import "@radix-ui/colors/green.css";
+@import "@radix-ui/colors/green-dark.css";
+@import "@radix-ui/colors/indigo.css";
+@import "@radix-ui/colors/indigo-dark.css";
+@import "@radix-ui/colors/lime.css";
+@import "@radix-ui/colors/lime-dark.css";
+@import "@radix-ui/colors/orange.css";
+@import "@radix-ui/colors/orange-dark.css";
+@import "@radix-ui/colors/pink.css";
+@import "@radix-ui/colors/pink-dark.css";
+@import "@radix-ui/colors/purple.css";
+@import "@radix-ui/colors/purple-dark.css";
+@import "@radix-ui/colors/red.css";
+@import "@radix-ui/colors/red-dark.css";
+@import "@radix-ui/colors/sky.css";
+@import "@radix-ui/colors/sky-dark.css";
+@import "@radix-ui/colors/slate.css";
+@import "@radix-ui/colors/slate-dark.css";
+@import "@radix-ui/colors/teal.css";
+@import "@radix-ui/colors/teal-dark.css";
+@import "@radix-ui/colors/yellow.css";
+@import "@radix-ui/colors/yellow-dark.css";
+
 /* ───────────────────────────────────────────────
-   📅 vis-timeline 커스터마이징 (디자인 토큰 기반)
+   vis-timeline 커스터마이징
 ─────────────────────────────────────────────── */
 
 :root {
@@ -13,59 +42,8 @@
   --observer-tooltip-bg: color-mix(in oklch, var(--popover) 90%, transparent);
   --observer-tooltip-text: var(--popover-foreground);
 
-  /* 의미 기반 팔레트 */
-  --observer-palette-running: color-mix(in oklch, var(--chart-2) 72%, var(--primary) 28%);
-  --observer-palette-open: color-mix(in oklch, var(--chart-4) 68%, var(--chart-2) 32%);
-  --observer-palette-maintenance: color-mix(in oklch, var(--chart-4) 58%, var(--muted-foreground) 42%);
-  --observer-palette-warning: color-mix(in oklch, var(--chart-5) 76%, var(--chart-1) 24%);
-  --observer-palette-critical: var(--destructive);
-  --observer-palette-info: color-mix(in oklch, var(--chart-2) 76%, var(--chart-3) 24%);
-  --observer-palette-step: color-mix(in oklch, var(--chart-2) 62%, var(--chart-3) 38%);
-  --observer-palette-split: color-mix(in oklch, var(--chart-3) 64%, var(--chart-1) 36%);
-  --observer-palette-logical: color-mix(in oklch, var(--chart-3) 72%, var(--primary) 28%);
-  --observer-palette-neutral: color-mix(in oklch, var(--muted-foreground) 68%, var(--muted) 32%);
-
-  --observer-status-running: var(--observer-palette-running);
-  --observer-status-open: var(--observer-palette-open);
-  --observer-status-maintenance: var(--observer-palette-maintenance);
-  --observer-status-warning: var(--observer-palette-warning);
-  --observer-status-critical: var(--observer-palette-critical);
-  --observer-status-info: var(--observer-palette-info);
-  --observer-status-step: var(--observer-palette-step);
-  --observer-status-split: var(--observer-palette-split);
-  --observer-status-logical: var(--observer-palette-logical);
-  --observer-status-neutral: var(--observer-palette-neutral);
-
-  --observer-selected: var(--observer-status-open);
+  --observer-selected: var(--teal-9);
   --observer-selected-soft: color-mix(in hsl, var(--observer-selected) 20%, transparent);
-
-  /* 로그 타입별 색상은 의미 팔레트에 연결합니다. */
-  --observer-eqp-run: var(--observer-status-running);
-  --observer-eqp-idle: var(--observer-status-maintenance);
-  --observer-eqp-pm: var(--observer-status-warning);
-  --observer-eqp-down: var(--observer-status-critical);
-  --observer-eqp-local: var(--observer-status-neutral);
-  --observer-tip-open: var(--observer-status-open);
-  --observer-tip-close: var(--observer-status-critical);
-  --observer-racb-alarm: var(--observer-status-critical);
-  --observer-racb-warn: var(--observer-status-warning);
-  --observer-ctttm-cbm: var(--observer-status-info);
-  --observer-ctttm-nsp: var(--observer-status-split);
-  --observer-esop: var(--observer-status-info);
-  --observer-esop-foup-split-step: var(--observer-status-step);
-  --observer-esop-production: var(--observer-status-running);
-  --observer-esop-foup-split: var(--observer-status-split);
-  --observer-esop-production-any: var(--observer-status-open);
-  --observer-esop-logical-split: var(--observer-status-logical);
-  --observer-esop-foup-split-step-skew: var(--observer-status-warning);
-  --observer-esop-foup-split-step-any: var(--observer-status-step);
-  --observer-esop-foup-split-skew: var(--observer-status-warning);
-  --observer-esop-foup-split-step-risk: var(--observer-status-critical);
-  --observer-esop-batch-skew: var(--observer-status-warning);
-  --observer-esop-foup-split-any: var(--observer-status-neutral);
-  --observer-esop-logical-split-skew: var(--observer-status-warning);
-  --observer-esop-foup-split-step-skew-any: var(--observer-status-warning);
-  --observer-foreground-strong: var(--primary-foreground);
 }
 
 .observer {
@@ -118,28 +96,33 @@
 
 /* 공통 아이템 스타일 */
 .observer .vis-item {
-  color: var(--observer-text);
+  --observer-item-bg-color: var(--observer-item-surface);
+  --observer-item-border-color: var(--observer-item-surface);
+  --observer-item-text-color: var(--observer-text);
+  color: var(--observer-item-text-color);
   height: 100% !important;
   box-shadow: none !important;
   pointer-events: all !important;
   overflow: hidden !important;
   border-radius: 0 !important;
-  background-color: var(--observer-item-surface) !important;
-  border: 1px solid var(--observer-item-surface) !important;
+  background-color: var(--observer-item-bg-color) !important;
+  border: 1px solid var(--observer-item-border-color) !important;
 }
 
 .dark .observer .vis-item {
-  color: var(--observer-text-dark);
+  --observer-item-text-color: var(--observer-text-dark);
 }
 
 /* 범례 칩은 Observer 아이템과 같은 팔레트를 공유합니다. */
 .observer-legend-dot {
+  --observer-item-bg-color: var(--observer-item-surface);
+  --observer-item-border-color: var(--observer-border-soft);
   display: inline-block;
   width: 0.75rem;
   height: 0.75rem;
   border-radius: 9999px;
-  border: 1px solid var(--observer-border-soft);
-  background-color: var(--observer-item-surface);
+  border: 1px solid var(--observer-item-border-color);
+  background-color: var(--observer-item-bg-color);
   flex-shrink: 0;
 }
 
@@ -153,199 +136,97 @@
   overflow: hidden !important;
   text-overflow: ellipsis !important;
   text-align: center;
-  color: var(--observer-text);
+  color: var(--observer-item-text-color);
 }
 
 .dark .observer .vis-item .observer-item-label,
 .dark .observer .vis-item .vis-item-overflow>span:not(.observer-item-label) {
-  color: var(--observer-text-dark);
+  color: var(--observer-item-text-color);
 }
 
-/* 상태 색상 (디자인 토큰) */
-.observer .vis-item.observer-color-eqp-run,
-.observer-legend-dot.observer-color-eqp-run {
-  background-color: var(--observer-eqp-run) !important;
-  border-color: var(--observer-eqp-run) !important;
-  color: var(--observer-text);
+/* Radix scale 매핑: JS의 observer-scale-* 클래스 하나로 색상 계열을 선택합니다. */
+.observer-scale-slate {
+  --observer-item-bg-color: var(--slate-4);
+  --observer-item-border-color: var(--slate-8);
+  --observer-item-text-color: var(--slate-12);
 }
 
-.observer .vis-item.observer-color-eqp-idle,
-.observer-legend-dot.observer-color-eqp-idle {
-  background-color: var(--observer-eqp-idle) !important;
-  border-color: var(--observer-eqp-idle) !important;
-  color: var(--observer-foreground-strong);
+.observer-scale-red {
+  --observer-item-bg-color: var(--red-4);
+  --observer-item-border-color: var(--red-8);
+  --observer-item-text-color: var(--red-12);
 }
 
-.observer .vis-item.observer-color-eqp-pm,
-.observer-legend-dot.observer-color-eqp-pm {
-  background-color: var(--observer-eqp-pm) !important;
-  border-color: var(--observer-eqp-pm) !important;
-  color: var(--observer-foreground-strong);
+.observer-scale-orange {
+  --observer-item-bg-color: var(--orange-4);
+  --observer-item-border-color: var(--orange-8);
+  --observer-item-text-color: var(--orange-12);
 }
 
-.observer .vis-item.observer-color-eqp-down,
-.observer-legend-dot.observer-color-eqp-down {
-  background-color: var(--observer-eqp-down) !important;
-  border-color: var(--observer-eqp-down) !important;
-  color: var(--observer-foreground-strong);
+.observer-scale-amber {
+  --observer-item-bg-color: var(--amber-4);
+  --observer-item-border-color: var(--amber-8);
+  --observer-item-text-color: var(--amber-12);
 }
 
-.observer .vis-item.observer-color-eqp-local,
-.observer-legend-dot.observer-color-eqp-local {
-  background-color: var(--observer-eqp-local) !important;
-  border-color: var(--observer-eqp-local) !important;
-  color: var(--observer-text);
+.observer-scale-yellow {
+  --observer-item-bg-color: var(--yellow-4);
+  --observer-item-border-color: var(--yellow-8);
+  --observer-item-text-color: var(--yellow-12);
 }
 
-.observer .vis-item.observer-color-tip-open,
-.observer-legend-dot.observer-color-tip-open {
-  background-color: var(--observer-tip-open) !important;
-  border-color: var(--observer-tip-open) !important;
-  color: var(--observer-foreground-strong);
+.observer-scale-lime {
+  --observer-item-bg-color: var(--lime-4);
+  --observer-item-border-color: var(--lime-8);
+  --observer-item-text-color: var(--lime-12);
 }
 
-.observer .vis-item.observer-color-tip-close,
-.observer-legend-dot.observer-color-tip-close {
-  background-color: var(--observer-tip-close) !important;
-  border-color: var(--observer-tip-close) !important;
-  color: var(--observer-foreground-strong);
+.observer-scale-green {
+  --observer-item-bg-color: var(--green-4);
+  --observer-item-border-color: var(--green-8);
+  --observer-item-text-color: var(--green-12);
 }
 
-.observer .vis-item.observer-color-racb-alarm,
-.observer-legend-dot.observer-color-racb-alarm {
-  background-color: var(--observer-racb-alarm) !important;
-  border-color: var(--observer-racb-alarm) !important;
-  color: var(--observer-foreground-strong);
+.observer-scale-teal {
+  --observer-item-bg-color: var(--teal-4);
+  --observer-item-border-color: var(--teal-8);
+  --observer-item-text-color: var(--teal-12);
 }
 
-.observer .vis-item.observer-color-racb-warn,
-.observer-legend-dot.observer-color-racb-warn {
-  background-color: var(--observer-racb-warn) !important;
-  border-color: var(--observer-racb-warn) !important;
-  color: var(--observer-foreground-strong);
+.observer-scale-cyan {
+  --observer-item-bg-color: var(--cyan-4);
+  --observer-item-border-color: var(--cyan-8);
+  --observer-item-text-color: var(--cyan-12);
 }
 
-.observer .vis-item.observer-color-ctttm-cbm,
-.observer-legend-dot.observer-color-ctttm-cbm {
-  background-color: var(--observer-ctttm-cbm) !important;
-  border-color: var(--observer-ctttm-cbm) !important;
-  color: var(--observer-foreground-strong);
+.observer-scale-sky {
+  --observer-item-bg-color: var(--sky-4);
+  --observer-item-border-color: var(--sky-8);
+  --observer-item-text-color: var(--sky-12);
 }
 
-.observer .vis-item.observer-color-ctttm-nsp,
-.observer-legend-dot.observer-color-ctttm-nsp {
-  background-color: var(--observer-ctttm-nsp) !important;
-  border-color: var(--observer-ctttm-nsp) !important;
-  color: var(--observer-foreground-strong);
+.observer-scale-blue {
+  --observer-item-bg-color: var(--blue-4);
+  --observer-item-border-color: var(--blue-8);
+  --observer-item-text-color: var(--blue-12);
 }
 
-.observer .vis-item.observer-color-esop,
-.observer-legend-dot.observer-color-esop {
-  background-color: var(--observer-esop) !important;
-  border-color: var(--observer-esop) !important;
-  color: var(--observer-text);
+.observer-scale-indigo {
+  --observer-item-bg-color: var(--indigo-4);
+  --observer-item-border-color: var(--indigo-8);
+  --observer-item-text-color: var(--indigo-12);
 }
 
-.observer .vis-item.observer-color-esop-foup-split-step,
-.observer-legend-dot.observer-color-esop-foup-split-step {
-  background-color: var(--observer-esop-foup-split-step) !important;
-  border-color: var(--observer-esop-foup-split-step) !important;
-  color: var(--observer-foreground-strong);
+.observer-scale-purple {
+  --observer-item-bg-color: var(--purple-4);
+  --observer-item-border-color: var(--purple-8);
+  --observer-item-text-color: var(--purple-12);
 }
 
-.observer .vis-item.observer-color-esop-production,
-.observer-legend-dot.observer-color-esop-production {
-  background-color: var(--observer-esop-production) !important;
-  border-color: var(--observer-esop-production) !important;
-  color: var(--observer-foreground-strong);
-}
-
-.observer .vis-item.observer-color-esop-foup-split,
-.observer-legend-dot.observer-color-esop-foup-split {
-  background-color: var(--observer-esop-foup-split) !important;
-  border-color: var(--observer-esop-foup-split) !important;
-  color: var(--observer-foreground-strong);
-}
-
-.observer .vis-item.observer-color-esop-production-any,
-.observer-legend-dot.observer-color-esop-production-any {
-  background-color: var(--observer-esop-production-any) !important;
-  border-color: var(--observer-esop-production-any) !important;
-  color: var(--observer-foreground-strong);
-}
-
-.observer .vis-item.observer-color-esop-logical-split,
-.observer-legend-dot.observer-color-esop-logical-split {
-  background-color: var(--observer-esop-logical-split) !important;
-  border-color: var(--observer-esop-logical-split) !important;
-  color: var(--observer-foreground-strong);
-}
-
-.observer .vis-item.observer-color-esop-foup-split-step-skew,
-.observer-legend-dot.observer-color-esop-foup-split-step-skew {
-  background-color: var(--observer-esop-foup-split-step-skew) !important;
-  border-color: var(--observer-esop-foup-split-step-skew) !important;
-  color: var(--observer-foreground-strong);
-}
-
-.observer .vis-item.observer-color-esop-foup-split-step-any,
-.observer-legend-dot.observer-color-esop-foup-split-step-any {
-  background-color: var(--observer-esop-foup-split-step-any) !important;
-  border-color: var(--observer-esop-foup-split-step-any) !important;
-  color: var(--observer-foreground-strong);
-}
-
-.observer .vis-item.observer-color-esop-foup-split-skew,
-.observer-legend-dot.observer-color-esop-foup-split-skew {
-  background-color: var(--observer-esop-foup-split-skew) !important;
-  border-color: var(--observer-esop-foup-split-skew) !important;
-  color: var(--observer-foreground-strong);
-}
-
-.observer .vis-item.observer-color-esop-foup-split-step-risk,
-.observer-legend-dot.observer-color-esop-foup-split-step-risk {
-  background-color: var(--observer-esop-foup-split-step-risk) !important;
-  border-color: var(--observer-esop-foup-split-step-risk) !important;
-  color: var(--observer-foreground-strong);
-}
-
-.observer .vis-item.observer-color-esop-batch-skew,
-.observer-legend-dot.observer-color-esop-batch-skew {
-  background-color: var(--observer-esop-batch-skew) !important;
-  border-color: var(--observer-esop-batch-skew) !important;
-  color: var(--observer-foreground-strong);
-}
-
-.observer .vis-item.observer-color-esop-foup-split-any,
-.observer-legend-dot.observer-color-esop-foup-split-any {
-  background-color: var(--observer-esop-foup-split-any) !important;
-  border-color: var(--observer-esop-foup-split-any) !important;
-  color: var(--observer-text);
-}
-
-.observer .vis-item.observer-color-esop-logical-split-skew,
-.observer-legend-dot.observer-color-esop-logical-split-skew {
-  background-color: var(--observer-esop-logical-split-skew) !important;
-  border-color: var(--observer-esop-logical-split-skew) !important;
-  color: var(--observer-foreground-strong);
-}
-
-.observer .vis-item.observer-color-esop-foup-split-step-skew-any,
-.observer-legend-dot.observer-color-esop-foup-split-step-skew-any {
-  background-color: var(--observer-esop-foup-split-step-skew-any) !important;
-  border-color: var(--observer-esop-foup-split-step-skew-any) !important;
-  color: var(--observer-foreground-strong);
-}
-
-.observer .vis-item.observer-color-fallback,
-.observer-legend-dot.observer-color-fallback {
-  background-color: color-mix(in hsl,
-      var(--observer-palette-neutral) 65%,
-      var(--observer-surface) 35%) !important;
-  border-color: color-mix(in hsl,
-      var(--observer-palette-neutral) 65%,
-      var(--observer-surface) 35%) !important;
-  color: var(--observer-text);
+.observer-scale-pink {
+  --observer-item-bg-color: var(--pink-4);
+  --observer-item-border-color: var(--pink-8);
+  --observer-item-text-color: var(--pink-12);
 }
 
 /* 선택된 아이템 강조: 배경 유지, 테두리만 변경 */
