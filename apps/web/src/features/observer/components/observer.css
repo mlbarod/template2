@@ -105,8 +105,8 @@
   pointer-events: all !important;
   overflow: hidden !important;
   border-radius: 0 !important;
-  background-color: var(--observer-item-bg-color) !important;
-  border: 1px solid var(--observer-item-border-color) !important;
+  background-color: var(--observer-item-bg-color, var(--observer-item-surface)) !important;
+  border: 1px solid var(--observer-item-border-color, var(--observer-item-surface)) !important;
 }
 
 .dark .observer .vis-item {
@@ -121,8 +121,8 @@
   width: 0.75rem;
   height: 0.75rem;
   border-radius: 9999px;
-  border: 1px solid var(--observer-item-border-color);
-  background-color: var(--observer-item-bg-color);
+  border: 1px solid var(--observer-item-border-color, var(--observer-border-soft));
+  background-color: var(--observer-item-bg-color, var(--observer-item-surface));
   flex-shrink: 0;
 }
 
@@ -147,107 +147,114 @@
 /* Radix scale 매핑: JS의 observer-scale-* 클래스 하나로 색상 계열을 선택합니다. */
 .observer .vis-item.observer-scale-slate,
 .observer-legend-dot.observer-scale-slate {
-  --observer-item-bg-color: color-mix(in oklch, var(--slate-7) 62%, var(--observer-surface));
-  --observer-item-border-color: var(--slate-9);
-  --observer-item-text-color: var(--slate-12);
+  --observer-item-bg-color: var(--slate-7, var(--muted-foreground));
+  --observer-item-border-color: var(--slate-9, var(--foreground));
+  --observer-item-text-color: var(--slate-12, var(--foreground));
 }
 
 .observer .vis-item.observer-scale-red,
 .observer-legend-dot.observer-scale-red {
-  --observer-item-bg-color: color-mix(in oklch, var(--red-7) 62%, var(--observer-surface));
-  --observer-item-border-color: var(--red-9);
-  --observer-item-text-color: var(--red-12);
+  --observer-item-bg-color: var(--red-7, var(--destructive));
+  --observer-item-border-color: var(--red-9, var(--destructive));
+  --observer-item-text-color: var(--red-12, var(--foreground));
 }
 
 .observer .vis-item.observer-scale-orange,
 .observer-legend-dot.observer-scale-orange {
-  --observer-item-bg-color: color-mix(in oklch, var(--orange-7) 62%, var(--observer-surface));
-  --observer-item-border-color: var(--orange-9);
-  --observer-item-text-color: var(--orange-12);
+  --observer-item-bg-color: var(--orange-7, var(--chart-1));
+  --observer-item-border-color: var(--orange-9, var(--chart-1));
+  --observer-item-text-color: var(--orange-12, var(--foreground));
 }
 
 .observer .vis-item.observer-scale-amber,
 .observer-legend-dot.observer-scale-amber {
-  --observer-item-bg-color: color-mix(in oklch, var(--amber-7) 62%, var(--observer-surface));
-  --observer-item-border-color: var(--amber-9);
-  --observer-item-text-color: var(--amber-12);
+  --observer-item-bg-color: var(--amber-7, var(--chart-5));
+  --observer-item-border-color: var(--amber-9, var(--chart-5));
+  --observer-item-text-color: var(--amber-12, var(--foreground));
 }
 
 .observer .vis-item.observer-scale-yellow,
 .observer-legend-dot.observer-scale-yellow {
-  --observer-item-bg-color: color-mix(in oklch, var(--yellow-7) 62%, var(--observer-surface));
-  --observer-item-border-color: var(--yellow-9);
-  --observer-item-text-color: var(--yellow-12);
+  --observer-item-bg-color: var(--yellow-7, var(--chart-4));
+  --observer-item-border-color: var(--yellow-9, var(--chart-4));
+  --observer-item-text-color: var(--yellow-12, var(--foreground));
 }
 
 .observer .vis-item.observer-scale-lime,
 .observer-legend-dot.observer-scale-lime {
-  --observer-item-bg-color: color-mix(in oklch, var(--lime-7) 62%, var(--observer-surface));
-  --observer-item-border-color: var(--lime-9);
-  --observer-item-text-color: var(--lime-12);
+  --observer-item-bg-color: var(--lime-7, var(--chart-4));
+  --observer-item-border-color: var(--lime-9, var(--chart-4));
+  --observer-item-text-color: var(--lime-12, var(--foreground));
 }
 
 .observer .vis-item.observer-scale-green,
 .observer-legend-dot.observer-scale-green {
-  --observer-item-bg-color: color-mix(in oklch, var(--green-7) 62%, var(--observer-surface));
-  --observer-item-border-color: var(--green-9);
-  --observer-item-text-color: var(--green-12);
+  --observer-item-bg-color: var(--green-7, var(--chart-2));
+  --observer-item-border-color: var(--green-9, var(--chart-2));
+  --observer-item-text-color: var(--green-12, var(--foreground));
 }
 
 .observer .vis-item.observer-scale-teal,
 .observer-legend-dot.observer-scale-teal {
-  --observer-item-bg-color: color-mix(in oklch, var(--teal-7) 62%, var(--observer-surface));
-  --observer-item-border-color: var(--teal-9);
-  --observer-item-text-color: var(--teal-12);
+  --observer-item-bg-color: var(--teal-7, var(--chart-2));
+  --observer-item-border-color: var(--teal-9, var(--chart-2));
+  --observer-item-text-color: var(--teal-12, var(--foreground));
 }
 
 .observer .vis-item.observer-scale-cyan,
 .observer-legend-dot.observer-scale-cyan {
-  --observer-item-bg-color: color-mix(in oklch, var(--cyan-7) 62%, var(--observer-surface));
-  --observer-item-border-color: var(--cyan-9);
-  --observer-item-text-color: var(--cyan-12);
+  --observer-item-bg-color: var(--cyan-7, var(--chart-2));
+  --observer-item-border-color: var(--cyan-9, var(--chart-2));
+  --observer-item-text-color: var(--cyan-12, var(--foreground));
 }
 
 .observer .vis-item.observer-scale-sky,
 .observer-legend-dot.observer-scale-sky {
-  --observer-item-bg-color: color-mix(in oklch, var(--sky-7) 62%, var(--observer-surface));
-  --observer-item-border-color: var(--sky-9);
-  --observer-item-text-color: var(--sky-12);
+  --observer-item-bg-color: var(--sky-7, var(--chart-3));
+  --observer-item-border-color: var(--sky-9, var(--chart-3));
+  --observer-item-text-color: var(--sky-12, var(--foreground));
 }
 
 .observer .vis-item.observer-scale-blue,
 .observer-legend-dot.observer-scale-blue {
-  --observer-item-bg-color: color-mix(in oklch, var(--blue-7) 62%, var(--observer-surface));
-  --observer-item-border-color: var(--blue-9);
-  --observer-item-text-color: var(--blue-12);
+  --observer-item-bg-color: var(--blue-7, var(--chart-3));
+  --observer-item-border-color: var(--blue-9, var(--chart-3));
+  --observer-item-text-color: var(--blue-12, var(--foreground));
 }
 
 .observer .vis-item.observer-scale-indigo,
 .observer-legend-dot.observer-scale-indigo {
-  --observer-item-bg-color: color-mix(in oklch, var(--indigo-7) 62%, var(--observer-surface));
-  --observer-item-border-color: var(--indigo-9);
-  --observer-item-text-color: var(--indigo-12);
+  --observer-item-bg-color: var(--indigo-7, var(--primary));
+  --observer-item-border-color: var(--indigo-9, var(--primary));
+  --observer-item-text-color: var(--indigo-12, var(--foreground));
 }
 
 .observer .vis-item.observer-scale-purple,
 .observer-legend-dot.observer-scale-purple {
-  --observer-item-bg-color: color-mix(in oklch, var(--purple-7) 62%, var(--observer-surface));
-  --observer-item-border-color: var(--purple-9);
-  --observer-item-text-color: var(--purple-12);
+  --observer-item-bg-color: var(--purple-7, var(--chart-4));
+  --observer-item-border-color: var(--purple-9, var(--chart-4));
+  --observer-item-text-color: var(--purple-12, var(--foreground));
 }
 
 .observer .vis-item.observer-scale-pink,
 .observer-legend-dot.observer-scale-pink {
-  --observer-item-bg-color: color-mix(in oklch, var(--pink-7) 62%, var(--observer-surface));
-  --observer-item-border-color: var(--pink-9);
-  --observer-item-text-color: var(--pink-12);
+  --observer-item-bg-color: var(--pink-7, var(--chart-1));
+  --observer-item-border-color: var(--pink-9, var(--chart-1));
+  --observer-item-text-color: var(--pink-12, var(--foreground));
 }
 
 .observer .vis-item.observer-scale-line,
 .observer-legend-dot.observer-scale-line {
-  --observer-item-bg-color: color-mix(in oklch, var(--lime-7) 62%, var(--observer-surface));
-  --observer-item-border-color: var(--lime-9);
-  --observer-item-text-color: var(--lime-12);
+  --observer-item-bg-color: var(--lime-7, var(--chart-4));
+  --observer-item-border-color: var(--lime-9, var(--chart-4));
+  --observer-item-text-color: var(--lime-12, var(--foreground));
+}
+
+.observer .vis-item[class*="observer-scale-"],
+.observer-legend-dot[class*="observer-scale-"] {
+  background-color: var(--observer-item-bg-color) !important;
+  border-color: var(--observer-item-border-color) !important;
+  color: var(--observer-item-text-color) !important;
 }
 
 /* 선택된 아이템 강조: 배경 유지, 테두리만 변경 */
