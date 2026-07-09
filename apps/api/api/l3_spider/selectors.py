@@ -444,6 +444,48 @@ def query_trend_data() -> list[dict]:
         conn.close()
 
 
+def query_run_stats(dates: list[str]) -> dict:
+    """daily_run_stats 테이블에서 날짜별 알고리즘 실행 통계를 반환합니다.
+
+    테이블이 없거나 해당 날짜 데이터가 없으면 빈 결과를 반환합니다(에러 아님).
+    """
+    if not _get_index_db_path().exists() or not dates:
+        return {"totalRows": 0, "byLine": []}
+    conn = None
+    try:
+        conn = _connect_ro()
+        cur = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='daily_run_stats'"
+        )
+        if not cur.fetchone():
+            return {"totalRows": 0, "byLine": []}
+        placeholders = ",".join("?" * len(dates))
+        total = conn.execute(
+            f"SELECT COALESCE(SUM(row_cnt), 0) FROM daily_run_stats WHERE date IN ({placeholders})",
+            dates,
+        ).fetchone()[0]
+        combinations = conn.execute(
+            f"SELECT COUNT(*) FROM daily_run_stats WHERE date IN ({placeholders})",
+            dates,
+        ).fetchone()[0]
+        rows = conn.execute(
+            f"""SELECT line_id, COUNT(DISTINCT step_seq) AS step_seq_count, SUM(row_cnt) AS row_cnt
+                FROM daily_run_stats WHERE date IN ({placeholders})
+                GROUP BY line_id ORDER BY line_id""",
+            dates,
+        ).fetchall()
+        return {
+            "totalRows": int(total),
+            "combinations": int(combinations),
+            "byLine": [{"lineId": r[0], "stepSeqCount": int(r[1]), "rowCnt": int(r[2])} for r in rows],
+        }
+    except sqlite3.OperationalError:
+        return {"totalRows": 0, "byLine": []}
+    finally:
+        if conn:
+            conn.close()
+
+
 def query_completed_dates() -> Optional[set[str]]:
     """알고리즘 런이 '완전히' 끝난 날짜 집합을 반환합니다.
 
