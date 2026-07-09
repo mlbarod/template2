@@ -166,48 +166,6 @@ function LineTable({ rows, selectedLine, onSelectLine, onReorder, runStatsMap = 
   )
 }
 
-function RunStatsSection({ runStats }) {
-  const { totalRows = 0, byLine = [] } = runStats ?? {}
-  if (!byLine.length) return null
-  const totalStepSeqs = byLine.reduce((s, r) => s + r.stepSeqCount, 0)
-  return (
-    <div className="shrink-0 border-t">
-      <div className="flex h-9 shrink-0 items-center justify-between border-b bg-muted/30 px-4">
-        <span className="text-[13px] font-semibold text-muted-foreground">알고리즘 실행 현황</span>
-        <span className="text-[13px] tabular-nums text-muted-foreground">
-          총 <span className="font-semibold text-foreground">{formatNumber(totalRows)}</span> row 검토
-        </span>
-      </div>
-      <div className="max-h-[160px] overflow-y-auto">
-        <table className="w-full text-[13px]">
-          <thead>
-            <tr className="sticky top-0 border-b bg-muted/40 text-muted-foreground">
-              <th className="py-1.5 pl-4 pr-2 text-left font-medium">line_id</th>
-              <th className="px-2 py-1.5 text-right font-medium">step_seq 수</th>
-              <th className="py-1.5 pl-2 pr-4 text-right font-medium">row 수</th>
-            </tr>
-          </thead>
-          <tbody>
-            {byLine.map((r) => (
-              <tr key={r.lineId} className="border-b last:border-0 hover:bg-muted/30">
-                <td className="py-1.5 pl-4 pr-2 font-medium">{r.lineId}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{formatNumber(r.stepSeqCount)}</td>
-                <td className="py-1.5 pl-2 pr-4 text-right tabular-nums">{formatNumber(r.rowCnt)}</td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr className="border-t bg-muted/20 font-semibold text-muted-foreground">
-              <td className="py-1.5 pl-4 pr-2">합계</td>
-              <td className="px-2 py-1.5 text-right tabular-nums">{formatNumber(totalStepSeqs)}</td>
-              <td className="py-1.5 pl-2 pr-4 text-right tabular-nums">{formatNumber(totalRows)}</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    </div>
-  )
-}
 
 function LineSummaryTotals({ headline, runStats }) {
   const combinations = runStats?.combinations ?? 0
@@ -326,22 +284,17 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
     const lineSet = new Set()
     const processSet = new Set()
     const edsSet = new Set()
-    const totals = { highRisk: 0, warning: 0, stepSeq: 0, eqpch: 0 }
     const lineOrder = new Map(sortLineNames([...new Set(scopedCells.map((cell) => cell.line))]).map((line, index) => [line, index]))
     const rows = scopedCells
-      .filter((cell) => (cell.highRisk ?? 0) + (cell.warning ?? 0) > 0)
       .map((cell) => {
         const highRisk = cell.highRisk ?? 0
         const warning = cell.warning ?? 0
         const stepSeq = cell.hrStepSeqs ?? 0
         const eqpch = cell.hrEqpchs ?? 0
+        const active = highRisk + warning > 0
         lineSet.add(cell.line)
         processSet.add(cell.process)
         edsSet.add(cell.edsStep)
-        totals.highRisk += highRisk
-        totals.warning += warning
-        totals.stepSeq += stepSeq
-        totals.eqpch += eqpch
         return {
           key: `${cell.line}||${cell.process}||${cell.edsStep}`,
           line: cell.line,
@@ -351,6 +304,7 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
           warning,
           stepSeq,
           eqpch,
+          active,
         }
       })
       .sort((a, b) => {
@@ -361,7 +315,6 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
       })
     return {
       rows,
-      totals,
       lineCount: lineSet.size,
       processCount: processSet.size,
       edsCount: edsSet.size,
@@ -370,6 +323,7 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
 
   const hasRows = rows.length > 0
 
+  const [hideNormal, setHideNormal] = useState(false)
   const [filters, setFilters] = useState({ lineName: [], processId: [], edsStep: [] })
 
   const uniqueLineNames = useMemo(() => [...new Set(rows.map((r) => r.line))].sort(), [rows])
@@ -377,14 +331,14 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
   const uniqueEdsSteps = useMemo(() => [...new Set(rows.map((r) => String(r.edsStep)))].sort(), [rows])
 
   const filteredRows = useMemo(() => {
-    if (!filters.lineName.length && !filters.processId.length && !filters.edsStep.length) return rows
     return rows.filter((row) => {
+      if (hideNormal && !row.active) return false
       if (filters.lineName.length && !filters.lineName.includes(row.line)) return false
       if (filters.processId.length && !filters.processId.includes(row.process)) return false
       if (filters.edsStep.length && !filters.edsStep.includes(String(row.edsStep))) return false
       return true
     })
-  }, [rows, filters])
+  }, [rows, hideNormal, filters])
 
   const filteredTotals = useMemo(() => filteredRows.reduce(
     (acc, row) => ({
@@ -395,6 +349,8 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
     }),
     { highRisk: 0, warning: 0, stepSeq: 0, eqpch: 0 }
   ), [filteredRows])
+
+  const activeCount = useMemo(() => filteredRows.filter((r) => r.active).length, [filteredRows])
 
   return (
     <Card className={cn("flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg py-0 gap-0", className)}>
@@ -407,8 +363,17 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
         <Badge variant="outline" className="text-xs">{formatNumber(processCount)} Process</Badge>
         <Badge variant="outline" className="text-xs">{formatNumber(edsCount)} EDS</Badge>
         <Badge variant="secondary" className="text-xs">
-          {formatNumber(filteredRows.length)}{filteredRows.length !== rows.length ? `/${formatNumber(rows.length)}` : ""} rows
+          {formatNumber(activeCount)}/{formatNumber(filteredRows.length)} rows
         </Badge>
+        <label className="ml-2 flex cursor-pointer items-center gap-1.5 select-none text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            className="size-3.5 accent-foreground"
+            checked={hideNormal}
+            onChange={(e) => setHideNormal(e.target.checked)}
+          />
+          이상없음 제외
+        </label>
         <button
           type="button"
           onClick={onToggleMaximized}
@@ -469,8 +434,8 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
               {filteredRows.map((row) => (
                 <tr
                   key={row.key}
-                  onClick={() => onDrill?.({ line: row.line, process: row.process, edsStep: row.edsStep })}
-                  className="cursor-pointer border-b hover:bg-muted/30"
+                  onClick={() => row.active ? onDrill?.({ line: row.line, process: row.process, edsStep: row.edsStep }) : undefined}
+                  className={cn("border-b", row.active ? "cursor-pointer hover:bg-muted/30" : "opacity-50")}
                 >
                   <td className="sticky left-0 z-[1] bg-card px-3 py-1 font-mono font-semibold text-foreground">
                     {row.line}
@@ -481,18 +446,26 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
                   <td className="px-3 py-1 font-mono font-semibold text-foreground">
                     {row.edsStep}
                   </td>
-                  <td className="px-3 py-1 text-right tabular-nums font-semibold text-chart-4">
-                    {formatNumber(row.warning)}
-                  </td>
-                  <td className="px-3 py-1 text-right tabular-nums font-semibold text-destructive">
-                    {formatNumber(row.highRisk)}
-                  </td>
-                  <td className="px-3 py-1 text-right tabular-nums font-semibold">
-                    {formatNumber(row.stepSeq)}
-                  </td>
-                  <td className="pl-3 pr-6 py-1 text-right tabular-nums font-semibold">
-                    {formatNumber(row.eqpch)}
-                  </td>
+                  {row.active ? (
+                    <>
+                      <td className="px-3 py-1 text-right tabular-nums font-semibold text-chart-4">
+                        {formatNumber(row.warning)}
+                      </td>
+                      <td className="px-3 py-1 text-right tabular-nums font-semibold text-destructive">
+                        {formatNumber(row.highRisk)}
+                      </td>
+                      <td className="px-3 py-1 text-right tabular-nums font-semibold">
+                        {formatNumber(row.stepSeq)}
+                      </td>
+                      <td className="pl-3 pr-6 py-1 text-right tabular-nums font-semibold">
+                        {formatNumber(row.eqpch)}
+                      </td>
+                    </>
+                  ) : (
+                    <td colSpan={4} className="px-3 py-1 text-center text-[12px] text-muted-foreground">
+                      이상없음
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -947,7 +920,6 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
                 <LineTable rows={orderedLineSummary} selectedLine={activeLine} onSelectLine={onSelectLine} onReorder={handleReorder} runStatsMap={runStatsMap} />
               </CardContent>
               <LineSummaryTotals headline={h} runStats={data?.runStats} />
-              <RunStatsSection runStats={data.runStats} />
             </Card>
 
             <TrendChartCard
