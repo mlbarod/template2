@@ -15,7 +15,7 @@
   - `apps/api/api/urls.py`
   - `apps/api/config/settings.py`
   - `airflow/dags`
-  - `airflow/.env`
+  - `env/airflow.common.env`
   - 관련 docs
 - 수정하지 않을 영역:
   - data_movement table schema/migration
