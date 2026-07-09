@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
+import { L3SpiderGuideDialog } from "./L3SpiderGuideDialog"
 import { EMPTY_SELECTION, sortedValues, sortLineNames, toggleSetValue } from "../utils/selection"
 
 function MultiSelectColumnCard({ title, badge, disabled, placeholder, items, selected, onChange }) {
@@ -143,6 +144,7 @@ export function L3SpiderDataSelector({
   tabsSlot,
   showBody = true,
 }) {
+  const [guideDocumentKey, setGuideDocumentKey] = useState(null)
   const availabilityForDate = selection.date ? meta.availability?.[selection.date] ?? {} : {}
   const visibleLineIds = sortedValues(Object.keys(availabilityForDate))
 
@@ -384,32 +386,31 @@ export function L3SpiderDataSelector({
             <DropdownMenuContent align="end" className="w-52">
               <DropdownMenuLabel className="text-xs text-muted-foreground">L3 Spider 도움말</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <a
-                  href="/l3-spider/user_guide.html"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="L3 Spider 페이지 설명서 열기"
-                >
-                  <BookOpen className="size-4" aria-hidden="true" />
-                  페이지 설명서
-                </a>
+              <DropdownMenuItem
+                onSelect={(event) => {
+                  event.preventDefault()
+                  setGuideDocumentKey("page")
+                }}
+                aria-label="L3 Spider 페이지 설명서 열기"
+              >
+                <BookOpen className="size-4" aria-hidden="true" />
+                페이지 설명서
               </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <a
-                  href="/l3-spider/algorithm_guide.html"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="L3 Spider 알고리즘 설명서 열기"
-                >
-                  <CircleHelp className="size-4" aria-hidden="true" />
-                  알고리즘 설명서
-                </a>
+              <DropdownMenuItem
+                onSelect={(event) => {
+                  event.preventDefault()
+                  setGuideDocumentKey("algorithm")
+                }}
+                aria-label="L3 Spider 알고리즘 설명서 열기"
+              >
+                <CircleHelp className="size-4" aria-hidden="true" />
+                알고리즘 설명서
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </div>
+      <L3SpiderGuideDialog guideKey={guideDocumentKey} onGuideKeyChange={setGuideDocumentKey} />
       {showBody ? (
         rightContent ? (
           <div className="flex min-h-0 items-stretch gap-4 border-t px-6 py-2">
