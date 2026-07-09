@@ -13,8 +13,6 @@ from failure_alerts import notify_airflow_task_failure
 AIRFLOW_API_BASE_URL = (os.getenv("AIRFLOW_API_BASE_URL") or "http://api:8000").strip().rstrip("/")
 AIRFLOW_TRIGGER_TOKEN = os.getenv("AIRFLOW_TRIGGER_TOKEN") or ""
 EMAIL_OUTBOX_PROCESS_TRIGGER_URL = f"{AIRFLOW_API_BASE_URL}/api/v1/emails/outbox/process/"
-EMAIL_OUTBOX_PROCESS_HTTP_TIMEOUT = int(os.getenv("EMAIL_OUTBOX_PROCESS_HTTP_TIMEOUT") or "60")
-EMAIL_OUTBOX_PROCESS_SCHEDULE = os.getenv("EMAIL_OUTBOX_PROCESS_SCHEDULE") or "*/5 * * * *"
 EMAIL_OUTBOX_PROCESS_LIMIT = int(os.getenv("EMAIL_OUTBOX_PROCESS_LIMIT") or "1000")
 
 
@@ -29,7 +27,7 @@ def run_email_outbox_process(**_context):
     request_kwargs = {
         "url": EMAIL_OUTBOX_PROCESS_TRIGGER_URL,
         "headers": headers,
-        "timeout": EMAIL_OUTBOX_PROCESS_HTTP_TIMEOUT,
+        "timeout": 60,
     }
     if EMAIL_OUTBOX_PROCESS_LIMIT > 0:
         request_kwargs["json"] = {"limit": EMAIL_OUTBOX_PROCESS_LIMIT}
@@ -52,7 +50,8 @@ default_args = {
 with DAG(
     dag_id="email_outbox_process",
     default_args=default_args,
-    schedule=EMAIL_OUTBOX_PROCESS_SCHEDULE,
+    # 5분에 한 번 실행합니다.
+    schedule="*/5 * * * *",
     start_date=days_ago(1),
     catchup=False,
     max_active_runs=1,

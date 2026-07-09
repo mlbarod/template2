@@ -13,8 +13,6 @@ from failure_alerts import notify_airflow_task_failure
 AIRFLOW_API_BASE_URL = (os.getenv("AIRFLOW_API_BASE_URL") or "http://api:8000").strip().rstrip("/")
 AIRFLOW_TRIGGER_TOKEN = os.getenv("AIRFLOW_TRIGGER_TOKEN") or ""
 EMAIL_INGEST_TRIGGER_URL = f"{AIRFLOW_API_BASE_URL}/api/v1/emails/ingest/"
-EMAIL_INGEST_HTTP_TIMEOUT = int(os.getenv("EMAIL_INGEST_HTTP_TIMEOUT") or "60")
-EMAIL_INGEST_SCHEDULE = os.getenv("EMAIL_INGEST_SCHEDULE") or None
 
 
 def run_email_ingest(**_context):
@@ -28,7 +26,7 @@ def run_email_ingest(**_context):
     response = requests.post(
         EMAIL_INGEST_TRIGGER_URL,
         headers=headers,
-        timeout=EMAIL_INGEST_HTTP_TIMEOUT,
+        timeout=60,
     )
     response.raise_for_status()
 
@@ -47,7 +45,8 @@ default_args = {
 with DAG(
     dag_id="email_pop3_ingest",
     default_args=default_args,
-    schedule=EMAIL_INGEST_SCHEDULE,
+    # 1분에 한 번 실행합니다.
+    schedule="*/1 * * * *",
     start_date=days_ago(1),
     catchup=False,
     max_active_runs=1,

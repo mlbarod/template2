@@ -18,11 +18,6 @@ DRONE_SOP_POP3_INGEST_TRIGGER_URL = (
     f"{AIRFLOW_API_BASE_URL}/api/v1/line-dashboard/sop/ingest/pop3/trigger"
 )
 DRONE_SOP_INFORM_TRIGGER_URL = f"{AIRFLOW_API_BASE_URL}/api/v1/line-dashboard/sop/trigger"
-DRONE_SOP_POP3_INGEST_HTTP_TIMEOUT = int(os.getenv("DRONE_SOP_POP3_INGEST_HTTP_TIMEOUT") or "60")
-DRONE_SOP_INFORM_HTTP_TIMEOUT = int(os.getenv("DRONE_SOP_INFORM_HTTP_TIMEOUT") or "60")
-DRONE_SOP_POP3_INGEST_INFORM_CREATE_SCHEDULE = (
-    os.getenv("DRONE_SOP_POP3_INGEST_INFORM_CREATE_SCHEDULE") or "*/1 * * * *"
-)
 
 
 def _parse_optional_int(value: Any) -> int | None:
@@ -48,7 +43,7 @@ def run_drone_sop_pop3_ingest(**_context):
     response = requests.post(
         DRONE_SOP_POP3_INGEST_TRIGGER_URL,
         headers=headers,
-        timeout=DRONE_SOP_POP3_INGEST_HTTP_TIMEOUT,
+        timeout=60,
     )
     response.raise_for_status()
 
@@ -75,7 +70,7 @@ def run_drone_sop_inform_create(**_context):
         DRONE_SOP_INFORM_TRIGGER_URL,
         headers=headers,
         json=payload or None,
-        timeout=DRONE_SOP_INFORM_HTTP_TIMEOUT,
+        timeout=60,
     )
     response.raise_for_status()
 
@@ -94,7 +89,8 @@ default_args = {
 with DAG(
     dag_id="drone_sop_pop3_ingest_inform_create",
     default_args=default_args,
-    schedule=DRONE_SOP_POP3_INGEST_INFORM_CREATE_SCHEDULE,
+    # 1분에 한 번 실행합니다.
+    schedule="*/1 * * * *",
     start_date=days_ago(1),
     catchup=False,
     max_active_runs=1,

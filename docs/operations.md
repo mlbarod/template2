@@ -164,11 +164,10 @@ pool 이름과 slot 수는 `env/airflow.common.env`의 `AIRFLOW_DAG_SHARED_POOL`
 `racb_list`는 `/data/data_movement/racb_list/incoming/*racb_list*.csv.deflate` 파일을 `c_racb_id` 최신 row 기준으로 설비별 `eqp_cb` row로 펼쳐 적재합니다.
 `mes_line_mapping_info`는 `/data/data_movement/mes_line_mapping_info/incoming/*_MES_MAPPING_INFO_*.csv.deflate` 파일을 테이블 전체 snapshot으로 적재합니다.
 `station_master`는 `/data/data_movement/station_master/incoming/*_STATION_MASTER_*.csv.deflate` 파일을 테이블 전체 snapshot으로 적재합니다.
-파일 적재 스케줄과 실행 옵션은 Airflow 환경 변수로 조정합니다.
+파일 적재 DAG는 코드에 고정된 `*/1 * * * *` schedule과 1800초 HTTP timeout을 사용합니다.
+처리량 제한과 dry-run payload만 Airflow 환경 변수로 조정합니다.
 
 ```text
-DATA_MOVEMENT_LOAD_SCHEDULE=*/1 * * * *
-DATA_MOVEMENT_LOAD_HTTP_TIMEOUT=1800
 DATA_MOVEMENT_LOAD_LIMIT=
 DATA_MOVEMENT_LOAD_DRY_RUN=false
 ```
@@ -181,11 +180,11 @@ POST /api/v1/data-movement/ct_process_comment/summarize/
 ```
 
 ```text
-DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_SCHEDULE=*/1 * * * *
-DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_HTTP_TIMEOUT=1800
 DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_LIMIT=
 DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_DRY_RUN=false
 ```
+
+요약 DAG도 코드에 고정된 `*/1 * * * *` schedule과 1800초 HTTP timeout을 사용합니다.
 
 송신 측에서 최종 파일명으로 직접 전송할 수 있으므로 API loader는 전송 중으로 보이는 파일을 적재 후보에서 제외합니다.
 기본값은 마지막 수정 후 60초 이상 지난 파일만 후보로 보고, 1초 뒤 size/mtime이 그대로인 파일만 이번 실행에서 처리합니다.

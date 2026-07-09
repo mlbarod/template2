@@ -13,8 +13,6 @@ from failure_alerts import notify_airflow_task_failure
 
 AIRFLOW_API_BASE_URL = (os.getenv("AIRFLOW_API_BASE_URL") or "http://api:8000").strip().rstrip("/")
 AIRFLOW_TRIGGER_TOKEN = os.getenv("AIRFLOW_TRIGGER_TOKEN") or ""
-DATA_MOVEMENT_LOAD_HTTP_TIMEOUT = int(os.getenv("DATA_MOVEMENT_LOAD_HTTP_TIMEOUT") or "1800")
-DATA_MOVEMENT_LOAD_SCHEDULE = os.getenv("DATA_MOVEMENT_LOAD_SCHEDULE") or "*/1 * * * *"
 
 
 def _parse_optional_int(value: Any) -> int | None:
@@ -60,7 +58,7 @@ def run_data_movement_load(*, table_name: str, **_context):
             "X-Forwarded-Proto": "https",
         },
         json=payload or None,
-        timeout=DATA_MOVEMENT_LOAD_HTTP_TIMEOUT,
+        timeout=1800,
     )
     response.raise_for_status()
 
@@ -79,7 +77,8 @@ default_args = {
 with DAG(
     dag_id="data_movement_file_load",
     default_args=default_args,
-    schedule=DATA_MOVEMENT_LOAD_SCHEDULE,
+    # 1분에 한 번 실행합니다.
+    schedule="*/1 * * * *",
     start_date=days_ago(1),
     catchup=False,
     max_active_runs=1,

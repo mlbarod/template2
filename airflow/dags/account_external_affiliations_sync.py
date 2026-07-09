@@ -16,12 +16,6 @@ AIRFLOW_TRIGGER_TOKEN = os.getenv("AIRFLOW_TRIGGER_TOKEN") or ""
 ACCOUNT_EXTERNAL_AFFILIATIONS_SYNC_TRIGGER_URL = (
     f"{AIRFLOW_API_BASE_URL}/api/v1/account/external-affiliations/sync"
 )
-ACCOUNT_EXTERNAL_AFFILIATIONS_SYNC_HTTP_TIMEOUT = int(
-    os.getenv("ACCOUNT_EXTERNAL_AFFILIATIONS_SYNC_HTTP_TIMEOUT") or "60"
-)
-ACCOUNT_EXTERNAL_AFFILIATIONS_SYNC_SCHEDULE = (
-    os.getenv("ACCOUNT_EXTERNAL_AFFILIATIONS_SYNC_SCHEDULE") or "@daily"
-)
 EXTERNAL_AFFILIATION_COLUMN_RENAMES = {
     "tdvt_nm": "user_sdwt_prod",
     "sso_id": "knox_id",
@@ -66,7 +60,7 @@ def run_account_external_affiliations_sync(**_context):
         ACCOUNT_EXTERNAL_AFFILIATIONS_SYNC_TRIGGER_URL,
         headers=headers,
         json=payload,
-        timeout=ACCOUNT_EXTERNAL_AFFILIATIONS_SYNC_HTTP_TIMEOUT,
+        timeout=60,
     )
     response.raise_for_status()
 
@@ -85,7 +79,8 @@ default_args = {
 with DAG(
     dag_id="account_external_affiliations_sync",
     default_args=default_args,
-    schedule=ACCOUNT_EXTERNAL_AFFILIATIONS_SYNC_SCHEDULE,
+    # 하루에 한 번 실행합니다.
+    schedule="@daily",
     start_date=days_ago(1),
     catchup=False,
     max_active_runs=1,

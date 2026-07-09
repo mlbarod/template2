@@ -13,8 +13,6 @@ from failure_alerts import notify_airflow_task_failure
 AIRFLOW_API_BASE_URL = (os.getenv("AIRFLOW_API_BASE_URL") or "http://api:8000").strip().rstrip("/")
 AIRFLOW_TRIGGER_TOKEN = os.getenv("AIRFLOW_TRIGGER_TOKEN") or ""
 L3_SPIDER_MAIL_TRIGGER_URL = f"{AIRFLOW_API_BASE_URL}/api/v1/l3_spider/mail-rules/trigger"
-L3_SPIDER_MAIL_TRIGGER_HTTP_TIMEOUT = int(os.getenv("L3_SPIDER_MAIL_TRIGGER_HTTP_TIMEOUT") or "60")
-L3_SPIDER_MAIL_TRIGGER_SCHEDULE = os.getenv("L3_SPIDER_MAIL_TRIGGER_SCHEDULE") or "*/5 * * * *"
 L3_SPIDER_MAIL_TRIGGER_LIMIT = int(os.getenv("L3_SPIDER_MAIL_TRIGGER_LIMIT") or "20")
 
 
@@ -31,7 +29,7 @@ def run_l3_spider_mail_trigger(**_context):
     request_kwargs = {
         "url": L3_SPIDER_MAIL_TRIGGER_URL,
         "headers": headers,
-        "timeout": L3_SPIDER_MAIL_TRIGGER_HTTP_TIMEOUT,
+        "timeout": 60,
     }
     if L3_SPIDER_MAIL_TRIGGER_LIMIT > 0:
         request_kwargs["json"] = {"limit": L3_SPIDER_MAIL_TRIGGER_LIMIT}
@@ -54,7 +52,8 @@ default_args = {
 with DAG(
     dag_id="l3_spider_mail_trigger",
     default_args=default_args,
-    schedule=L3_SPIDER_MAIL_TRIGGER_SCHEDULE,
+    # 5분에 한 번 실행합니다.
+    schedule="*/5 * * * *",
     start_date=days_ago(1),
     catchup=False,
     max_active_runs=1,
