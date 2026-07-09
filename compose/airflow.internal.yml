@@ -19,8 +19,8 @@ x-airflow-internal-build: &airflow-internal-build
     APT_DEBIAN_CODENAME: bookworm
     APT_DEBIAN_ARCH: amd64
     PIP_INDEX_URL: http://repository.samsungds.net/repository/proxy-pypi-files.pythonhosted.org/simple
-    PIP_EXTRA_INDEX_URL: http://repo.samsungds.net/artifactory/api/pypi/pypi-remote
-    PIP_TRUSTED_HOST: "repository.samsungds.net repo.samsungds.net"
+    PIP_EXTRA_INDEX_URL: http://nexus.adpaas.cloud.samsungds.net/repository/dataservice-pypi/simple
+    PIP_TRUSTED_HOST: "repository.samsungds.net repo.samsungds.net nexus.adpaas.cloud.samsungds.net"
     INSTALL_BIGDATAQUERY_PYTHON: "true"
     INSTALL_BIGDATAQUERY_ODBC: "true"
     BIGDATAQUERY_ODBC_DEB_URL: http://nexus.adpaas.cloud.samsungds.net/repository/dataservice/odbc/linux/debian/clouderaimpalaodbc_2.8.3.1008-2_amd64.deb
