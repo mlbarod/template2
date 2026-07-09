@@ -154,6 +154,11 @@ POST /api/v1/data-movement/station_master/load/
 ```
 
 `ct_process_comment`는 workorder 목록을 참조하므로 DAG에서 `ctttm_workorder_list` 이후 실행됩니다.
+`data_movement_file_load`는 `max_active_runs=1`, `max_active_tasks=3`으로 같은 DAG run 중복과 DAG 내부 task 병렬 실행 수를 제한합니다.
+나머지 Airflow DAG는 `max_active_runs=1`, `max_active_tasks=2`를 사용합니다.
+모든 DAG task는 `shared_dag_concurrency_pool`을 공유하며, `airflow-init`가 기본 3 slots로 pool을 생성/갱신합니다.
+따라서 대상 DAG들의 전체 동시 실행은 DAG run 개수가 아니라 running task instance 기준 최대 3개로 제한됩니다.
+pool 이름과 slot 수는 `env/airflow.common.env`의 `AIRFLOW_DAG_SHARED_POOL`, `AIRFLOW_DAG_SHARED_POOL_SLOTS`로 override할 수 있습니다.
 `eqp_status_chg`는 `/data/data_movement/m_eqp_status_chg/incoming/*m_eqp_status_chg*.csv.deflate` 파일을 `eqp_event_key` 기준으로 upsert하고 180일 retention을 적용합니다.
 `mi_tip_update_hist`는 `/data/data_movement/mi_tip_update_hist/incoming/*mi_tip_update_hist*.csv.deflate` 파일을 TIP timeline 조회용 row로 적재합니다.
 `racb_list`는 `/data/data_movement/racb_list/incoming/*racb_list*.csv.deflate` 파일을 `c_racb_id` 최신 row 기준으로 설비별 `eqp_cb` row로 펼쳐 적재합니다.

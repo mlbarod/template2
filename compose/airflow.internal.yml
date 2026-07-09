@@ -56,9 +56,11 @@ services:
     command:
       - -c
       - |
+        set -e
         mkdir -p /sources/logs /sources/dags /sources/plugins
         chown -R "$${AIRFLOW_UID:-50000}:0" /sources/{logs,dags,plugins}
-        exec /entrypoint airflow version
+        /entrypoint airflow version
+        airflow pools set "$${AIRFLOW_DAG_SHARED_POOL:-shared_dag_concurrency_pool}" "$${AIRFLOW_DAG_SHARED_POOL_SLOTS:-3}" "Limit shared DAG task concurrency"
     environment:
       <<: *airflow-common-env
       _AIRFLOW_DB_MIGRATE: "true"

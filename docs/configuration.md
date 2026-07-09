@@ -39,7 +39,8 @@
 - 운영 Web의 `VITE_*` build arg는 빌드 시점 값입니다. `env_file` 변경만으로 이미 빌드된 정적 번들이 바뀌지 않습니다.
 - 서비스 고유 infra 설정은 `env/minio.env`, `env/grafana.env`처럼 서비스별 env 파일에 둡니다.
 - Compose 계층은 app과 infra를 분리합니다. 앱 컨테이너는 `compose/*.app.yml`, 운영 보조 서비스는 `compose/*.infra.yml` 또는 infra에서 include하는 파일에 둡니다.
-- Airflow Compose 공통 env에는 Airflow runtime과 DAG 공통 연결/인증 값만 둡니다. DAG별 schedule/timeout/limit/dry-run 기본값은 각 DAG 코드에 둡니다.
+- Airflow Compose 공통 env에는 Airflow runtime과 DAG 공통 연결/인증 값, DAG 공통 동시성 pool override만 둡니다. DAG별 schedule/timeout/limit/dry-run 기본값은 각 DAG 코드에 둡니다.
+- Airflow `airflow-init`는 `AIRFLOW_DAG_SHARED_POOL` 이름의 pool을 `AIRFLOW_DAG_SHARED_POOL_SLOTS` slot 수로 생성/갱신합니다. 기본값은 `shared_dag_concurrency_pool`, `3`이며, pool은 DAG run 수가 아니라 해당 pool을 쓰는 task instance 동시 실행 수를 제한합니다.
 - OIDC 개발과 운영 Compose에서 외부 registry image를 pull할 때는 `repository.samsungds.net` 사내 registry를 사용합니다. Docker Hub image는 `repository.samsungds.net/proxy-docker-registry-1.docker.io/<image>` 형식으로 적습니다.
 - OIDC 개발과 운영 Compose의 Docker build는 사내 package mirror build args를 사용합니다. Debian apt는 `http://repository.samsungds.net/repository/proxy-apt-mirror.kakao.com-debian`의 `bullseye main`, 일반 pip는 `http://repository.samsungds.net/repository/proxy-pypi-files.pythonhosted.org/simple`, npm은 `http://repository.samsungds.net/repository/proxy-npm-registry.npmjs.org`, Alpine은 `http://repository.samsungds.net/repository/proxy-raw-dl-cdn.alpinelinux.org-alpine`을 사용합니다.
 - OIDC/prod Airflow 이미지는 `bigdataquery` Python 패키지를 빌드 시 설치합니다. 신규 PyPI mirror 적재 전까지 `PIP_EXTRA_INDEX_URL`에 기존 `repo.samsungds.net` PyPI simple URL을 임시로 고정해 함께 참조합니다.
@@ -82,6 +83,7 @@
 | `FTP_*` / Data Movement FTP | `FTP_USER`, `FTP_PASS`, `FTP_PORT`, `FTP_PASV_ADDRESS`, `FTP_PASV_MIN_PORT`, `FTP_PASV_MAX_PORT` | `data_movement` 업로드용 FTP 계정, 접속 port, passive mode address/port |
 | `OIDC_*` / `ADFS_*` / Auth/OIDC | `OIDC_CLIENT_ID`, `OIDC_ISSUER`, `ADFS_AUTH_URL`, `ADFS_LOGOUT_URL`, `OIDC_REDIRECT_URI`, `ADFS_CER_PATH`, `ALLOWED_REDIRECT_HOSTS` | ADFS/OIDC 로그인 |
 | Airflow DAG env | `env/airflow.common.env`의 `AIRFLOW_API_BASE_URL`, `AIRFLOW_TRIGGER_TOKEN`, `AIRFLOW_FAILURE_ALERT_KNOX_IDS`, `KNOX_MESSENGER_API_BASE_URL`, `KNOX_MESSENGER_AUTHORIZATION`, `KNOX_MESSENGER_SYSTEM_ID` | DAG API trigger와 Airflow task 실패 callback용 환경 변수. callback 제목/메모 파일/TTL/timeout 기본값은 DAG 코드에서 관리하며 필요 시 같은 env 파일에서 `AIRFLOW_FAILURE_ALERT_CHATROOM_TITLE`, `AIRFLOW_FAILURE_ALERT_CHATROOM_ID_FILE`, `AIRFLOW_FAILURE_ALERT_MESSAGE_TTL`, `KNOX_MESSENGER_TIMEOUT_SECONDS`를 override |
+| Airflow DAG concurrency | `AIRFLOW_DAG_SHARED_POOL`, `AIRFLOW_DAG_SHARED_POOL_SLOTS` | 모든 DAG task가 공유하는 Airflow pool 이름과 slot 수. `airflow-init`가 pool을 자동 생성/갱신하며 기본 slot 수는 `3` |
 | Airflow DAG overrides | `L3_SPIDER_MAIL_TRIGGER_*`, `DATA_MOVEMENT_LOAD_*`, `DATA_MOVEMENT_CT_PROCESS_COMMENT_SUMMARY_*` | 필요할 때만 외부 env injection으로 덮어쓰는 DAG별 schedule/timeout/limit/dry-run 옵션. 기본값은 각 DAG 코드에 둠 |
 | Emails POP3/OCR | `EMAIL_POP3_*`, `EMAIL_OCR_INTERNAL_TOKEN`, `EMAIL_EXCLUDED_SUBJECT_PREFIXES` | 메일 수집과 OCR worker |
 | Drone POP3/Jira/Mail/Messenger | `DRONE_*`, `KNOX_MESSENGER_*` | Drone SOP 수집과 채널별 전송 |

@@ -8,6 +8,7 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.utils.dates import days_ago
 
+from dag_concurrency import SHARED_DAG_CONCURRENCY_POOL
 from failure_alerts import notify_airflow_task_failure
 
 AIRFLOW_API_BASE_URL = (os.getenv("AIRFLOW_API_BASE_URL") or "http://api:8000").strip().rstrip("/")
@@ -82,54 +83,63 @@ with DAG(
     start_date=days_ago(1),
     catchup=False,
     max_active_runs=1,
+    max_active_tasks=3,
     tags=["data_movement", "file_load"],
 ) as dag:
     load_m_tkin_prevent = PythonOperator(
         task_id="load_m_tkin_prevent",
         python_callable=run_data_movement_load,
         op_kwargs={"table_name": "m_tkin_prevent"},
+        pool=SHARED_DAG_CONCURRENCY_POOL,
     )
 
     load_ctttm_workorder_list = PythonOperator(
         task_id="load_ctttm_workorder_list",
         python_callable=run_data_movement_load,
         op_kwargs={"table_name": "ctttm_workorder_list"},
+        pool=SHARED_DAG_CONCURRENCY_POOL,
     )
 
     load_ct_process_comment = PythonOperator(
         task_id="load_ct_process_comment",
         python_callable=run_data_movement_load,
         op_kwargs={"table_name": "ct_process_comment"},
+        pool=SHARED_DAG_CONCURRENCY_POOL,
     )
 
     load_eqp_status_chg = PythonOperator(
         task_id="load_eqp_status_chg",
         python_callable=run_data_movement_load,
         op_kwargs={"table_name": "eqp_status_chg"},
+        pool=SHARED_DAG_CONCURRENCY_POOL,
     )
 
     load_mi_tip_update_hist = PythonOperator(
         task_id="load_mi_tip_update_hist",
         python_callable=run_data_movement_load,
         op_kwargs={"table_name": "mi_tip_update_hist"},
+        pool=SHARED_DAG_CONCURRENCY_POOL,
     )
 
     load_racb_list = PythonOperator(
         task_id="load_racb_list",
         python_callable=run_data_movement_load,
         op_kwargs={"table_name": "racb_list"},
+        pool=SHARED_DAG_CONCURRENCY_POOL,
     )
 
     load_mes_line_mapping_info = PythonOperator(
         task_id="load_mes_line_mapping_info",
         python_callable=run_data_movement_load,
         op_kwargs={"table_name": "mes_line_mapping_info"},
+        pool=SHARED_DAG_CONCURRENCY_POOL,
     )
 
     load_station_master = PythonOperator(
         task_id="load_station_master",
         python_callable=run_data_movement_load,
         op_kwargs={"table_name": "station_master"},
+        pool=SHARED_DAG_CONCURRENCY_POOL,
     )
 
     load_ctttm_workorder_list >> load_ct_process_comment

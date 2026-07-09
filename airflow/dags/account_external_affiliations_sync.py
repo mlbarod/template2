@@ -8,6 +8,7 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.utils.dates import days_ago
 
+from dag_concurrency import SHARED_DAG_CONCURRENCY_POOL
 from failure_alerts import notify_airflow_task_failure
 
 AIRFLOW_API_BASE_URL = (os.getenv("AIRFLOW_API_BASE_URL") or "http://api:8000").strip().rstrip("/")
@@ -88,9 +89,11 @@ with DAG(
     start_date=days_ago(1),
     catchup=False,
     max_active_runs=1,
+    max_active_tasks=2,
     tags=["account", "affiliation", "external"],
 ) as dag:
     sync_external_affiliations = PythonOperator(
         task_id="sync_external_affiliations",
         python_callable=run_account_external_affiliations_sync,
+        pool=SHARED_DAG_CONCURRENCY_POOL,
     )
