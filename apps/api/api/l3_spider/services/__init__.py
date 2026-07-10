@@ -1937,7 +1937,6 @@ def _empty_daily_summary() -> dict[str, object]:
             "anomalyEqpchs": 0, "highRiskEqpchs": 0, "warningEqpchs": 0,
         },
         "matrix": {"lines": [], "processes": [], "edsSteps": [], "cells": []},
-        "equipmentRanking": [],
         "runStats": {"totalRows": 0, "combinations": 0, "byLine": []},
     }
 
@@ -2027,86 +2026,6 @@ def _daily_file_df_from_parquet(paths: list[Path], rules: list[dict] | None) -> 
             "total_bins": int(len(all_bins)),
         })
     return pd.DataFrame(records)
-
-
-def _daily_equipment_ranking_from_parquet(paths: list[Path], rules: list[dict] | None) -> list[dict[str, object]]:
-    """일별 raw parquet 행에서 line_name·설비별 이상 bin item 수 ranking을 생성합니다."""
-
-    if not paths:
-        return []
-    frames = _parallel_read(list(paths), _read_daily_summary_file)
-    if not frames:
-        return []
-    merged = pd.concat(frames, ignore_index=True)
-    if rules:
-        merged = _apply_exclusion_filters_with_rules(merged, rules)
-    if merged.empty or "display_status" not in merged.columns:
-        return []
-
-    for col in ("line_id", "process_id", "eds_step", "step_seq", "eqc", "bin_name"):
-        if col not in merged.columns:
-            merged[col] = ""
-        merged[col] = merged[col].fillna("").astype(str)
-
-    anomaly = merged.loc[
-        merged["display_status"].astype(str).isin(ANOMALY_STATUSES),
-        ["line_id", "process_id", "eds_step", "step_seq", "eqc", "bin_name", "display_status"],
-    ].copy()
-    anomaly = anomaly[(anomaly["eqc"] != "") & (anomaly["bin_name"] != "")]
-    if anomaly.empty:
-        return []
-
-    name_map = {
-        (lid, pid, sseq): line_name_rules.resolve_line_name(lid, pid, sseq)
-        for lid, pid, sseq in anomaly[["line_id", "process_id", "step_seq"]].drop_duplicates().itertuples(index=False)
-    }
-    anomaly["line_name"] = [
-        name_map[(lid, pid, sseq)]
-        for lid, pid, sseq in zip(anomaly["line_id"], anomaly["process_id"], anomaly["step_seq"])
-    ]
-    anomaly["_high_risk"] = (anomaly["display_status"].astype(str) == "High Risk Chamber").astype(int)
-    anomaly["_warning"] = (anomaly["display_status"].astype(str) == "Warning").astype(int)
-
-    rows: list[dict[str, object]] = []
-    for (line_name, eqc), group in anomaly.groupby(["line_name", "eqc"], sort=True):
-        details: list[dict[str, object]] = []
-        for (process_id, eds_step), detail_group in group.groupby(["process_id", "eds_step"], sort=True):
-            high_risk = int(detail_group["_high_risk"].sum())
-            warning = int(detail_group["_warning"].sum())
-            details.append({
-                "process": str(process_id),
-                "edsStep": str(eds_step),
-                "binItems": int(detail_group["bin_name"].nunique()),
-                "highRisk": high_risk,
-                "warning": warning,
-                "total": high_risk + warning,
-            })
-        details.sort(
-            key=lambda row: (
-                -int(row["total"]),
-                -int(row["highRisk"]),
-                str(row["process"]),
-                str(row["edsStep"]),
-            )
-        )
-        rows.append({
-            "line": str(line_name),
-            "equipment": str(eqc),
-            "binItems": int(group["bin_name"].nunique()),
-            "highRisk": int(group["_high_risk"].sum()),
-            "warning": int(group["_warning"].sum()),
-            "details": details,
-        })
-
-    return sorted(
-        rows,
-        key=lambda row: (
-            -int(row["binItems"]),
-            -int(row["highRisk"]),
-            str(row["line"]),
-            str(row["equipment"]),
-        ),
-    )
 
 
 def _aggregate_daily(file_df: pd.DataFrame, dates: list) -> dict:
@@ -2265,13 +2184,6 @@ def get_daily_summary(selection: dict[str, object], *, user: Any | None = None) 
 
     file_df = pd.concat(file_frames, ignore_index=True) if file_frames else pd.DataFrame()
     result = _aggregate_daily(file_df, dates)
-    try:
-        ranking_paths = []
-        for date in dates:
-            ranking_paths.extend(selectors.iter_date_files(date))
-        result["equipmentRanking"] = _daily_equipment_ranking_from_parquet(ranking_paths, rules)
-    except (FileNotFoundError, NotADirectoryError) as exc:
-        raise L3SpiderServiceError(str(exc), status_code=404) from exc
     run_stats = selectors.query_run_stats(dates)
     if not file_df.empty and "line_name" in file_df.columns:
         id_to_name = dict(zip(file_df["line_id"].astype(str), file_df["line_name"].astype(str)))

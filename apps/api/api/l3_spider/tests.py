@@ -224,8 +224,8 @@ class L3SpiderServiceTests(SimpleTestCase):
         self.assertEqual(rows[0]["stepSeq"], "S1")
         self.assertIn("displayStatus", rows[0])
 
-    def test_daily_summary_returns_equipment_bin_item_ranking(self) -> None:
-        """일별 요약이 설비별 이상 bin item ranking을 반환하는지 확인합니다."""
+    def test_daily_summary_omits_unused_equipment_ranking(self) -> None:
+        """일별 요약이 미사용 설비 랭킹 없이 기존 지표를 반환하는지 확인합니다."""
 
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -235,28 +235,16 @@ class L3SpiderServiceTests(SimpleTestCase):
                 services,
                 "_get_exclusion_rules",
                 return_value=[],
-            ):
+            ), patch.object(
+                services,
+                "_parallel_read",
+                wraps=services._parallel_read,
+            ) as parallel_read:
                 daily = services.get_daily_summary({"dates": ["2025-01-15"]})
 
-        self.assertEqual(daily["equipmentRanking"], [
-            {
-                "line": "L1",
-                "equipment": "EQC_A",
-                "binItems": 2,
-                "highRisk": 1,
-                "warning": 1,
-                "details": [
-                    {
-                        "process": "P1",
-                        "edsStep": "EDS_M",
-                        "binItems": 2,
-                        "highRisk": 1,
-                        "warning": 1,
-                        "total": 2,
-                    }
-                ],
-            }
-        ])
+        self.assertNotIn("equipmentRanking", daily)
+        self.assertEqual(daily["headline"]["highRiskEqpchs"], 1)
+        self.assertEqual(parallel_read.call_count, 1)
 
     def test_extensionless_filename_key_supplies_step_and_ppid(self) -> None:
         """확장자 없는 STEP#PPID#N 파일명이 summary/data 필터에 반영되는지 확인합니다."""
