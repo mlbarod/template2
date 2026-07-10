@@ -171,40 +171,58 @@ function LineSummaryTotals({ headline, runStats }) {
   const combinations = runStats?.combinations ?? 0
   const runRows = runStats?.totalRows ?? 0
   const row1 = [
-    { value: runRows, label: "분석 ROWS", className: "text-foreground" },
+    {
+      value: runRows,
+      label: "분석 ROWS",
+      className: "text-foreground",
+      tooltip: "알고리즘이 선택 날짜에 실제로 검토한 총 데이터 row 수입니다.",
+    },
     {
       value: combinations || (headline?.groups ?? 0),
       label: "분석 그룹수",
       className: "text-foreground",
       tooltip: "이상 감지 분석 대상인 (line_id × process_id × eds_step × step_seq) 조합의 수입니다.",
     },
-    { value: headline?.highRiskEqpchs ?? 0, label: "이상 EQPCH", className: "text-destructive" },
+    {
+      value: headline?.highRiskEqpchs ?? 0,
+      label: "이상 EQPCH",
+      className: "text-destructive",
+      tooltip: "High Risk 이상이 감지된 고유 EQPCH(설비) 수입니다.",
+    },
   ]
   const row2 = [
-    { value: headline?.warning ?? 0, label: "Warning", className: "text-chart-4" },
-    { value: headline?.highRisk ?? 0, label: "High Risk", className: "text-destructive" },
-    { value: headline?.anomalies ?? 0, label: "이상 건수", className: "text-foreground" },
+    {
+      value: headline?.warning ?? 0,
+      label: "Warning",
+      className: "text-chart-4",
+      tooltip: "선택 날짜 전체에서 Warning으로 판정된 데이터 건수입니다.",
+    },
+    {
+      value: headline?.highRisk ?? 0,
+      label: "High Risk",
+      className: "text-destructive",
+      tooltip: "선택 날짜 전체에서 High Risk로 판정된 데이터 건수입니다.",
+    },
+    {
+      value: headline?.anomalies ?? 0,
+      label: "이상 건수",
+      className: "text-foreground",
+      tooltip: "Warning + High Risk를 합산한 총 이상 감지 건수입니다.",
+    },
   ]
-  const renderCell = ({ value, label, className, tooltip }) => {
-    const inner = (
-      <div className={cn("min-w-0 px-1 py-1.5 text-center", tooltip && "cursor-default")}>
-        <p className={cn("truncate text-[14px] font-bold leading-none tabular-nums", className)}>
-          {formatNumber(value)}
-        </p>
-        <p className="mt-1 truncate text-[10px] font-medium text-muted-foreground">{label}</p>
-      </div>
-    )
-    if (!tooltip) return <div key={label} className="min-w-0 px-1 py-1.5 text-center">
-      <p className={cn("truncate text-[14px] font-bold leading-none tabular-nums", className)}>{formatNumber(value)}</p>
-      <p className="mt-1 truncate text-[10px] font-medium text-muted-foreground">{label}</p>
-    </div>
-    return (
-      <UITooltip key={label}>
-        <TooltipTrigger asChild>{inner}</TooltipTrigger>
-        <TooltipContent side="top" className="max-w-[220px] text-center text-xs">{tooltip}</TooltipContent>
-      </UITooltip>
-    )
-  }
+  const renderCell = ({ value, label, className, tooltip }) => (
+    <UITooltip key={label}>
+      <TooltipTrigger asChild>
+        <div className="min-w-0 cursor-default px-1 py-1.5 text-center">
+          <p className={cn("truncate text-[14px] font-bold leading-none tabular-nums", className)}>
+            {formatNumber(value)}
+          </p>
+          <p className="mt-1 truncate text-[10px] font-medium text-muted-foreground">{label}</p>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-[360px] break-keep px-4 text-center text-xs [text-wrap:normal]">{tooltip}</TooltipContent>
+    </UITooltip>
+  )
   return (
     <div className="shrink-0 border-t bg-muted/40">
       <div className="flex items-center justify-center border-b py-1">
