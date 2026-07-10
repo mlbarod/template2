@@ -75,7 +75,7 @@ function LineTable({ rows, selectedLine, onSelectLine, onReorder, runStatsMap = 
 
   return (
     <div className="h-full min-h-0 overflow-y-auto">
-      <table className="w-full table-fixed border-collapse text-[14px]">
+      <table className="w-full table-fixed border-collapse text-[13px]">
         <colgroup>
           <col className="w-7" />
           <col className="w-[100px]" />
@@ -129,24 +129,24 @@ function LineTable({ rows, selectedLine, onSelectLine, onReorder, runStatsMap = 
                 )}>
                   {r.line}
                 </td>
-                <td className="py-1 pl-1 pr-3 text-right tabular-nums text-[13px] text-muted-foreground">
+                <td className="py-1 pl-1 pr-3 text-right tabular-nums text-xs text-muted-foreground">
                   {runStatsMap[r.line] != null
                     ? formatNumber(runStatsMap[r.line])
                     : <span className="text-muted-foreground/25">—</span>}
                 </td>
                 {r.active ? (
                   <>
-                    <td className="px-1 py-1 text-right tabular-nums">
+                    <td className="px-1 py-1 text-right text-xs tabular-nums">
                       {r.wn > 0
                         ? <span className="font-semibold text-chart-4">{formatNumber(r.wn)}</span>
                         : <span className="text-muted-foreground/40">·</span>}
                     </td>
-                    <td className="px-1 py-1 text-right tabular-nums">
+                    <td className="px-1 py-1 text-right text-xs tabular-nums">
                       {r.hr > 0
                         ? <span className="font-bold text-destructive">{formatNumber(r.hr)}</span>
                         : <span className="text-muted-foreground/40">·</span>}
                     </td>
-                    <td className="py-1 pl-1 pr-1 text-right tabular-nums font-medium">
+                    <td className="py-1 pl-1 pr-1 text-right text-xs tabular-nums font-medium">
                       {total > 0
                         ? <span className="text-foreground">{formatNumber(total)}</span>
                         : <span className="text-muted-foreground/40">·</span>}
