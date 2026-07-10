@@ -18,14 +18,21 @@ from django.contrib import messages
 from django.contrib.admin.widgets import AdminSplitDateTime
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.contrib.auth.forms import BaseUserCreationForm, SetUnusablePasswordMixin, UserChangeForm, UsernameField
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.db import transaction
 from django.utils import timezone
 
 from api.account import services
 from api.account.selectors import get_current_affiliation_values, get_current_user_sdwt_prod_change
 from api.account.models import (
+    ACCESS_SCOPE_PORTAL,
+    AccessAuditLog,
+    AccessPolicyRule,
+    AccessScope,
     Affiliation,
     ExternalAffiliationSnapshot,
     User,
+    UserAccess,
     UserCurrentAffiliation,
     UserProfile,
     UserSdwtProdAccess,
@@ -501,6 +508,348 @@ class UserSdwtProdAccessAdmin(admin.ModelAdmin):
     def granted_by_knox_id(self, obj):
         granted_by = getattr(obj, "granted_by", None)
         return getattr(granted_by, "knox_id", None) or ""
+
+
+def _serialize_admin_policy_rule(obj):
+    """Admin 감사 로그용 정책 규칙 snapshot을 반환합니다."""
+
+    if obj is None:
+        return {}
+    return {
+        "id": obj.id,
+        "scope": getattr(obj.scope, "key", None),
+        "ruleType": obj.rule_type,
+        "value": obj.value,
+        "role": obj.role,
+        "isActive": obj.is_active,
+    }
+
+
+def _serialize_admin_access_scope(obj):
+    """Admin 감사 로그용 접근 scope snapshot을 반환합니다."""
+
+    if obj is None:
+        return {}
+    return {
+        "id": obj.id,
+        "key": obj.key,
+        "name": obj.name,
+        "scopeType": obj.scope_type,
+        "isActive": obj.is_active,
+        "requestable": obj.requestable,
+        "defaultRole": obj.default_role,
+    }
+
+
+def _serialize_admin_user_access(obj):
+    """Admin 감사 로그용 사용자 접근 상태 snapshot을 반환합니다."""
+
+    if obj is None:
+        return {}
+    decided_by = getattr(obj, "decided_by", None)
+    return {
+        "id": obj.id,
+        "scope": getattr(obj.scope, "key", None),
+        "status": obj.status,
+        "role": obj.role,
+        "department": obj.department,
+        "reason": obj.reason,
+        "user": {
+            "id": obj.user_id,
+            "knoxId": getattr(obj.user, "knox_id", None),
+        },
+        "decidedBy": {
+            "id": decided_by.id,
+            "knoxId": getattr(decided_by, "knox_id", None),
+        } if decided_by else None,
+    }
+
+
+def _resolve_admin_user_access_action(*, before, after):
+    """Admin 사용자 접근 변경 내용을 감사 로그 action으로 분류합니다."""
+
+    if after.get("status") == UserAccess.Status.DENIED:
+        return AccessAuditLog.Actions.REVOKE
+    if after.get("status") == UserAccess.Status.ALLOWED:
+        if before.get("status") == UserAccess.Status.ALLOWED and before.get("role") != after.get("role"):
+            return AccessAuditLog.Actions.CHANGE_ROLE
+        return AccessAuditLog.Actions.GRANT
+    return AccessAuditLog.Actions.USER_ACCESS_UPDATE
+
+
+@admin.register(AccessScope)
+class AccessScopeAdmin(admin.ModelAdmin):
+    """접근 권한 대상 관리 화면 설정입니다."""
+
+    list_display = ("key", "name", "scope_type", "is_active", "requestable", "default_role", "created_at")
+    list_filter = ("scope_type", "is_active", "requestable")
+    search_fields = ("key", "name")
+    ordering = ("key",)
+
+    def get_readonly_fields(self, request, obj=None):
+        """portal scope의 식별 키는 Admin에서 변경하지 못하게 합니다."""
+
+        if obj is not None and obj.key == ACCESS_SCOPE_PORTAL:
+            return ("key",)
+        return ()
+
+    def has_delete_permission(self, request, obj=None):
+        """기본 portal scope 삭제 권한을 항상 거부합니다."""
+
+        if obj is not None and obj.key == ACCESS_SCOPE_PORTAL:
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def save_model(self, request, obj, form, change):
+        """scope 변경을 저장하고 같은 트랜잭션에서 감사 로그를 생성합니다."""
+
+        with transaction.atomic():
+            before_obj = AccessScope.objects.filter(pk=obj.pk).first() if change else None
+            if before_obj is not None and before_obj.key == ACCESS_SCOPE_PORTAL and obj.key != ACCESS_SCOPE_PORTAL:
+                raise ValidationError({"key": "portal scope key는 변경할 수 없습니다."})
+
+            before = _serialize_admin_access_scope(before_obj)
+            super().save_model(request, obj, form, change)
+            after = _serialize_admin_access_scope(obj)
+            AccessAuditLog.objects.create(
+                scope=obj,
+                actor=request.user if getattr(request.user, "is_authenticated", False) else None,
+                action=AccessAuditLog.Actions.SCOPE_UPDATE if change else AccessAuditLog.Actions.SCOPE_CREATE,
+                before=before,
+                after=after,
+            )
+
+    def delete_model(self, request, obj):
+        """일반 scope 삭제를 기록하고 portal scope 삭제는 거부합니다."""
+
+        if obj.key == ACCESS_SCOPE_PORTAL:
+            raise PermissionDenied("portal scope는 삭제할 수 없습니다.")
+
+        with transaction.atomic():
+            before = _serialize_admin_access_scope(obj)
+            AccessAuditLog.objects.create(
+                scope=obj,
+                actor=request.user if getattr(request.user, "is_authenticated", False) else None,
+                action=AccessAuditLog.Actions.SCOPE_DELETE,
+                before=before,
+                after={},
+            )
+            super().delete_model(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        """일괄 삭제에서도 portal scope를 제외하고 개별 감사 로그를 남깁니다."""
+
+        for obj in list(queryset):
+            if obj.key != ACCESS_SCOPE_PORTAL:
+                self.delete_model(request, obj)
+
+
+@admin.register(AccessPolicyRule)
+class AccessPolicyRuleAdmin(admin.ModelAdmin):
+    """scope별 기본 접근 정책 관리 화면 설정입니다."""
+
+    list_display = ("scope_key", "rule_type", "value", "role", "is_active", "created_at")
+    list_filter = ("scope__key", "rule_type", "role", "is_active")
+    search_fields = ("scope__key", "scope__name", "value")
+    autocomplete_fields = ("scope",)
+    ordering = ("scope__key", "rule_type", "value")
+
+    @admin.display(ordering="scope__key", description="scope")
+    def scope_key(self, obj):
+        return getattr(obj.scope, "key", "") or ""
+
+    def save_model(self, request, obj, form, change):
+        """관리자 직접 정책 변경도 감사 로그에 기록합니다."""
+
+        with transaction.atomic():
+            before_obj = AccessPolicyRule.objects.filter(pk=obj.pk).select_related("scope").first() if change else None
+            before = _serialize_admin_policy_rule(before_obj) if before_obj else {}
+            super().save_model(request, obj, form, change)
+            after = _serialize_admin_policy_rule(obj)
+            AccessAuditLog.objects.create(
+                scope=obj.scope,
+                actor=request.user if getattr(request.user, "is_authenticated", False) else None,
+                policy_rule=obj,
+                action=AccessAuditLog.Actions.POLICY_UPDATE if change else AccessAuditLog.Actions.POLICY_CREATE,
+                before=before,
+                after=after,
+            )
+
+    def delete_model(self, request, obj):
+        """관리자 직접 정책 삭제도 감사 로그에 기록합니다."""
+
+        with transaction.atomic():
+            before = _serialize_admin_policy_rule(obj)
+            AccessAuditLog.objects.create(
+                scope=obj.scope,
+                actor=request.user if getattr(request.user, "is_authenticated", False) else None,
+                policy_rule=obj,
+                action=AccessAuditLog.Actions.POLICY_DELETE,
+                before=before,
+                after={},
+            )
+            super().delete_model(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        """관리자 일괄 정책 삭제도 감사 로그에 기록합니다."""
+
+        for obj in list(queryset.select_related("scope")):
+            self.delete_model(request, obj)
+
+
+@admin.register(UserAccess)
+class UserAccessAdmin(admin.ModelAdmin):
+    """사용자별 scope 접근 상태 관리 화면 설정입니다."""
+
+    list_display = (
+        "scope_key",
+        "user_knox_id",
+        "department",
+        "status",
+        "role",
+        "requested_at",
+        "decided_by_knox_id",
+        "decided_at",
+    )
+    list_filter = ("scope__key", "status", "role", "department")
+    search_fields = (
+        "scope__key",
+        "scope__name",
+        "user__knox_id",
+        "user__email",
+        "user__username",
+        "department",
+        "decided_by__knox_id",
+    )
+    autocomplete_fields = ("scope", "user", "decided_by")
+    readonly_fields = ("requested_at", "updated_at")
+    ordering = ("-requested_at", "-id")
+
+    @admin.display(ordering="scope__key", description="scope")
+    def scope_key(self, obj):
+        return getattr(obj.scope, "key", "") or ""
+
+    @admin.display(ordering="user__knox_id", description="사용자 knox_id")
+    def user_knox_id(self, obj):
+        return getattr(obj.user, "knox_id", None) or ""
+
+    @admin.display(ordering="decided_by__knox_id", description="결정자 knox_id")
+    def decided_by_knox_id(self, obj):
+        decided_by = getattr(obj, "decided_by", None)
+        return getattr(decided_by, "knox_id", None) or ""
+
+    def save_model(self, request, obj, form, change):
+        """관리자 직접 사용자 접근 상태 변경도 감사 로그에 기록합니다."""
+
+        with transaction.atomic():
+            before_obj = (
+                UserAccess.objects.filter(pk=obj.pk).select_related("scope", "user", "decided_by").first()
+                if change
+                else None
+            )
+            before = _serialize_admin_user_access(before_obj) if before_obj else {}
+            super().save_model(request, obj, form, change)
+            after = _serialize_admin_user_access(obj)
+            AccessAuditLog.objects.create(
+                scope=obj.scope,
+                actor=request.user if getattr(request.user, "is_authenticated", False) else None,
+                target_user=obj.user,
+                action=_resolve_admin_user_access_action(before=before, after=after),
+                before=before,
+                after=after,
+                reason=obj.reason,
+            )
+
+    def delete_model(self, request, obj):
+        """관리자 직접 사용자 접근 row 삭제도 감사 로그에 기록합니다."""
+
+        with transaction.atomic():
+            before = _serialize_admin_user_access(obj)
+            AccessAuditLog.objects.create(
+                scope=obj.scope,
+                actor=request.user if getattr(request.user, "is_authenticated", False) else None,
+                target_user=obj.user,
+                action=AccessAuditLog.Actions.RESET_TO_POLICY,
+                before=before,
+                after={},
+            )
+            super().delete_model(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        """관리자 일괄 사용자 접근 row 삭제도 감사 로그에 기록합니다."""
+
+        for obj in list(queryset.select_related("scope", "user", "decided_by")):
+            self.delete_model(request, obj)
+
+
+@admin.register(AccessAuditLog)
+class AccessAuditLogAdmin(admin.ModelAdmin):
+    """scope 접근 권한 감사 로그 조회 화면 설정입니다."""
+
+    actions = ()
+    list_display = (
+        "created_at",
+        "scope_key",
+        "action",
+        "target_user_knox_id",
+        "actor_knox_id",
+        "policy_rule_label",
+    )
+    list_filter = ("scope__key", "action", "created_at")
+    search_fields = (
+        "scope__key",
+        "actor__knox_id",
+        "target_user__knox_id",
+        "policy_rule__value",
+        "reason",
+    )
+    readonly_fields = (
+        "id",
+        "scope",
+        "actor",
+        "target_user",
+        "policy_rule",
+        "action",
+        "before",
+        "after",
+        "reason",
+        "created_at",
+    )
+    ordering = ("-created_at", "-id")
+
+    def has_add_permission(self, request):
+        """감사 로그 수동 추가를 허용하지 않습니다."""
+
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        """감사 로그 수정을 허용하지 않습니다."""
+
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        """감사 로그 삭제를 허용하지 않습니다."""
+
+        return False
+
+    @admin.display(ordering="scope__key", description="scope")
+    def scope_key(self, obj):
+        return getattr(obj.scope, "key", "") or ""
+
+    @admin.display(ordering="target_user__knox_id", description="대상 knox_id")
+    def target_user_knox_id(self, obj):
+        return getattr(obj.target_user, "knox_id", None) or ""
+
+    @admin.display(ordering="actor__knox_id", description="작업자 knox_id")
+    def actor_knox_id(self, obj):
+        return getattr(obj.actor, "knox_id", None) or ""
+
+    @admin.display(ordering="policy_rule__value", description="정책")
+    def policy_rule_label(self, obj):
+        policy_rule = getattr(obj, "policy_rule", None)
+        if policy_rule is None:
+            return ""
+        return f"{policy_rule.rule_type}:{policy_rule.value}"
 
 
 @admin.register(UserSdwtProdChange)

@@ -1,3 +1,5 @@
+import { withDevAccountOverviewFixtures } from "./devFixtures"
+
 const REQUEST_STATUS_LABELS = {
   PENDING: { label: "대기", variant: "secondary" },
   APPROVED: { label: "승인", variant: "default" },
@@ -109,23 +111,24 @@ export function buildAccountSummaryModel({
 export function normalizeAccountOverview(data) {
   if (!data || typeof data !== "object") return data
 
-  const history = Array.isArray(data.affiliationHistory) ? data.affiliationHistory : []
-  const manageableGroups = Array.isArray(data.manageableGroups?.groups)
-    ? data.manageableGroups.groups
+  const fixtureData = withDevAccountOverviewFixtures(data)
+  const history = Array.isArray(fixtureData.affiliationHistory) ? fixtureData.affiliationHistory : []
+  const manageableGroups = Array.isArray(fixtureData.manageableGroups?.groups)
+    ? fixtureData.manageableGroups.groups
     : []
   const latestRequest = resolveLatestRequest(history)
 
   return {
-    ...data,
+    ...fixtureData,
     affiliationHistory: history,
     manageableGroups: {
-      ...(data.manageableGroups || {}),
+      ...(fixtureData.manageableGroups || {}),
       groups: manageableGroups,
     },
     accountSummary: buildAccountSummaryModel({
-      profile: data.user,
-      affiliation: data.affiliation,
-      reconfirm: data.affiliationReconfirm,
+      profile: fixtureData.user,
+      affiliation: fixtureData.affiliation,
+      reconfirm: fixtureData.affiliationReconfirm,
       history,
       latestRequest,
     }),

@@ -3,6 +3,7 @@ import { Navigate } from "react-router-dom"
 import { AccountSettingsShell } from "./components/AccountSettingsShell"
 import AccountPage from "./pages/AccountPage"
 import MembersPage from "./pages/MembersPage"
+import PermissionsPage from "./pages/PermissionsPage"
 import SettingsPage from "./pages/SettingsPage"
 
 export const accountRoutes = [
@@ -24,6 +25,10 @@ export const accountRoutes = [
           {
             path: "members",
             element: <MembersPage />,
+          },
+          {
+            path: "permissions",
+            element: <PermissionsPage />,
           },
         ],
       },

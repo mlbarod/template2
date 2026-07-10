@@ -8,6 +8,9 @@ const endpoints = {
   affiliationMembers: "/api/v1/account/affiliation/members",
   grants: "/api/v1/account/access/grants",
   manageable: "/api/v1/account/access/manageable",
+  accessUsers: "/api/v1/account/access/users",
+  accessPolicyRules: "/api/v1/account/access/policy-rules",
+  accessAuditLogs: "/api/v1/account/access/audit-logs",
   users: "/api/v1/account/users",
 }
 
@@ -193,5 +196,91 @@ export const accountApi = {
       body: JSON.stringify(payload),
     })
     return unwrap(response, "Failed to update grant")
+  },
+
+  async fetchAccessUsers({
+    page = 1,
+    pageSize = 20,
+    status = "",
+    source = "",
+    search = "",
+    department = "",
+    scope = "portal",
+  } = {}) {
+    const params = new URLSearchParams()
+    params.set("page", String(page))
+    params.set("page_size", String(pageSize))
+    if (status) params.set("status", status)
+    if (source) params.set("source", source)
+    if (search) params.set("q", search)
+    if (department) params.set("department", department)
+    if (scope) params.set("scope", scope)
+
+    const url = buildBackendUrl(`${endpoints.accessUsers}?${params.toString()}`)
+    const response = await request(url, { cache: "no-store" })
+    return unwrap(response, "Failed to load access users")
+  },
+
+  async decideAccessUser({ userId, ...payload }) {
+    const url = buildBackendUrl(`${endpoints.accessUsers}/${userId}/decision`)
+    const response = await request(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+    return unwrap(response, "Failed to update access user")
+  },
+
+  async fetchAccessPolicyRules({ scope = "portal" } = {}) {
+    const params = new URLSearchParams()
+    if (scope) params.set("scope", scope)
+    const url = buildBackendUrl(`${endpoints.accessPolicyRules}?${params.toString()}`)
+    const response = await request(url, { cache: "no-store" })
+    return unwrap(response, "Failed to load access policy rules")
+  },
+
+  async createAccessPolicyRule(payload) {
+    const url = buildBackendUrl(endpoints.accessPolicyRules)
+    const response = await request(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+    return unwrap(response, "Failed to create access policy rule")
+  },
+
+  async updateAccessPolicyRule({ id, ...payload }) {
+    const url = buildBackendUrl(`${endpoints.accessPolicyRules}/${id}`)
+    const response = await request(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+    return unwrap(response, "Failed to update access policy rule")
+  },
+
+  async deleteAccessPolicyRule({ id }) {
+    const url = buildBackendUrl(`${endpoints.accessPolicyRules}/${id}`)
+    const response = await request(url, { method: "DELETE" })
+    return unwrap(response, "Failed to delete access policy rule")
+  },
+
+  async fetchAccessAuditLogs({
+    page = 1,
+    pageSize = 20,
+    scope = "portal",
+    userId = "",
+    action = "",
+  } = {}) {
+    const params = new URLSearchParams()
+    params.set("page", String(page))
+    params.set("page_size", String(pageSize))
+    if (scope) params.set("scope", scope)
+    if (userId) params.set("userId", String(userId))
+    if (action) params.set("action", action)
+
+    const url = buildBackendUrl(`${endpoints.accessAuditLogs}?${params.toString()}`)
+    const response = await request(url, { cache: "no-store" })
+    return unwrap(response, "Failed to load access audit logs")
   },
 }

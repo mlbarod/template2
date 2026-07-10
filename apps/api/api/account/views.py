@@ -21,6 +21,9 @@ from api.common.services import ensure_airflow_token, normalize_text, parse_json
 
 from . import selectors, services
 from .serializers import (
+    AccessDecisionSerializer,
+    AccessPolicyRuleMutationSerializer,
+    AccessUserDecisionSerializer,
     AffiliationApprovalSerializer,
     AffiliationReconfirmResponseSerializer,
     ExternalAffiliationSyncSerializer,
@@ -57,6 +60,15 @@ def _parse_int(value: object, default: int) -> int:
         return parsed
     except (TypeError, ValueError):
         return default
+
+
+def _require_json_content_type(request: HttpRequest) -> JsonResponse | None:
+    """민감한 JSON 쓰기 요청이 브라우저 form 인코딩으로 제출되는 것을 차단합니다."""
+
+    media_type = (getattr(request, "content_type", "") or "").split(";", 1)[0].strip().lower()
+    if media_type == "application/json" or media_type.endswith("+json"):
+        return None
+    return JsonResponse({"error": "unsupported_media_type"}, status=415)
 
 
 # =============================================================================
@@ -218,7 +230,362 @@ class AccountOverviewView(APIView):
 
 
 # =============================================================================
-# 3) 관리자(그룹 매니저/슈퍼유저): 소속 변경 요청 승인/거절
+# 3) 사용자: 포털 접근 상태 조회/승인 요청
+# =============================================================================
+@method_decorator(csrf_exempt, name="dispatch")
+class AccountPortalAccessView(APIView):
+    """현재 사용자의 portal scope 접근 상태 조회와 승인 요청을 제공합니다."""
+
+    def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """포털 접근 상태를 반환합니다.
+
+        입력:
+        - 요청: Django HttpRequest
+        - args/kwargs: URL 라우팅 인자
+
+        반환:
+        - JsonResponse: 포털 접근 상태
+
+        부작용:
+        - 없음
+
+        오류:
+        - 401: 미인증
+        """
+        user = request.user
+        if not user or not user.is_authenticated:
+            return JsonResponse({"error": "unauthorized"}, status=401)
+
+        return JsonResponse({"portalAccess": services.get_portal_access_payload(user=user)})
+
+    def post(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """포털 접근 승인 요청을 생성합니다.
+
+        입력:
+        - 요청: Django HttpRequest
+        - args/kwargs: URL 라우팅 인자
+
+        반환:
+        - JsonResponse: 승인 요청 결과
+
+        부작용:
+        - UserAccess 생성 또는 pending 재전환
+
+        오류:
+        - 401: 미인증
+        """
+        user = request.user
+        if not user or not user.is_authenticated:
+            return JsonResponse({"error": "unauthorized"}, status=401)
+
+        payload, status_code = services.request_portal_access(user=user)
+        return JsonResponse(payload, status=status_code)
+
+
+# =============================================================================
+# 4) 관리자: 포털 접근 승인 목록/결정
+# =============================================================================
+@method_decorator(csrf_exempt, name="dispatch")
+class AccountPortalAccessApprovalView(APIView):
+    """관리자가 사용자별 portal scope 접근 상태를 조회하고 결정합니다."""
+
+    def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """포털 접근 승인 요청 목록을 반환합니다.
+
+        입력:
+        - 요청: Django HttpRequest
+        - args/kwargs: URL 라우팅 인자
+
+        반환:
+        - JsonResponse: 승인 요청 목록
+
+        부작용:
+        - 없음
+
+        오류:
+        - 401: 미인증
+        - 403: 관리자 권한 없음
+        """
+        user = request.user
+        if not user or not user.is_authenticated:
+            return JsonResponse({"error": "unauthorized"}, status=401)
+
+        status = (request.GET.get("status") or "pending").strip()
+        search = (request.GET.get("q") or request.GET.get("search") or "").strip()
+        page = _parse_int(request.GET.get("page"), 1)
+        page_size = min(
+            _parse_int(
+                request.GET.get("page_size") or request.GET.get("pageSize"),
+                DEFAULT_PAGE_SIZE,
+            ),
+            MAX_PAGE_SIZE,
+        )
+        payload, status_code = services.get_portal_access_approvals(
+            actor=user,
+            status=status if status and status.lower() != "all" else None,
+            search=search or None,
+            page=page,
+            page_size=page_size,
+        )
+        return JsonResponse(payload, status=status_code)
+
+    def post(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """포털 접근 요청을 승인/거절합니다.
+
+        입력:
+        - 요청: Django HttpRequest
+        - args/kwargs: URL 라우팅 인자
+
+        반환:
+        - JsonResponse: 승인/거절 결과
+
+        부작용:
+        - UserAccess 상태 업데이트
+
+        오류:
+        - 400: 입력 오류
+        - 401: 미인증
+        - 403: 관리자 권한 없음
+        """
+        user = request.user
+        if not user or not user.is_authenticated:
+            return JsonResponse({"error": "unauthorized"}, status=401)
+
+        content_type_error = _require_json_content_type(request)
+        if content_type_error is not None:
+            return content_type_error
+
+        body = parse_json_body(request)
+        if body is None:
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+        if "requestId" not in body and "id" in body:
+            body = {**body, "requestId": body.get("id")}
+        if "rejectionReason" not in body and "rejection_reason" in body:
+            body = {**body, "rejectionReason": body.get("rejection_reason")}
+
+        serializer = AccessDecisionSerializer(data=body)
+        if not serializer.is_valid():
+            return JsonResponse(serializer.errors, status=400)
+
+        validated = serializer.validated_data
+        payload, status_code = services.decide_portal_access(
+            actor=user,
+            approval_id=validated["requestId"],
+            decision=validated["decision"],
+            rejection_reason=validated.get("rejectionReason"),
+            role=validated.get("role"),
+        )
+        return JsonResponse(payload, status=status_code)
+
+
+# =============================================================================
+# 5) 관리자: 포털 접근 권한 운영 관리
+# =============================================================================
+@method_decorator(csrf_exempt, name="dispatch")
+class AccountAccessUserView(APIView):
+    """관리자가 전체 사용자별 portal scope 최종 접근 상태를 조회합니다."""
+
+    def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """사용자별 최종 접근 상태 목록을 반환합니다."""
+
+        user = request.user
+        if not user or not user.is_authenticated:
+            return JsonResponse({"error": "unauthorized"}, status=401)
+
+        page = _parse_int(request.GET.get("page"), 1)
+        page_size = min(
+            _parse_int(request.GET.get("page_size") or request.GET.get("pageSize"), DEFAULT_PAGE_SIZE),
+            MAX_PAGE_SIZE,
+        )
+        payload, status_code = services.get_access_users(
+            actor=user,
+            scope_key=(request.GET.get("scope") or "").strip() or None,
+            status=(request.GET.get("status") or "").strip() or None,
+            source=(request.GET.get("source") or "").strip() or None,
+            search=(request.GET.get("q") or request.GET.get("search") or "").strip() or None,
+            department=(request.GET.get("department") or "").strip() or None,
+            page=page,
+            page_size=page_size,
+        )
+        return JsonResponse(payload, status=status_code)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class AccountAccessUserDecisionView(APIView):
+    """관리자가 특정 사용자의 portal scope 접근 상태를 변경합니다."""
+
+    def post(self, request: HttpRequest, user_id: int, *args: object, **kwargs: object) -> JsonResponse:
+        """사용자 접근 상태 변경 요청을 처리합니다."""
+
+        user = request.user
+        if not user or not user.is_authenticated:
+            return JsonResponse({"error": "unauthorized"}, status=401)
+
+        content_type_error = _require_json_content_type(request)
+        if content_type_error is not None:
+            return content_type_error
+
+        body = parse_json_body(request)
+        if body is None:
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+        body = {**body, "userId": user_id}
+        if "rejectionReason" not in body and "rejection_reason" in body:
+            body = {**body, "rejectionReason": body.get("rejection_reason")}
+        serializer = AccessUserDecisionSerializer(data=body)
+        if not serializer.is_valid():
+            return JsonResponse(serializer.errors, status=400)
+
+        validated = serializer.validated_data
+        payload, status_code = services.decide_user_access(
+            actor=user,
+            user_id=validated["userId"],
+            scope_key=validated.get("scope") or None,
+            action=validated["action"],
+            reason=validated.get("reason") or validated.get("rejectionReason"),
+            role=validated.get("role"),
+        )
+        return JsonResponse(payload, status=status_code)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class AccountAccessPolicyRuleView(APIView):
+    """관리자가 portal scope 접근 정책 규칙을 조회하고 변경합니다."""
+
+    def get(self, request: HttpRequest, rule_id: int | None = None, *args: object, **kwargs: object) -> JsonResponse:
+        """접근 정책 규칙 목록을 반환합니다."""
+
+        user = request.user
+        if not user or not user.is_authenticated:
+            return JsonResponse({"error": "unauthorized"}, status=401)
+
+        payload, status_code = services.get_access_policy_rules(
+            actor=user,
+            scope_key=(request.GET.get("scope") or "").strip() or None,
+        )
+        return JsonResponse(payload, status=status_code)
+
+    def post(self, request: HttpRequest, rule_id: int | None = None, *args: object, **kwargs: object) -> JsonResponse:
+        """접근 정책 규칙을 생성합니다."""
+
+        user = request.user
+        if not user or not user.is_authenticated:
+            return JsonResponse({"error": "unauthorized"}, status=401)
+
+        content_type_error = _require_json_content_type(request)
+        if content_type_error is not None:
+            return content_type_error
+
+        body = _normalize_policy_rule_body(parse_json_body(request))
+        if body is None:
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+        serializer = AccessPolicyRuleMutationSerializer(data=body)
+        if not serializer.is_valid():
+            return JsonResponse(serializer.errors, status=400)
+
+        validated = serializer.validated_data
+        payload, status_code = services.create_access_policy_rule(
+            actor=user,
+            scope_key=validated.get("scope") or None,
+            rule_type=validated.get("ruleType"),
+            value=validated.get("value"),
+            role=validated.get("role"),
+            is_active=validated.get("isActive"),
+        )
+        return JsonResponse(payload, status=status_code)
+
+    def patch(self, request: HttpRequest, rule_id: int | None = None, *args: object, **kwargs: object) -> JsonResponse:
+        """접근 정책 규칙을 수정합니다."""
+
+        user = request.user
+        if not user or not user.is_authenticated:
+            return JsonResponse({"error": "unauthorized"}, status=401)
+        if rule_id is None:
+            return JsonResponse({"error": "rule_id_required"}, status=400)
+
+        content_type_error = _require_json_content_type(request)
+        if content_type_error is not None:
+            return content_type_error
+
+        body = _normalize_policy_rule_body(parse_json_body(request))
+        if body is None:
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+        serializer = AccessPolicyRuleMutationSerializer(data=body)
+        if not serializer.is_valid():
+            return JsonResponse(serializer.errors, status=400)
+
+        validated = serializer.validated_data
+        payload, status_code = services.update_access_policy_rule(
+            actor=user,
+            rule_id=rule_id,
+            scope_key=validated.get("scope") or None,
+            rule_type=validated.get("ruleType") if "ruleType" in validated else None,
+            value=validated.get("value") if "value" in validated else None,
+            role=validated.get("role") if "role" in validated else None,
+            is_active=validated.get("isActive") if "isActive" in validated else None,
+        )
+        return JsonResponse(payload, status=status_code)
+
+    def delete(self, request: HttpRequest, rule_id: int | None = None, *args: object, **kwargs: object) -> JsonResponse:
+        """접근 정책 규칙을 삭제합니다."""
+
+        user = request.user
+        if not user or not user.is_authenticated:
+            return JsonResponse({"error": "unauthorized"}, status=401)
+        if rule_id is None:
+            return JsonResponse({"error": "rule_id_required"}, status=400)
+
+        payload, status_code = services.delete_access_policy_rule(actor=user, rule_id=rule_id)
+        return JsonResponse(payload, status=status_code)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class AccountAccessAuditLogView(APIView):
+    """관리자가 portal scope 접근 권한 감사 로그를 조회합니다."""
+
+    def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """접근 권한 변경 이력 목록을 반환합니다."""
+
+        user = request.user
+        if not user or not user.is_authenticated:
+            return JsonResponse({"error": "unauthorized"}, status=401)
+
+        page = _parse_int(request.GET.get("page"), 1)
+        page_size = min(
+            _parse_int(request.GET.get("page_size") or request.GET.get("pageSize"), DEFAULT_PAGE_SIZE),
+            MAX_PAGE_SIZE,
+        )
+        user_id_value = request.GET.get("userId") or request.GET.get("user_id")
+        user_id = _parse_int(user_id_value, 0) if user_id_value else None
+        payload, status_code = services.get_access_audit_logs(
+            actor=user,
+            scope_key=(request.GET.get("scope") or "").strip() or None,
+            user_id=user_id,
+            action=(request.GET.get("action") or "").strip() or None,
+            page=page,
+            page_size=page_size,
+        )
+        return JsonResponse(payload, status=status_code)
+
+
+def _normalize_policy_rule_body(body: dict[str, object] | None) -> dict[str, object] | None:
+    """정책 규칙 입력의 snake/camel 키를 호환 처리합니다."""
+
+    if body is None:
+        return None
+    normalized = dict(body)
+    if "ruleType" not in normalized and "rule_type" in normalized:
+        normalized["ruleType"] = normalized.get("rule_type")
+    if "isActive" not in normalized and "is_active" in normalized:
+        normalized["isActive"] = normalized.get("is_active")
+    return normalized
+
+
+# =============================================================================
+# 6) 관리자(그룹 매니저/슈퍼유저): 소속 변경 요청 승인/거절
 # =============================================================================
 @method_decorator(csrf_exempt, name="dispatch")
 class AccountAffiliationApprovalView(APIView):
@@ -301,7 +668,7 @@ class AccountAffiliationApprovalView(APIView):
 
 
 # =============================================================================
-# 4) 관리자/사용자: 소속 변경 요청 목록 조회 (검색/필터/페이지네이션)
+# 6) 관리자/사용자: 소속 변경 요청 목록 조회 (검색/필터/페이지네이션)
 # =============================================================================
 @method_decorator(csrf_exempt, name="dispatch")
 class AccountAffiliationRequestListView(APIView):
@@ -380,7 +747,7 @@ class AccountAffiliationRequestListView(APIView):
 
 
 # =============================================================================
-# 5) 사용자: 외부 예측 소속 변경 시 "재확인" 상태 조회/응답
+# 7) 사용자: 외부 예측 소속 변경 시 "재확인" 상태 조회/응답
 # =============================================================================
 @method_decorator(csrf_exempt, name="dispatch")
 class AccountAffiliationReconfirmView(APIView):
@@ -487,7 +854,7 @@ class AccountAffiliationReconfirmView(APIView):
 
 
 # =============================================================================
-# 6) Airflow(또는 외부 배치): 외부 예측 소속 스냅샷 동기화 엔드포인트
+# 8) Airflow(또는 외부 배치): 외부 예측 소속 스냅샷 동기화 엔드포인트
 # =============================================================================
 @method_decorator(csrf_exempt, name="dispatch")
 class AccountExternalAffiliationSyncView(APIView):
@@ -552,7 +919,7 @@ class AccountExternalAffiliationSyncView(APIView):
 
 
 # =============================================================================
-# 7) 그룹 접근 권한 부여/회수
+# 9) 그룹 접근 권한 부여/회수
 # =============================================================================
 @method_decorator(csrf_exempt, name="dispatch")
 class AccountGrantView(APIView):
@@ -638,7 +1005,7 @@ class AccountGrantView(APIView):
 
 
 # =============================================================================
-# 9) 내가 관리 가능한 그룹 + 멤버 목록 조회
+# 10) 내가 관리 가능한 그룹 + 멤버 목록 조회
 # =============================================================================
 @method_decorator(csrf_exempt, name="dispatch")
 class AccountGrantListView(APIView):
@@ -681,7 +1048,7 @@ class AccountGrantListView(APIView):
 
 
 # =============================================================================
-# 10) 소속 멤버 목록 조회
+# 11) 소속 멤버 목록 조회
 # =============================================================================
 @method_decorator(csrf_exempt, name="dispatch")
 class AccountAffiliationMembersView(APIView):
@@ -730,7 +1097,7 @@ class AccountAffiliationMembersView(APIView):
 
 
 # =============================================================================
-# 11) 사용자 pool 조회
+# 12) 사용자 pool 조회
 # =============================================================================
 @method_decorator(csrf_exempt, name="dispatch")
 class AccountUserPoolView(APIView):

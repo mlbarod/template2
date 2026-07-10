@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+import base64
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -21,7 +22,13 @@ from django.utils import timezone
 from django.urls import reverse
 
 import api.account.services as account_services
-from api.account.models import UserCurrentAffiliation, UserSdwtProdAccess
+from api.account.models import (
+    ACCESS_SCOPE_PORTAL,
+    AccessPolicyRule,
+    AccessScope,
+    UserCurrentAffiliation,
+    UserSdwtProdAccess,
+)
 from api.auth.services.oidc import _extract_user_info_from_claims, _upsert_user_from_claims
 
 
@@ -58,6 +65,13 @@ def _set_current_affiliation(user, *, user_sdwt_prod: str) -> None:
     )
     if status_code != 200:
         raise AssertionError(payload)
+
+
+def _basic_auth_header(*, sabun: str, password: str) -> str:
+    """테스트용 HTTP Basic Authorization 헤더 값을 생성합니다."""
+
+    encoded = base64.b64encode(f"{sabun}:{password}".encode("utf-8")).decode("ascii")
+    return f"Basic {encoded}"
 
 
 class AuthMeTests(TestCase):
@@ -105,6 +119,61 @@ class AuthMeTests(TestCase):
         self.assertEqual(payload["email"], "hong@example.com")
         self.assertEqual(payload["department"], "Engineering")
         self.assertFalse(payload["has_pending_affiliation"])
+        self.assertIn("portal_access", payload)
+        self.assertFalse(payload["portal_access"]["allowed"])
+        self.assertEqual(payload["portal_access"]["department"], "Engineering")
+
+        scope, _created = AccessScope.objects.get_or_create(
+            key=ACCESS_SCOPE_PORTAL,
+            defaults={"name": "Portal", "scope_type": AccessScope.ScopeTypes.PORTAL},
+        )
+        AccessPolicyRule.objects.create(
+            scope=scope,
+            rule_type=AccessPolicyRule.RuleTypes.DEPARTMENT,
+            value="Engineering",
+            is_active=True,
+        )
+        response = self.client.get(reverse("auth-me"))
+        self.assertTrue(response.json()["portal_access"]["allowed"])
+
+    def test_auth_me_department_matches_user_department_for_access_policy(self) -> None:
+        """현재 앱 소속 department가 달라도 auth 응답 department는 사용자 기준이어야 합니다."""
+
+        User = get_user_model()
+        user = User.objects.create_user(sabun="S32345", password="test-password")
+        user.knox_id = "KNOX-32345"
+        user.department = "Engineering"
+        user.email = "engineer@example.com"
+        user.save(update_fields=["knox_id", "department", "email"])
+        _set_current_affiliation(user, user_sdwt_prod="GROUP-X")
+
+        self.client.force_login(user)
+        response = self.client.get(reverse("auth-me"))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["department"], "Engineering")
+        self.assertEqual(payload["portal_access"]["department"], "Engineering")
+        self.assertEqual(payload["user_sdwt_prod"], "GROUP-X")
+
+    def test_auth_me_department_falls_back_to_current_affiliation(self) -> None:
+        """사용자 부서가 공백이면 현재 앱 소속 부서를 auth 응답과 권한 판정에 사용해야 합니다."""
+
+        User = get_user_model()
+        user = User.objects.create_user(sabun="S42345", password="test-password")
+        user.knox_id = "KNOX-42345"
+        user.department = "   "
+        user.save(update_fields=["knox_id", "department"])
+        _set_current_affiliation(user, user_sdwt_prod="GROUP-FALLBACK")
+
+        self.client.force_login(user)
+        response = self.client.get(reverse("auth-me"))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["department"], "Dept")
+        self.assertEqual(payload["portal_access"]["department"], "Dept")
+        self.assertEqual(payload["user_sdwt_prod"], "GROUP-FALLBACK")
 
     def test_auth_me_does_not_auto_assign_dev_affiliation_without_flag(self) -> None:
         """dev 자동 소속 플래그가 없으면 소속 없는 사용자를 변경하지 않아야 합니다."""
@@ -277,6 +346,129 @@ class AuthEndpointTests(TestCase):
         response = self.client.get(reverse("frontend-redirect"))
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response["Location"].startswith("http://frontend.local"))
+
+
+class PortalAccessEnforcementTests(TestCase):
+    """middleware와 DRF 인증 방식별 포털 접근 강제를 검증합니다."""
+
+    PASSWORD = "portal-test-password"
+
+    def _create_user(self, *, sabun: str, department: str):
+        """포털 접근 회귀 테스트용 사용자를 생성합니다."""
+
+        User = get_user_model()
+        return User.objects.create_user(
+            sabun=sabun,
+            password=self.PASSWORD,
+            knox_id=f"KNOX-{sabun}",
+            department=department,
+        )
+
+    def _basic_credentials(self, *, user) -> dict[str, str]:
+        """Django test client에 전달할 Basic 인증 헤더를 반환합니다."""
+
+        return {
+            "HTTP_AUTHORIZATION": _basic_auth_header(
+                sabun=user.sabun,
+                password=self.PASSWORD,
+            )
+        }
+
+    def _allow_department(self, *, department: str) -> None:
+        """테스트 부서에 portal 접근 정책을 부여합니다."""
+
+        scope, _created = AccessScope.objects.get_or_create(
+            key=ACCESS_SCOPE_PORTAL,
+            defaults={"name": "Portal", "scope_type": AccessScope.ScopeTypes.PORTAL},
+        )
+        AccessPolicyRule.objects.update_or_create(
+            scope=scope,
+            rule_type=AccessPolicyRule.RuleTypes.DEPARTMENT,
+            value=department,
+            defaults={"is_active": True},
+        )
+
+    def test_anonymous_default_drf_view_requires_portal_authentication(self) -> None:
+        """기본 permission을 쓰는 보호 GET은 익명 요청을 허용하지 않아야 합니다."""
+
+        response = self.client.get(reverse("observer-lines"))
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json(), {"error": "unauthorized"})
+
+    def test_blocked_basic_user_cannot_access_default_protected_view(self) -> None:
+        """미승인 Basic 사용자는 기본 보호 API를 우회할 수 없어야 합니다."""
+
+        user = self._create_user(sabun="BASIC-BLOCKED", department="Blocked Department")
+
+        response = self.client.get(
+            reverse("account-overview"),
+            **self._basic_credentials(user=user),
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["error"], "portal_access_required")
+        self.assertFalse(response.json()["portalAccess"]["allowed"])
+
+    def test_allowed_basic_user_can_access_default_protected_view(self) -> None:
+        """정책 승인된 Basic 사용자는 기본 보호 API를 사용할 수 있어야 합니다."""
+
+        department = "Allowed Basic Department"
+        user = self._create_user(sabun="BASIC-ALLOWED", department=department)
+        self._allow_department(department=department)
+
+        response = self.client.get(
+            reverse("account-overview"),
+            **self._basic_credentials(user=user),
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_basic_user_without_knox_id_cannot_bypass_middleware_requirement(self) -> None:
+        """Basic 인증도 보호 경로에서 비어 있는 knox_id를 허용하지 않아야 합니다."""
+
+        department = "Basic Missing Knox Department"
+        User = get_user_model()
+        user = User.objects.create_user(
+            sabun="BASIC-NO-KNOX",
+            password=self.PASSWORD,
+            department=department,
+        )
+        self._allow_department(department=department)
+
+        response = self.client.get(
+            reverse("account-overview"),
+            **self._basic_credentials(user=user),
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json(), {"error": "knox_id is required"})
+
+    def test_blocked_basic_user_cannot_bypass_explicit_is_authenticated_view(self) -> None:
+        """명시적 IsAuthenticated view도 미승인 Basic 사용자를 차단해야 합니다."""
+
+        user = self._create_user(sabun="BASIC-EXPLICIT", department="Blocked Department")
+
+        response = self.client.get(
+            reverse("fdc-trend-hard-spec-meta"),
+            **self._basic_credentials(user=user),
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["error"], "portal_access_required")
+
+    def test_blocked_basic_user_can_query_portal_access_exception(self) -> None:
+        """미승인 Basic 사용자는 예외 경로에서 자신의 포털 상태를 조회할 수 있어야 합니다."""
+
+        user = self._create_user(sabun="BASIC-STATUS", department="Blocked Department")
+
+        response = self.client.get(
+            reverse("account-portal-access"),
+            **self._basic_credentials(user=user),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()["portalAccess"]["allowed"])
 
 
 class AuthOidcClaimMappingTests(TestCase):

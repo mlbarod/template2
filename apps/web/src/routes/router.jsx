@@ -2,7 +2,7 @@
 import { createBrowserRouter, Outlet, useLocation } from "react-router-dom"
 
 import { PortalGlobalShell } from "@/components/layout"
-import { AuthAutoLoginGate, useAuth } from "@/lib/auth"
+import { AuthAutoLoginGate, PortalAccessGate, useAuth } from "@/lib/auth"
 
 import { accessStatsRoutes } from "@/features/access-stats"
 import { appstoreRoutes } from "@/features/appstore"
@@ -59,28 +59,40 @@ const protectedFeatureRoutes = [
 function AssistantWidgetOutlet() {
   const { user } = useAuth()
   const location = useLocation()
-  const { data: mailboxesData } = useEmailMailboxes({ enabled: Boolean(user) })
+  const normalizedPath = location.pathname.replace(/\/+$/, "").toLowerCase()
+  const hasPortalAccess = Boolean(user?.portal_access?.allowed)
+  const { data: mailboxesData } = useEmailMailboxes({ enabled: hasPortalAccess })
   const availableMailboxes = Array.isArray(mailboxesData?.results)
     ? mailboxesData.results
     : []
-  const hideChatWidget = ["/l3_spider", "/tttm_spider"].includes(location.pathname)
+  const hideChatWidget = [
+    "/l3_spider",
+    "/tttm_spider",
+    "/settings/members",
+    "/settings/permissions",
+  ].includes(normalizedPath)
 
   return (
-    <>
+    <PortalAccessGate allowUnapprovedPaths={["/settings", "/settings/account"]}>
       <Outlet context={{ availableMailboxes }} />
-      {user && !hideChatWidget ? <ChatWidget availableMailboxes={availableMailboxes} /> : null}
-    </>
+      {hasPortalAccess && !hideChatWidget ? <ChatWidget availableMailboxes={availableMailboxes} /> : null}
+    </PortalAccessGate>
   )
 }
 
 function AssistantMailboxOutlet() {
   const { user } = useAuth()
-  const { data: mailboxesData } = useEmailMailboxes({ enabled: Boolean(user) })
+  const hasPortalAccess = Boolean(user?.portal_access?.allowed)
+  const { data: mailboxesData } = useEmailMailboxes({ enabled: hasPortalAccess })
   const availableMailboxes = Array.isArray(mailboxesData?.results)
     ? mailboxesData.results
     : []
 
-  return <Outlet context={{ availableMailboxes }} />
+  return (
+    <PortalAccessGate>
+      <Outlet context={{ availableMailboxes }} />
+    </PortalAccessGate>
+  )
 }
 
 const assistantWidgetRoutes = {

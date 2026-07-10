@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
+import { toast } from "sonner"
 
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -11,37 +11,19 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Skeleton } from "@/components/ui/skeleton"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/common"
 import { useAuth } from "@/lib/auth"
 
+import { MembersDataTable } from "../components/MembersDataTable"
 import {
   useAffiliationMembers,
   useAffiliationDecision,
   useAffiliationRequests,
 } from "../hooks/useAccountData"
 
-const PAGE_SIZE_OPTIONS = [10, 20, 50]
-
-function formatDate(value) {
-  if (!value) return "-"
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return "-"
-  return date.toLocaleString("ko-KR")
-}
-
 export default function MembersPage() {
   const { user } = useAuth()
   const [activeTab, setActiveTab] = useState("all")
+  const [roleFilter, setRoleFilter] = useState("all")
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [rejectTarget, setRejectTarget] = useState(null)
@@ -52,6 +34,7 @@ export default function MembersPage() {
     data: membersData,
     isPending: membersPending,
     error: membersError,
+    refetch: refetchMembers,
   } = useAffiliationMembers({ userSdwtProd })
 
   const {
@@ -59,12 +42,14 @@ export default function MembersPage() {
     isPending: requestsPending,
     error: requestsError,
     isFetching: requestsFetching,
+    refetch: refetchRequests,
   } = useAffiliationRequests({
     page,
     pageSize,
     status: "pending",
     search: "",
     userSdwtProd,
+    enabled: Boolean(userSdwtProd),
   })
 
   const decisionMutation = useAffiliationDecision()
@@ -83,15 +68,18 @@ export default function MembersPage() {
   const requests = requestsData?.results || []
   const requestTotal = requestsData?.total || 0
   const totalPages = requestsData?.totalPages || 1
-  const canPrevious = page > 1
-  const canNext = page < totalPages
-  const showPagination = activeTab === "all" || activeTab === "requests"
 
   const handleDecision = async (changeId, decision, rejectionReason) => {
     try {
       await decisionMutation.mutateAsync({ changeId, decision, rejectionReason })
+      toast.success(
+        decision === "approve"
+          ? "소속 변경 요청을 승인했습니다."
+          : "소속 변경 요청을 거절했습니다.",
+      )
       return true
-    } catch {
+    } catch (error) {
+      toast.error(error?.message || "소속 변경 요청을 처리하지 못했습니다.")
       return false
     }
   }
@@ -119,13 +107,19 @@ export default function MembersPage() {
   const memberRows = members.map((member) => {
     const displayName =
       member?.name?.trim() || member?.username?.trim() || member?.knoxId || "알 수 없음"
-    const memberAffiliation = member?.userSdwtProd || member?.user_sdwt_prod || "-"
+    const memberAffiliation = member?.userSdwtProd || member?.user_sdwt_prod || ""
+    const normalizedRole = (member?.role || "").toLowerCase()
     return {
       id: `member-${member.userId}`,
       type: "member",
       name: displayName,
       knoxId: member.knoxId || "-",
-      affiliationLabel: memberAffiliation,
+      email: member.email || "",
+      affiliationLabel: [member.department, memberAffiliation].filter(Boolean).join(" / ") || "-",
+      memberRole: ["viewer", "member", "manager"].includes(normalizedRole)
+        ? normalizedRole
+        : "viewer",
+      approvalRole: null,
       requestedAt: null,
       changeId: null,
       status: "MEMBER",
@@ -150,16 +144,18 @@ export default function MembersPage() {
       type: "request",
       name: requesterName,
       knoxId: requesterKnoxId,
+      email: change?.user?.email || "",
       affiliationLabel: targetLabel,
+      memberRole: null,
+      approvalRole: role,
       requestedAt: change.requestedAt,
       changeId: change.id,
       status: change.status || "PENDING",
-      role,
     }
   })
   const combinedRows = [...requestRows, ...memberRows]
   const canApproveAny = requestRows.some(
-    (row) => row.role === "member" || row.role === "manager",
+    (row) => row.approvalRole === "member" || row.approvalRole === "manager",
   )
   const showApprovalNotice = requestTotal > 0 && !canApproveAny
   const activeRows =
@@ -171,10 +167,10 @@ export default function MembersPage() {
 
   const isActiveLoading =
     activeTab === "members"
-      ? membersPending
+      ? Boolean(userSdwtProd) && membersPending
       : activeTab === "requests"
-        ? requestsPending
-        : membersPending || requestsPending
+        ? Boolean(userSdwtProd) && requestsPending
+        : Boolean(userSdwtProd) && (membersPending || requestsPending)
 
   const activeErrors =
     activeTab === "members"
@@ -190,77 +186,19 @@ export default function MembersPage() {
         ? "현재 표시할 소속 변경 요청이 없습니다."
         : "현재 표시할 멤버 또는 소속 변경 요청이 없습니다."
 
-  const renderRows = (rows) => (
-    <Table stickyHeader>
-      <TableHeader>
-        <TableRow>
-          <TableHead>이름</TableHead>
-          <TableHead>Knox ID</TableHead>
-          <TableHead>변경 소속</TableHead>
-          <TableHead>상태</TableHead>
-          <TableHead>요청 시각</TableHead>
-          <TableHead className="text-right">작업</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {rows.map((row) => {
-          const isRequest = row.type === "request"
-          const isPendingStatus = isRequest && row.status === "PENDING"
-          const canApprove = isRequest && (row.role === "member" || row.role === "manager")
-          const statusLabel = isRequest
-            ? row.status === "APPROVED"
-              ? "승인"
-              : row.status === "REJECTED"
-                ? "거절"
-                : row.status === "SUPERSEDED"
-                  ? "취소(대체됨)"
-                  : "소속 변경 요청"
-            : "멤버"
-          return (
-            <TableRow key={row.id}>
-              <TableCell className="text-sm font-medium text-foreground">{row.name}</TableCell>
-              <TableCell className="text-sm text-muted-foreground">{row.knoxId}</TableCell>
-              <TableCell className="text-sm text-muted-foreground">
-                {row.affiliationLabel || "-"}
-              </TableCell>
-              <TableCell>
-                <Badge variant={isRequest ? "destructive" : "secondary"}>{statusLabel}</Badge>
-              </TableCell>
-              <TableCell className="text-sm text-muted-foreground">
-                {isRequest ? formatDate(row.requestedAt) : "-"}
-              </TableCell>
-              <TableCell className="text-right">
-                {isRequest ? (
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      size="sm"
-                      onClick={() => handleDecision(row.changeId, "approve")}
-                      disabled={!isPendingStatus || !canApprove || decisionMutation.isPending}
-                    >
-                      승인
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleRejectOpen(row)}
-                      disabled={!isPendingStatus || !canApprove || decisionMutation.isPending}
-                    >
-                      거절
-                    </Button>
-                  </div>
-                ) : (
-                  <span className="text-sm text-muted-foreground">-</span>
-                )}
-              </TableCell>
-            </TableRow>
-          )
-        })}
-      </TableBody>
-    </Table>
-  )
+  const activeErrorMessage = activeErrors.length > 0
+    ? activeErrors
+      .map((errorItem) => errorItem?.message || "사용자 목록을 불러오지 못했습니다.")
+      .join(" ")
+    : ""
+
+  const handleRetry = () => {
+    if (activeTab !== "requests") refetchMembers()
+    if (activeTab !== "members") refetchRequests()
+  }
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-col gap-4">
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-4 overflow-hidden">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-col gap-2">
           <h2 className="text-2xl font-semibold text-foreground">{pageTitle}</h2>
@@ -270,122 +208,33 @@ export default function MembersPage() {
               : "user_sdwt_prod가 설정되어 있지 않습니다."}
           </p>
         </div>
-        {requestsFetching && !requestsPending ? (
-          <span className="text-xs text-muted-foreground">새로고침 중...</span>
-        ) : null}
       </div>
 
-      <Tabs
-        value={activeTab}
-        onValueChange={setActiveTab}
-        className="flex min-h-0 min-w-0 flex-col gap-2"
-      >
-        <div className="rounded-lg border bg-background p-3">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <TabsList className="h-9">
-              <TabsTrigger value="all">전체</TabsTrigger>
-              <TabsTrigger value="members">
-                멤버
-                <Badge variant="secondary" className="ml-2">
-                  {members.length}
-                </Badge>
-              </TabsTrigger>
-              <TabsTrigger value="requests">
-                소속 변경 요청
-                {requestTotal > 0 ? (
-                  <Badge variant="destructive" className="ml-2">
-                    {requestTotal}
-                  </Badge>
-                ) : null}
-              </TabsTrigger>
-            </TabsList>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">페이지 크기</span>
-              <Select
-                value={String(pageSize)}
-                onValueChange={(value) => setPageSize(Number(value))}
-                disabled={activeTab === "members"}
-              >
-                <SelectTrigger className="h-8 w-[90px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PAGE_SIZE_OPTIONS.map((value) => (
-                    <SelectItem key={value} value={String(value)}>
-                      {value}개
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {showApprovalNotice ? (
-            <p className="mt-3 text-xs text-muted-foreground">
-              승인/거절은 멤버 또는 관리자만 가능합니다.
-            </p>
-          ) : null}
-        </div>
-
-        <div className="flex-1 min-h-0 min-w-0 overflow-y-auto rounded-lg border bg-background">
-          {activeErrors.length > 0 ? (
-            <div className="grid gap-2 p-4">
-              {activeErrors.map((errorItem, index) => (
-                <p key={`member-error-${index}`} className="text-sm text-destructive">
-                  {errorItem?.message ||
-                    (activeTab === "members"
-                      ? "멤버 목록을 불러오지 못했습니다."
-                      : activeTab === "requests"
-                        ? "소속 변경 요청을 불러오지 못했습니다."
-                        : "목록을 불러오지 못했습니다.")}
-                </p>
-              ))}
-            </div>
-          ) : isActiveLoading ? (
-            <div className="grid gap-3 p-4">
-              {Array.from({ length: 6 }).map((_, index) => (
-                <Skeleton key={`members-table-skeleton-${index}`} className="h-10 w-full" />
-              ))}
-            </div>
-          ) : activeRows.length === 0 ? (
-            <div className="p-4 text-center text-sm text-muted-foreground">{activeEmptyMessage}</div>
-          ) : (
-            renderRows(activeRows)
-          )}
-        </div>
-
-        {showPagination ? (
-          <div className="flex flex-col gap-2 border-t p-4 md:flex-row md:items-center md:justify-between">
-            <p className="text-xs text-muted-foreground">
-              페이지 {page.toLocaleString("ko-KR")} / {totalPages.toLocaleString("ko-KR")}
-            </p>
-            <Pagination className="justify-end">
-              <PaginationContent>
-                <PaginationItem>
-                  <PaginationPrevious
-                    href="#"
-                    onClick={(event) => {
-                      event.preventDefault()
-                      if (canPrevious) setPage((prev) => prev - 1)
-                    }}
-                    className={!canPrevious ? "pointer-events-none opacity-50" : ""}
-                  />
-                </PaginationItem>
-                <PaginationItem>
-                  <PaginationNext
-                    href="#"
-                    onClick={(event) => {
-                      event.preventDefault()
-                      if (canNext) setPage((prev) => prev + 1)
-                    }}
-                    className={!canNext ? "pointer-events-none opacity-50" : ""}
-                  />
-                </PaginationItem>
-              </PaginationContent>
-            </Pagination>
-          </div>
-        ) : null}
-      </Tabs>
+      <div className="min-h-0 min-w-0 flex-1">
+        <MembersDataTable
+          rows={activeRows}
+          activeTab={activeTab}
+          onActiveTabChange={setActiveTab}
+          memberTotal={members.length}
+          requestTotal={requestTotal}
+          roleFilter={roleFilter}
+          onRoleFilterChange={setRoleFilter}
+          page={page}
+          pageSize={pageSize}
+          totalPages={totalPages}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          isLoading={isActiveLoading}
+          isFetching={requestsFetching}
+          error={activeErrorMessage}
+          emptyMessage={activeEmptyMessage}
+          onRetry={handleRetry}
+          isMutating={decisionMutation.isPending}
+          showApprovalNotice={showApprovalNotice}
+          onApprove={(row) => handleDecision(row.changeId, "approve")}
+          onReject={handleRejectOpen}
+        />
+      </div>
 
       <Dialog
         open={Boolean(rejectTarget)}

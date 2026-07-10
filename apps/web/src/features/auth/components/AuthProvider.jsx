@@ -52,7 +52,7 @@ import { UserSdwtProdReconfirmDialog } from "./UserSdwtProdReconfirmDialog"
  * @property {boolean} isRefreshing
  * @property {(options?: { next?: string }) => Promise<{ method: "redirect"; url?: string }>} login
  * @property {() => Promise<void>} logout
- * @property {(options?: { background?: boolean }) => Promise<void>} refresh
+ * @property {(options?: { background?: boolean }) => Promise<boolean>} refresh
  * @property {AuthConfig} config
  */
 
@@ -150,14 +150,17 @@ export function AuthProvider({ children }) {
     try {
       const endpoint = buildBackendUrl("/api/v1/auth/me")
       const result = await fetchJson(endpoint, { cache: "no-store" })
-      if (!mountedRef.current) return
+      if (!mountedRef.current) return false
       if (result.ok && result.data) {
         setUser(/** 타입: AuthUser @type {AuthUser} */ (result.data))
+        return true
       } else if (!useBackgroundRefresh || result.status === 401 || result.status === 403) {
         setUser(null)
       }
+      return false
     } catch {
       if (mountedRef.current && !useBackgroundRefresh) setUser(null)
+      return false
     } finally {
       if (mountedRef.current) {
         if (useBackgroundRefresh) {

@@ -75,11 +75,12 @@ function AccountSummaryPanel({ pageTitle, profile, summary }) {
 
 export default function AccountPage() {
   const { user } = useAuth()
+  const hasPortalAccess = Boolean(user?.portal_access?.allowed)
   const {
     data: overviewData,
     isLoading: overviewLoading,
     error: overviewError,
-  } = useAccountOverview()
+  } = useAccountOverview({ enabled: hasPortalAccess })
   const {
     data: affiliationData,
     isLoading: affiliationLoading,
@@ -116,6 +117,38 @@ export default function AccountPage() {
     }
   }
 
+  const affiliationContent = affiliationLoading ? (
+    <Skeleton className="h-80 w-full" />
+  ) : affiliationError ? (
+    <div className="rounded-lg border bg-card p-4" role="alert">
+      <p className="text-sm text-destructive">
+        {affiliationError?.message || "소속 정보를 불러오지 못했습니다."}
+      </p>
+    </div>
+  ) : (
+    <AffiliationCard
+      data={affiliationData}
+      onSubmit={handleAffiliationSubmit}
+      isSubmitting={updateAffiliationMutation.isPending}
+      error={submitError}
+      successMessage={submitMessage}
+    />
+  )
+
+  if (!hasPortalAccess) {
+    return (
+      <div className="flex w-full flex-col gap-4">
+        <section className="space-y-1">
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground">계정 및 소속</h2>
+          <p className="text-sm text-muted-foreground">
+            포털 접근 승인에 사용할 현재 소속을 확인하거나 변경할 수 있습니다.
+          </p>
+        </section>
+        <div className="min-w-0">{affiliationContent}</div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex w-full flex-col gap-4">
       {overviewError ? (
@@ -143,23 +176,7 @@ export default function AccountPage() {
 
           <section className="grid w-full grid-cols-1 items-start gap-4 xl:grid-cols-12">
             <div className="min-w-0 xl:col-span-7">
-              {affiliationLoading ? (
-                <Skeleton className="h-80 w-full" />
-              ) : affiliationError ? (
-                <div className="rounded-lg border bg-card p-4">
-                  <p className="text-sm text-destructive">
-                    {affiliationError?.message || "소속 정보를 불러오지 못했습니다."}
-                  </p>
-                </div>
-              ) : (
-                <AffiliationCard
-                  data={affiliationData}
-                  onSubmit={handleAffiliationSubmit}
-                  isSubmitting={updateAffiliationMutation.isPending}
-                  error={submitError}
-                  successMessage={submitMessage}
-                />
-              )}
+              {affiliationContent}
             </div>
             <div className="flex min-w-0 flex-col gap-4 xl:col-span-5">
               <ManageableGroupsCard groups={manageableGroups} />

@@ -33,12 +33,35 @@ from .affiliation_requests import (
 )
 from .external_sync import sync_external_affiliations
 from .overview import get_account_overview
+from .access_control import (
+    create_access_policy_rule,
+    decide_access,
+    decide_portal_access,
+    decide_user_access,
+    delete_access_policy_rule,
+    get_access_audit_logs,
+    get_access_payload,
+    get_access_policy_rules,
+    get_access_requests,
+    get_access_users,
+    get_portal_access_approvals,
+    get_portal_access_payload,
+    is_access_admin,
+    request_access,
+    request_portal_access,
+    update_access_policy_rule,
+)
 from .dev_affiliation import ensure_dev_user_affiliation
 from .users import ensure_user_profile, get_user_by_knox_id, resolve_target_user
 
 __all__ = [
     "approve_affiliation_change",
     "auto_approve_affiliation_from_snapshot",
+    "create_access_policy_rule",
+    "decide_access",
+    "decide_portal_access",
+    "decide_user_access",
+    "delete_access_policy_rule",
     "ensure_self_access",
     "ensure_affiliation_option",
     "ensure_dev_user_affiliation",
@@ -52,12 +75,23 @@ __all__ = [
     "get_line_sdwt_options_payload",
     "get_manageable_groups_with_members",
     "get_pending_user_sdwt_prod_change",
+    "get_access_payload",
+    "get_access_audit_logs",
+    "get_access_policy_rules",
+    "get_access_requests",
+    "get_access_users",
+    "get_portal_access_approvals",
+    "get_portal_access_payload",
     "get_user_by_knox_id",
     "grant_or_revoke_access",
+    "is_access_admin",
     "reject_affiliation_change",
+    "request_access",
+    "request_portal_access",
     "request_affiliation_change",
     "resolve_target_user",
     "set_current_affiliation_for_user",
     "submit_affiliation_reconfirm_response",
     "sync_external_affiliations",
+    "update_access_policy_rule",
 ]
