@@ -77,21 +77,26 @@ function LineTable({ rows, selectedLine, onSelectLine, onReorder, runStatsMap = 
     <div className="h-full min-h-0 overflow-y-auto">
       <table className="w-full table-fixed border-collapse text-[13px]">
         <colgroup>
-          <col className="w-7" />
-          <col className="w-[100px]" />
-          <col className="w-[60px]" />
-          <col className="w-[60px]" />
-          <col className="w-[60px]" />
+          <col className="w-6" />
+          <col className="w-[90px]" />
+          <col className="w-[68px]" />
           <col className="w-[62px]" />
+          <col className="w-[62px]" />
+          <col className="w-[70px]" />
         </colgroup>
         <thead className="sticky top-0 z-10 bg-card">
-          <tr className="h-[58px] border-b">
+          <tr className="h-[58px] border-b text-xs">
             <th className="px-1 py-0" />
-            <th className="px-2 py-0 text-left font-semibold text-muted-foreground">line_name</th>
-            <th className="py-0 pl-1 pr-3 text-right font-semibold text-muted-foreground">분석 step_seq</th>
-            <th className="px-1 py-0 text-right font-semibold text-chart-4">Warning</th>
-            <th className="px-1 py-0 text-right font-semibold text-destructive">High Risk</th>
-            <th className="py-0 pl-1 pr-1 text-right font-semibold text-muted-foreground">합계</th>
+            <th className="py-0 pl-1.5 pr-0.5 text-left font-semibold text-muted-foreground">line_name</th>
+            <th className="py-0 text-center font-semibold text-muted-foreground">
+              <span className="inline-flex flex-col items-center leading-tight">
+                <span>분석</span>
+                <span>step_seq</span>
+              </span>
+            </th>
+            <th className="whitespace-nowrap px-1 py-0 text-center font-semibold text-chart-4">Warning</th>
+            <th className="whitespace-nowrap px-1 py-0 text-center font-semibold text-destructive">High Risk</th>
+            <th className="whitespace-nowrap px-1 py-0 text-center font-semibold text-muted-foreground">합계</th>
           </tr>
         </thead>
         <tbody>
@@ -109,7 +114,7 @@ function LineTable({ rows, selectedLine, onSelectLine, onReorder, runStatsMap = 
                 onDragEnd={handleDragEnd}
                 onClick={() => onSelectLine?.(isSelected ? null : r.line)}
                 className={cn(
-                  "h-[54px] border-b transition-colors cursor-pointer",
+                  "h-[50px] border-b transition-colors cursor-pointer",
                   isDragTarget && "border-t-2 border-t-primary",
                   isSelected
                     ? "bg-primary/10 hover:bg-primary/15"
@@ -118,42 +123,42 @@ function LineTable({ rows, selectedLine, onSelectLine, onReorder, runStatsMap = 
                 )}
               >
                 <td
-                  className="w-6 cursor-grab px-1 py-1 text-center text-base text-muted-foreground/50 active:cursor-grabbing"
+                  className="w-5 cursor-grab py-1 pl-0.5 pr-0 text-center text-sm text-muted-foreground/50 active:cursor-grabbing"
                   onClick={(e) => e.stopPropagation()}
                 >
                   ⠿
                 </td>
                 <td className={cn(
-                  "truncate px-2 py-1 font-mono font-semibold",
+                  "truncate py-1 pl-1.5 pr-0.5 font-mono font-semibold",
                   isSelected ? "text-primary" : "text-foreground",
                 )}>
                   {r.line}
                 </td>
-                <td className="py-1 pl-1 pr-3 text-right tabular-nums text-xs text-muted-foreground">
+                <td className="px-1 py-1 text-center tabular-nums text-xs text-muted-foreground">
                   {runStatsMap[r.line] != null
                     ? formatNumber(runStatsMap[r.line])
                     : <span className="text-muted-foreground/25">—</span>}
                 </td>
                 {r.active ? (
                   <>
-                    <td className="px-1 py-1 text-right text-xs tabular-nums">
+                    <td className="px-1 py-1 text-center text-xs tabular-nums">
                       {r.wn > 0
                         ? <span className="font-semibold text-chart-4">{formatNumber(r.wn)}</span>
                         : <span className="text-muted-foreground/40">·</span>}
                     </td>
-                    <td className="px-1 py-1 text-right text-xs tabular-nums">
+                    <td className="px-1 py-1 text-center text-xs tabular-nums">
                       {r.hr > 0
                         ? <span className="font-bold text-destructive">{formatNumber(r.hr)}</span>
                         : <span className="text-muted-foreground/40">·</span>}
                     </td>
-                    <td className="py-1 pl-1 pr-1 text-right text-xs tabular-nums font-medium">
+                    <td className="px-1 py-1 text-center text-xs tabular-nums font-medium">
                       {total > 0
                         ? <span className="text-foreground">{formatNumber(total)}</span>
                         : <span className="text-muted-foreground/40">·</span>}
                     </td>
                   </>
                 ) : (
-                  <td colSpan={3} className="py-1 pl-2 pr-1 text-center text-[11px] font-normal text-muted-foreground">
+                  <td colSpan={3} className="py-1 pl-2 pr-3 text-center text-[11px] font-normal text-muted-foreground">
                     이상없음
                   </td>
                 )}
@@ -358,16 +363,6 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
     })
   }, [rows, hideNormal, filters])
 
-  const filteredTotals = useMemo(() => filteredRows.reduce(
-    (acc, row) => ({
-      highRisk: acc.highRisk + row.highRisk,
-      warning: acc.warning + row.warning,
-      stepSeq: acc.stepSeq + row.stepSeq,
-      eqpch: acc.eqpch + row.eqpch,
-    }),
-    { highRisk: 0, warning: 0, stepSeq: 0, eqpch: 0 }
-  ), [filteredRows])
-
   const activeCount = useMemo(() => filteredRows.filter((r) => r.active).length, [filteredRows])
 
   return (
@@ -412,7 +407,7 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
             선택 범위에 표시할 라인별 세부 요약이 없습니다.
           </div>
         ) : (
-          <table className="w-full min-w-[760px] border-collapse text-[14px] leading-tight">
+          <table className="w-full min-w-[760px] border-collapse text-[13px]">
             <colgroup>
               <col className="w-32" />
               <col className="w-36" />
@@ -423,7 +418,7 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
               <col className="w-24" />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-card">
-              <tr className="h-[58px] border-b text-muted-foreground">
+              <tr className="h-[58px] border-b text-xs text-muted-foreground">
                 <th className="sticky left-0 z-20 bg-card px-3 py-0 text-left font-semibold">
                   <span className="flex items-center gap-1.5">
                     Line_name
@@ -466,16 +461,16 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
                   </td>
                   {row.active ? (
                     <>
-                      <td className="px-3 py-1 text-right tabular-nums font-semibold text-chart-4">
+                      <td className="px-3 py-1 text-right text-xs tabular-nums font-semibold text-chart-4">
                         {formatNumber(row.warning)}
                       </td>
-                      <td className="px-3 py-1 text-right tabular-nums font-semibold text-destructive">
+                      <td className="px-3 py-1 text-right text-xs tabular-nums font-semibold text-destructive">
                         {formatNumber(row.highRisk)}
                       </td>
-                      <td className="px-3 py-1 text-right tabular-nums font-semibold">
+                      <td className="px-3 py-1 text-right text-xs tabular-nums font-semibold">
                         {formatNumber(row.stepSeq)}
                       </td>
-                      <td className="pl-3 pr-6 py-1 text-right tabular-nums font-semibold">
+                      <td className="pl-3 pr-6 py-1 text-right text-xs tabular-nums font-semibold">
                         {formatNumber(row.eqpch)}
                       </td>
                     </>
@@ -487,17 +482,6 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
                 </tr>
               ))}
             </tbody>
-            <tfoot>
-              <tr className="bg-muted/50 font-semibold">
-                <td className="sticky left-0 z-[1] bg-muted/50 px-3 py-1">합계</td>
-                <td className="px-3 py-1" />
-                <td className="px-3 py-1" />
-                <td className="px-3 py-1 text-right tabular-nums text-chart-4">{formatNumber(filteredTotals.warning)}</td>
-                <td className="px-3 py-1 text-right tabular-nums text-destructive">{formatNumber(filteredTotals.highRisk)}</td>
-                <td className="px-3 py-1 text-right tabular-nums">{formatNumber(filteredTotals.stepSeq)}</td>
-                <td className="pl-3 pr-6 py-1 text-right tabular-nums">{formatNumber(filteredTotals.eqpch)}</td>
-              </tr>
-            </tfoot>
           </table>
         )}
       </CardContent>
