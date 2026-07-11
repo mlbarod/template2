@@ -281,7 +281,7 @@ class AccountEndpointTests(TestCase):
         )
         migration = import_module("api.account.migrations.0002_access_permissions")
 
-        migration.seed_access_permission_data(django_apps, None)
+        migration._backfill_existing_user_app_access(django_apps)
 
         app_scope_count = AccessScope.objects.filter(scope_type=AccessScope.ScopeTypes.APP).count()
         self.assertEqual(
@@ -322,12 +322,61 @@ class AccountEndpointTests(TestCase):
         _clear_permission_cache(self.manager)
         migration = import_module("api.account.migrations.0002_access_permissions")
 
-        migration.seed_access_permission_data(django_apps, None)
+        migration._migrate_access_managers(django_apps)
 
         _clear_permission_cache(self.manager)
         self.assertTrue(self.manager.groups.filter(id=group.id).exists())
         self.assertFalse(self.manager.user_permissions.filter(id=permission.id).exists())
         self.assertTrue(self.manager.has_perm("account.manage_access"))
+
+    def test_spider_scope_migration_preserves_l0_decisions_and_backfills_l1(self) -> None:
+        """Spider scope 순방향 migration은 기존 L0 결정을 보존하고 L1 권한을 승계해야 합니다."""
+
+        User = get_user_model()
+        inactive_user = User.objects.create_user(
+            sabun="S-SPIDER-INACTIVE",
+            password="test-password",
+            is_active=False,
+        )
+        legacy_scope = AccessScope.objects.get(key="l0-spider")
+        legacy_scope.key = "fdc-trend"
+        legacy_scope.name = "FDC Trend"
+        legacy_scope.save(update_fields=["key", "name"])
+        AccessScope.objects.filter(key="l1-spider").delete()
+        denied_access = UserAccess.objects.create(
+            scope=legacy_scope,
+            user=self.user,
+            status=UserAccess.Status.DENIED,
+            role="viewer",
+            reason="기존 L0 차단 유지",
+        )
+        migration = import_module("api.account.migrations.0003_spider_access_scopes")
+
+        migration.migrate_spider_access_scopes(django_apps, None)
+
+        migrated_scope = AccessScope.objects.get(key="l0-spider")
+        self.assertEqual(migrated_scope.id, legacy_scope.id)
+        self.assertEqual(migrated_scope.name, "L0 Spider")
+        self.assertFalse(AccessScope.objects.filter(key="fdc-trend").exists())
+        denied_access.refresh_from_db()
+        self.assertEqual(denied_access.scope_id, migrated_scope.id)
+        self.assertEqual(denied_access.status, UserAccess.Status.DENIED)
+        self.assertEqual(denied_access.reason, "기존 L0 차단 유지")
+
+        l1_scope = AccessScope.objects.get(key="l1-spider")
+        inherited_rows = UserAccess.objects.filter(scope=l1_scope)
+        self.assertEqual(
+            set(inherited_rows.values_list("user_id", flat=True)),
+            set(User.objects.values_list("id", flat=True)),
+        )
+        self.assertFalse(inherited_rows.exclude(status=UserAccess.Status.ALLOWED, role="viewer").exists())
+        self.assertTrue(inherited_rows.filter(user=inactive_user).exists())
+
+        migration.restore_legacy_fdc_scope(django_apps, None)
+        restored_scope = AccessScope.objects.get(key="fdc-trend")
+        self.assertEqual(restored_scope.id, legacy_scope.id)
+        self.assertEqual(restored_scope.name, "FDC Trend")
+        self.assertTrue(AccessScope.objects.filter(key="l1-spider").exists())
 
     def test_access_source_contract_uses_explicit_stable_values(self) -> None:
         """접근 판정 source 값은 API 계약에 사용하는 명시적 목록으로 고정되어야 합니다."""
