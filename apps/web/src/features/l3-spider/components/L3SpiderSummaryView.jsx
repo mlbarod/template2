@@ -38,13 +38,6 @@ const LINE_COLORS = [
 ]
 const HIGH_RISK_BAR_COLOR = "rgb(220, 38, 38)"
 const ANOMALY_BAR_COLOR = "rgb(217, 119, 6)"
-const LINE_TOTAL_ITEMS = [
-  { key: "groups", label: "분석 그룹", className: "text-foreground", tooltip: "이상 감지 분석 대상인 (line_id × process_id × eds_step) 조합의 수입니다." },
-  { key: "warning", label: "Warning", className: "text-chart-4" },
-  { key: "highRisk", label: "High Risk", className: "text-destructive" },
-  { key: "anomalies", label: "이상 건수", className: "text-foreground" },
-  { key: "highRiskEqpchs", label: "이상 EQPCH", className: "text-destructive" },
-]
 
 // 전 라인 요약 테이블 — 이상감지 없는 라인도 포함, 클릭 시 매트릭스 필터, 드래그로 순서 변경
 function LineTable({ rows, selectedLine, onSelectLine, onReorder, runStatsMap = {} }) {
