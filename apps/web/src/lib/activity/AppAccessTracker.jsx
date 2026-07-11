@@ -13,12 +13,15 @@ export function AppAccessTracker() {
   const lastTrackedKeyRef = useRef("")
 
   useEffect(() => {
-    if (!user) return
+    if (!user?.portal_access?.allowed) return
 
     const target = resolveAppAccessTarget(location.pathname)
     if (!target) return
-    const access = getAppAccess(user, target.appId)
-    if (access && !access.allowed) return
+    const requiredAppScopes = target.requiredAppScopes || [target.appId]
+    if (
+      target.requiresAppAccess !== false
+      && requiredAppScopes.some((scopeKey) => !getAppAccess(user, scopeKey)?.allowed)
+    ) return
 
     const path = `${location.pathname}${location.search || ""}`
     const trackedKey = `${user.id || user.usr_id || "user"}:${path}`

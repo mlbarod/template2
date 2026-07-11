@@ -103,7 +103,11 @@ export function PortalAccessGate({ children, allowUnapprovedPaths = [] }) {
     return () => window.clearInterval(timer)
   }, [canBypassGate, isPending, isRefreshing, refresh, user])
 
-  if (!user || portalAccess?.allowed || canBypassGate) {
+  if (!user) {
+    return null
+  }
+
+  if (portalAccess?.allowed || canBypassGate) {
     return children
   }
 

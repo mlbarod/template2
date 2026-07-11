@@ -5,6 +5,9 @@
 import { useEffect, useRef } from "react"
 import { Outlet, useLocation } from "react-router-dom"
 
+import { Spinner } from "@/components/ui/spinner"
+
+import { CenteredPage } from "./CenteredPage"
 import { useAuth } from "../hooks/useAuth"
 
 export function AuthAutoLoginGate() {
@@ -24,6 +27,21 @@ export function AuthAutoLoginGate() {
     autoLoginTriggeredRef.current = true
     login({ next: nextPath })
   }, [config?.providerConfigured, isLoading, login, location.pathname, location.search, nextPath, user])
+
+  if (!user) {
+    const statusMessage = config?.providerConfigured === false
+      ? "SSO 설정을 확인할 수 없습니다. 관리자에게 문의하세요."
+      : "인증 상태를 확인하는 중입니다."
+
+    return (
+      <CenteredPage>
+        <div className="flex flex-col items-center gap-3 text-center" role="status" aria-live="polite">
+          {config?.providerConfigured === false ? null : <Spinner className="size-8 text-primary" />}
+          <p className="text-sm text-muted-foreground">{statusMessage}</p>
+        </div>
+      </CenteredPage>
+    )
+  }
 
   return <Outlet />
 }

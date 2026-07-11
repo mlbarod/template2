@@ -413,10 +413,10 @@ class AccountAccessUserView(APIView):
 
 @method_decorator(csrf_exempt, name="dispatch")
 class AccountAppAccessMatrixView(APIView):
-    """권한 관리자가 사용자별 앱 접근 권한 매트릭스를 조회합니다."""
+    """권한 관리자가 사용자별 Portal·앱 접근 권한 매트릭스를 조회합니다."""
 
     def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
-        """활성 앱 scope와 사용자별 최종 접근 상태를 반환합니다."""
+        """Portal·활성 앱 scope와 사용자별 최종 접근 상태를 반환합니다."""
 
         user = request.user
         if not user or not user.is_authenticated:

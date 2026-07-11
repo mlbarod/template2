@@ -64,7 +64,7 @@ import { UserSdwtProdReconfirmDialog } from "./UserSdwtProdReconfirmDialog"
 export const AuthContext = createContext(undefined)
 
 const POST_LOGIN_ATTENTION_TOOLTIP_KEY = "auth:post-login-attention-tooltip"
-const ACCESS_STATE_REFRESH_INTERVAL_MS = 30_000
+const ACCESS_STATE_REFRESH_INTERVAL_MS = 60 * 60_000
 
 function getSessionRefreshIntervalMs(sessionMaxAgeSeconds) {
   const rawSeconds = Number(sessionMaxAgeSeconds)

@@ -191,15 +191,36 @@ export function useAccessUsers({
 }
 
 export function useAccessMatrix({
-  page = 1,
   pageSize = 20,
   search = "",
   department = "",
   enabled = true,
 } = {}) {
-  return useQuery({
-    queryKey: [...ACCESS_MATRIX_QUERY_KEY, page, pageSize, search, department],
-    queryFn: () => accountApi.fetchAccessMatrix({ page, pageSize, search, department }),
+  return useInfiniteQuery({
+    queryKey: [...ACCESS_MATRIX_QUERY_KEY, "infinite", pageSize, search, department],
+    queryFn: ({ pageParam = 1 }) => accountApi.fetchAccessMatrix({
+      page: pageParam,
+      pageSize,
+      search,
+      department,
+    }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => {
+      const currentPage = Number(lastPage?.pagination?.page) || 1
+      const totalPages = Number(lastPage?.pagination?.totalPages) || 1
+      return currentPage < totalPages ? currentPage + 1 : undefined
+    },
+    select: (data) => {
+      const pages = data?.pages || []
+      const firstPage = pages[0] || {}
+      const lastPage = pages[pages.length - 1] || firstPage
+      return {
+        ...data,
+        scopes: firstPage.scopes || [],
+        results: pages.flatMap((pageData) => pageData?.results || []),
+        pagination: lastPage.pagination || firstPage.pagination || {},
+      }
+    },
     placeholderData: keepPreviousData,
     enabled,
   })

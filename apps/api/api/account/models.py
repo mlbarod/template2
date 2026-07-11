@@ -373,6 +373,7 @@ class AccessSource(models.TextChoices):
     """최종 접근 판정의 결정 근거를 정의합니다."""
 
     SUPERUSER_BYPASS = "superuser_bypass", "Superuser Bypass"
+    PORTAL_ACCESS_REQUIRED = "portal_access_required", "Portal Access Required"
     SCOPE_INACTIVE = "scope_inactive", "Scope Inactive"
     EXPLICIT_DENIED = "explicit_denied", "Explicit Denied"
     EXPLICIT_ALLOWED = "explicit_allowed", "Explicit Allowed"

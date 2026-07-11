@@ -11,7 +11,8 @@ export function AppAccessGate({ children, scopeKey, appName }) {
   const { user } = useAuth()
   const access = getAppAccess(user, scopeKey)
 
-  if (!user || access?.allowed) return children
+  if (!user) return null
+  if (user.portal_access?.allowed && access?.allowed) return children
 
   return (
     <div className="flex h-full min-h-0 items-center justify-center overflow-y-auto bg-background px-6 py-10">

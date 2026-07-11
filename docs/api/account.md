@@ -27,6 +27,8 @@ Account API는 사용자 소속, 접근 권한, 사용자 검색을 제공합니
 | POST | `/api/v1/account/external-affiliations/sync` | Bearer token | 외부 예측 소속 동기화 |
 | POST | `/api/v1/account/access/grants` | Session | 접근 권한 부여/회수 |
 | GET | `/api/v1/account/access/manageable` | Session | 관리 가능한 소속과 멤버 |
+| GET | `/api/v1/account/access/matrix` | Session + access manager | 사용자별 Portal·활성 앱 권한 매트릭스 |
+| POST | `/api/v1/account/access/users/<user_id>/decision` | Session + access manager | Portal·앱 권한 승인/거절/부여/회수/역할 변경 |
 | GET | `/api/v1/account/users` | Session | 사용자 검색 pool |
 | GET | `/api/v1/account/line-sdwt-options` | Session | line/user_sdwt_prod 옵션 |
 
@@ -91,6 +93,37 @@ Content-Type: application/json
 - `userId`
 - `user_id`
 - `knox_id`
+
+## Portal·앱 권한 매트릭스
+
+```http
+GET /api/v1/account/access/matrix?page=1&page_size=20&q=kim&department=Etch
+```
+
+응답의 `scopes`는 `portal`을 첫 항목으로 반환하고 뒤에 활성 앱 scope를 이름순으로 반환합니다.
+Portal 판정에는 `role`과 `defaultRole`이 포함되며 앱 판정은 `allowed` 중심의 boolean 권한으로 역할을 포함하지 않습니다.
+
+Portal의 `viewer`, `member`, `manager`, `admin`은 Portal 접근 역할을 나타내는 분류값입니다. 권한 관리 API 사용 여부는 역할과 별개인 Django permission `account.manage_access`로만 판정하며, 응답의 `canManage`에 반영됩니다.
+
+Portal 접근이 차단되면 모든 앱의 최종 판정도 차단됩니다. 이때 앱 payload는 `allowed=false`, `effectiveStatus=denied`, `source=portal_access_required`, `blockedByPortal=true`를 반환합니다. 기존 앱 판정은 변경하지 않고 `underlyingAccess`에 다음 형태로 보존합니다.
+
+```json
+{
+  "allowed": false,
+  "effectiveStatus": "denied",
+  "source": "portal_access_required",
+  "blockedByPortal": true,
+  "underlyingAccess": {
+    "allowed": true,
+    "reason": "allowed",
+    "effectiveStatus": "allowed",
+    "source": "explicit_allowed"
+  }
+}
+```
+
+Portal 대기 요청은 `approve` 또는 `reject`, 일반 수동 변경은 `grant`, `revoke`, `reset_to_policy`, `change_role` 액션을 사용합니다.
+앱 scope는 `grant`, `revoke`, `reset_to_policy`만 지원합니다.
 
 ## 사용자 검색
 
