@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from urllib.parse import parse_qs, urlparse
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -15,8 +16,32 @@ from api.appstore.serializers import default_contact
 from api.appstore.services import create_app, create_comment, update_app
 
 
+def _allow_test_scope_access(test_case: TestCase) -> None:
+    """도메인 endpoint 테스트에서 공통 portal/app 권한 경계를 격리합니다."""
+
+    for service_name in ("get_portal_access_payload", "get_access_payload"):
+        patcher = patch(
+            f"api.account.services.{service_name}",
+            return_value={"allowed": True},
+        )
+        patcher.start()
+        test_case.addCleanup(patcher.stop)
+
+
 class AppstoreScreenshotTests(TestCase):
     """appstore 스크린샷 저장/응답 동작을 검증합니다."""
+
+    def setUp(self) -> None:
+        """보호된 AppStore endpoint를 호출할 인증 사용자를 준비합니다."""
+
+        _allow_test_scope_access(self)
+        User = get_user_model()
+        self.viewer = User.objects.create_user(
+            sabun="S00000",
+            password="test-password",
+            knox_id="knox-00000",
+        )
+        self.client.force_login(self.viewer)
 
     def test_create_app_stores_data_url_as_base64(self) -> None:
         """data URL이 base64 필드로 저장되는지 확인합니다."""
@@ -363,6 +388,7 @@ class AppstoreCommentReplyLikeTests(TestCase):
 
     def setUp(self) -> None:
         """댓글/좋아요 테스트용 사용자와 앱을 준비합니다."""
+        _allow_test_scope_access(self)
         User = get_user_model()
         self.user = User.objects.create_user(
             sabun="S22222",
@@ -462,6 +488,7 @@ class AppstoreEndpointTests(TestCase):
 
     def setUp(self) -> None:
         """엔드포인트 테스트용 사용자와 기본 앱을 생성합니다."""
+        _allow_test_scope_access(self)
         User = get_user_model()
         self.user = User.objects.create_user(
             sabun="S33333",

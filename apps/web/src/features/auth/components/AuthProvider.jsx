@@ -32,6 +32,7 @@ import { UserSdwtProdReconfirmDialog } from "./UserSdwtProdReconfirmDialog"
  * @property {string | null} [user_sdwt_prod]
  * @property {string | null} [pending_user_sdwt_prod]
  * @property {boolean} [has_pending_affiliation]
+ * @property {Record<string, {allowed: boolean, reason?: string}>} [app_access]
  */
 
 /**
@@ -52,7 +53,7 @@ import { UserSdwtProdReconfirmDialog } from "./UserSdwtProdReconfirmDialog"
  * @property {boolean} isRefreshing
  * @property {(options?: { next?: string }) => Promise<{ method: "redirect"; url?: string }>} login
  * @property {() => Promise<void>} logout
- * @property {(options?: { background?: boolean }) => Promise<void>} refresh
+ * @property {(options?: { background?: boolean }) => Promise<boolean>} refresh
  * @property {AuthConfig} config
  */
 
@@ -63,6 +64,7 @@ import { UserSdwtProdReconfirmDialog } from "./UserSdwtProdReconfirmDialog"
 export const AuthContext = createContext(undefined)
 
 const POST_LOGIN_ATTENTION_TOOLTIP_KEY = "auth:post-login-attention-tooltip"
+const ACCESS_STATE_REFRESH_INTERVAL_MS = 30_000
 
 function getSessionRefreshIntervalMs(sessionMaxAgeSeconds) {
   const rawSeconds = Number(sessionMaxAgeSeconds)
@@ -78,6 +80,13 @@ function getFocusCooldownMs(sessionRefreshIntervalMs) {
     return Math.max(30_000, Math.min(sessionRefreshIntervalMs / 2, 300_000))
   }
   return 30_000
+}
+
+function getAccessStateRefreshIntervalMs(sessionRefreshIntervalMs) {
+  if (sessionRefreshIntervalMs > 0) {
+    return Math.min(sessionRefreshIntervalMs, ACCESS_STATE_REFRESH_INTERVAL_MS)
+  }
+  return ACCESS_STATE_REFRESH_INTERVAL_MS
 }
 
 /**
@@ -108,8 +117,11 @@ export function AuthProvider({ children }) {
   // 세션 만료 시간의 절반 정도에 맞춰 자동 새로고침 주기를 계산합니다.
   const sessionRefreshIntervalMs = getSessionRefreshIntervalMs(config.sessionMaxAgeSeconds)
 
+  // 권한 변경이 열린 화면에 빠르게 반영되도록 더 짧은 사용자 상태 갱신 주기를 사용합니다.
+  const accessStateRefreshIntervalMs = getAccessStateRefreshIntervalMs(sessionRefreshIntervalMs)
+
   // 탭에 다시 포커스될 때 너무 자주 호출되지 않도록 쿨다운을 둡니다.
-  const focusCooldownMs = getFocusCooldownMs(sessionRefreshIntervalMs)
+  const focusCooldownMs = getFocusCooldownMs(accessStateRefreshIntervalMs)
 
   // 컴포넌트가 언마운트된 뒤 setState가 호출되지 않도록 플래그를 유지합니다.
   useEffect(() => {
@@ -150,14 +162,17 @@ export function AuthProvider({ children }) {
     try {
       const endpoint = buildBackendUrl("/api/v1/auth/me")
       const result = await fetchJson(endpoint, { cache: "no-store" })
-      if (!mountedRef.current) return
+      if (!mountedRef.current) return false
       if (result.ok && result.data) {
         setUser(/** 타입: AuthUser @type {AuthUser} */ (result.data))
+        return true
       } else if (!useBackgroundRefresh || result.status === 401 || result.status === 403) {
         setUser(null)
       }
+      return false
     } catch {
       if (mountedRef.current && !useBackgroundRefresh) setUser(null)
+      return false
     } finally {
       if (mountedRef.current) {
         if (useBackgroundRefresh) {
@@ -176,11 +191,12 @@ export function AuthProvider({ children }) {
     loadUser()
   }, [loadConfig, loadUser])
 
-  // 창 포커스가 돌아오면 일정 주기마다 사용자 정보를 새로고침합니다.
+  // 창 포커스나 탭 표시 상태가 돌아오면 사용자 권한 상태를 새로고침합니다.
   useEffect(() => {
     if (typeof window === "undefined") return undefined
 
-    const onFocus = () => {
+    const refreshWhenActive = () => {
+      if (!userRef.current || document.visibilityState !== "visible") return
       const now = Date.now()
       if (now - lastRefreshRef.current < focusCooldownMs) {
         return
@@ -189,21 +205,25 @@ export function AuthProvider({ children }) {
       loadUser({ background: true })
     }
 
-    window.addEventListener("focus", onFocus)
-    return () => window.removeEventListener("focus", onFocus)
+    window.addEventListener("focus", refreshWhenActive)
+    document.addEventListener("visibilitychange", refreshWhenActive)
+    return () => {
+      window.removeEventListener("focus", refreshWhenActive)
+      document.removeEventListener("visibilitychange", refreshWhenActive)
+    }
   }, [focusCooldownMs, loadUser])
 
-  // 세션 만료 시간에 맞춰 주기적으로 사용자 정보를 새로고침합니다.
+  // 화면이 보이는 인증 세션만 짧은 주기로 사용자 권한 상태를 확인합니다.
   useEffect(() => {
     if (typeof window === "undefined") return undefined
-    if (!sessionRefreshIntervalMs) return undefined
 
     const timer = window.setInterval(() => {
+      if (!userRef.current || document.visibilityState !== "visible") return
       loadUser({ background: true })
-    }, sessionRefreshIntervalMs)
+    }, accessStateRefreshIntervalMs)
 
     return () => window.clearInterval(timer)
-  }, [loadUser, sessionRefreshIntervalMs])
+  }, [accessStateRefreshIntervalMs, loadUser])
 
   // 외부에서 호출하는 refresh는 화면 언마운트를 만들지 않는 백그라운드 갱신을 기본값으로 둡니다.
   const refresh = useCallback(

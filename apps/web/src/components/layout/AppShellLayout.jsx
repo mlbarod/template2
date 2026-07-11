@@ -4,7 +4,7 @@ import { AppLayout } from "./AppLayout"
 import { AppSidebar } from "./AppSidebar"
 import { NavMain } from "./NavMain"
 
-const APP_PREFIXES = ["/esop_dashboard", "/fdc_trend", "/emails", "/settings"]
+const APP_PREFIXES = ["/esop_dashboard", "/l0_spider", "/fdc_trend", "/emails", "/settings"]
 
 function getNormalizedPath(value) {
   if (typeof value !== "string") return ""
@@ -28,6 +28,7 @@ export function AppShellLayout({
   scrollAreaClassName = "overflow-y-auto",
   paddingClassName,
   innerClassName,
+  insetClassName,
   providerKey,
   defaultOpen,
 }) {
@@ -49,6 +50,7 @@ export function AppShellLayout({
       scrollAreaClassName={scrollAreaClassName}
       paddingClassName={paddingClassName}
       innerClassName={innerClassName}
+      insetClassName={insetClassName}
       providerKey={providerKey}
       defaultOpen={defaultOpen}
     >

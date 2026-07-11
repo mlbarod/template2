@@ -4,6 +4,10 @@ import { PmSpiderPage } from "./pages/PmSpiderPage"
 
 export const pmSpiderRoutes = [
   {
+    path: "spider/pm",
+    element: <PmSpiderPage />,
+  },
+  {
     path: "pm_spider",
     element: <PmSpiderPage />,
   },

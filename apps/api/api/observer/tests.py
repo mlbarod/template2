@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from unittest.mock import patch
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
@@ -18,7 +19,31 @@ OBSERVER_VIEW_SELECTORS = "api.observer.views.selectors"
 OBSERVER_SELECTORS = "api.observer.selectors"
 
 
+def _allow_test_scope_access(test_case: TestCase) -> None:
+    """도메인 endpoint 테스트에서 공통 portal/app 권한 경계를 격리합니다."""
+
+    for service_name in ("get_portal_access_payload", "get_access_payload"):
+        patcher = patch(
+            f"api.account.services.{service_name}",
+            return_value={"allowed": True},
+        )
+        patcher.start()
+        test_case.addCleanup(patcher.stop)
+
+
 class ObserverEndpointTests(TestCase):
+    def setUp(self) -> None:
+        """보호된 Observer endpoint를 호출할 인증 사용자를 준비합니다."""
+
+        _allow_test_scope_access(self)
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            sabun="S-OBSERVER",
+            password="test-password",
+            knox_id="knox-observer",
+        )
+        self.client.force_login(self.user)
+
     def assert_log_selector_called(
         self,
         selector,

@@ -52,7 +52,7 @@ export function AffiliationCard({
   }
 
   return (
-    <Card className="max-h-96 overflow-hidden py-0">
+    <Card className="h-full min-h-0 gap-0 overflow-hidden py-0">
       <CardHeader className="shrink-0 border-b px-5 py-4">
         <div className="flex items-center justify-between gap-3">
           <div className="space-y-1">
@@ -60,44 +60,46 @@ export function AffiliationCard({
           </div>
         </div>
         <CardDescription>
-          소속 변경은 승인 이후에만 적용됩니다. 메일함과 RAG 인덱스는 승인된 변경 이력을 기준으로 반영됩니다.
+          소속 변경은 승인 이후에 적용됩니다.
         </CardDescription>
       </CardHeader>
-      <CardContent className="grid min-h-0 gap-4 overflow-y-auto p-5">
-        <div className="grid gap-1 rounded-lg border bg-muted/30 p-3">
-          <span className="text-xs font-medium text-muted-foreground">현재 소속</span>
-          <span className="text-sm font-semibold text-foreground">
-            {(data?.currentDepartment || "미지정") +
-              " / " +
-              (data?.currentLine || "미지정") +
-              " / " +
-              (data?.currentUserSdwtProd || "미지정")}
-          </span>
-        </div>
-
+      <CardContent className="min-h-0 flex-1 overflow-y-auto p-5">
         <form onSubmit={handleSubmit} className="grid gap-4">
-          <div className="grid gap-2">
-            <Label htmlFor="affiliationSelect">변경할 소속 (Department / Line / user_sdwt_prod)</Label>
-            <select
-              id="affiliationSelect"
-              className="bg-background border-input focus-visible:ring-ring/50 focus-visible:ring-[3px] h-10 rounded-md border px-3 text-sm outline-none"
-              value={selectedKey}
-              onChange={(e) => setSelectedKey(e.target.value)}
-              required
-              disabled={!options.length}
-            >
-              <option value="" disabled>
-                소속을 선택하세요
-              </option>
-              {options.map((opt) => (
-                <option key={optionKey(opt)} value={optionKey(opt)}>
-                  {opt.department} / {opt.line} / {opt.user_sdwt_prod}
+          <div className="grid gap-8">
+            <div className="grid gap-1 rounded-lg border bg-muted/30 p-3">
+              <span className="text-xs font-medium text-muted-foreground">현재 소속</span>
+              <span className="text-sm font-semibold text-foreground">
+                {(data?.currentDepartment || "미지정") +
+                  " / " +
+                  (data?.currentLine || "미지정") +
+                  " / " +
+                  (data?.currentUserSdwtProd || "미지정")}
+              </span>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="affiliationSelect">변경할 소속 (Department / Line / user_sdwt_prod)</Label>
+              <select
+                id="affiliationSelect"
+                className="bg-background border-input focus-visible:ring-ring/50 focus-visible:ring-[3px] h-10 rounded-md border px-3 text-sm outline-none"
+                value={selectedKey}
+                onChange={(e) => setSelectedKey(e.target.value)}
+                required
+                disabled={!options.length}
+              >
+                <option value="" disabled>
+                  소속을 선택하세요
                 </option>
-              ))}
-            </select>
-            {!options.length ? (
-              <p className="text-sm text-destructive">선택 가능한 소속이 없습니다. 관리자에게 문의하세요.</p>
-            ) : null}
+                {options.map((opt) => (
+                  <option key={optionKey(opt)} value={optionKey(opt)}>
+                    {opt.department} / {opt.line} / {opt.user_sdwt_prod}
+                  </option>
+                ))}
+              </select>
+              {!options.length ? (
+                <p className="text-sm text-destructive">선택 가능한 소속이 없습니다. 관리자에게 문의하세요.</p>
+              ) : null}
+            </div>
           </div>
 
           <div className="grid gap-1 rounded-md border bg-muted/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground">

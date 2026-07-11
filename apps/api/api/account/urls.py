@@ -15,6 +15,11 @@ from __future__ import annotations
 from django.urls import path
 
 from .views import (
+    AccountAccessAuditLogView,
+    AccountAccessPolicyRuleView,
+    AccountAccessUserDecisionView,
+    AccountAccessUserView,
+    AccountAppAccessMatrixView,
     AccountAffiliationApprovalView,
     AccountAffiliationMembersView,
     AccountAffiliationView,
@@ -24,6 +29,8 @@ from .views import (
     AccountGrantListView,
     AccountGrantView,
     AccountOverviewView,
+    AccountPortalAccessApprovalView,
+    AccountPortalAccessView,
     AccountUserPoolView,
     LineSdwtOptionsView,
 )
@@ -51,6 +58,26 @@ urlpatterns = [
         AccountAffiliationReconfirmView.as_view(),
         name="account-affiliation-reconfirm",
     ),
+    path("portal-access", AccountPortalAccessView.as_view(), name="account-portal-access"),
+    path(
+        "portal-access/approvals",
+        AccountPortalAccessApprovalView.as_view(),
+        name="account-portal-access-approvals",
+    ),
+    path("access/users", AccountAccessUserView.as_view(), name="account-access-users"),
+    path("access/matrix", AccountAppAccessMatrixView.as_view(), name="account-access-matrix"),
+    path(
+        "access/users/<int:user_id>/decision",
+        AccountAccessUserDecisionView.as_view(),
+        name="account-access-user-decision",
+    ),
+    path("access/policy-rules", AccountAccessPolicyRuleView.as_view(), name="account-access-policy-rules"),
+    path(
+        "access/policy-rules/<int:rule_id>",
+        AccountAccessPolicyRuleView.as_view(),
+        name="account-access-policy-rule-detail",
+    ),
+    path("access/audit-logs", AccountAccessAuditLogView.as_view(), name="account-access-audit-logs"),
     path(
         "external-affiliations/sync",
         AccountExternalAffiliationSyncView.as_view(),

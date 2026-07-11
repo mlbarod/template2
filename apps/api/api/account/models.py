@@ -17,7 +17,30 @@ from typing import Any, Iterable
 from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.base_user import BaseUserManager
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models.functions import Lower, Trim
+
+
+ACCESS_SCOPE_PORTAL = "portal"
+ACCESS_MANAGERS_GROUP_NAME = "Access Managers"
+MANAGE_ACCESS_PERMISSION = "account.manage_access"
+SYSTEM_APP_SCOPE_KEYS = (
+    "access-stats",
+    "appstore",
+    "assistant",
+    "emails",
+    "l0-spider",
+    "l1-spider",
+    "l3-spider",
+    "line-dashboard",
+    "observer",
+    "pm-spider",
+    "teamstaff",
+    "tttm-spider",
+    "voc",
+)
+SYSTEM_ACCESS_SCOPE_KEYS = (ACCESS_SCOPE_PORTAL, *SYSTEM_APP_SCOPE_KEYS)
 
 
 def _normalize_user_sdwt_prod(value: Any) -> str:
@@ -178,6 +201,9 @@ class User(AbstractUser):
 
     class Meta:
         db_table = "account_user"
+        permissions = [
+            ("manage_access", "포털 및 앱 접근 권한 관리"),
+        ]
 
     objects = UserManager()
 
@@ -332,6 +358,267 @@ class UserSdwtProdAccess(models.Model):
     def __str__(self) -> str:  # 사람이 읽는 표현(커버리지 제외): pragma: no cover
         """접근 권한 표시용 문자열을 반환합니다."""
         return f"{self.user_id} -> {self.user_sdwt_prod} ({self.role})"
+
+
+class AccessRole(models.TextChoices):
+    """scope 접근 시 부여할 역할 값을 정의합니다."""
+
+    VIEWER = "viewer", "Viewer"
+    MEMBER = "member", "Member"
+    MANAGER = "manager", "Manager"
+    ADMIN = "admin", "Admin"
+
+
+class AccessSource(models.TextChoices):
+    """최종 접근 판정의 결정 근거를 정의합니다."""
+
+    SUPERUSER_BYPASS = "superuser_bypass", "Superuser Bypass"
+    SCOPE_INACTIVE = "scope_inactive", "Scope Inactive"
+    EXPLICIT_DENIED = "explicit_denied", "Explicit Denied"
+    EXPLICIT_ALLOWED = "explicit_allowed", "Explicit Allowed"
+    EXPLICIT_PENDING = "explicit_pending", "Explicit Pending"
+    POLICY_DEPARTMENT = "policy_department", "Department Policy"
+    NONE = "none", "None"
+    SCOPE_NOT_FOUND = "scope_not_found", "Scope Not Found"
+
+
+class AccessScope(models.Model):
+    """포털/앱/기능 단위 접근 권한 대상을 정의합니다."""
+
+    class ScopeTypes(models.TextChoices):
+        PORTAL = "portal", "Portal"
+        APP = "app", "App"
+        FEATURE = "feature", "Feature"
+
+    key = models.CharField(max_length=64, unique=True)
+    name = models.CharField(max_length=128)
+    scope_type = models.CharField(max_length=16, choices=ScopeTypes.choices, default=ScopeTypes.APP)
+    is_active = models.BooleanField(default=True)
+    requestable = models.BooleanField(default=True)
+    default_role = models.CharField(max_length=16, choices=AccessRole.choices, default=AccessRole.VIEWER)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "account_access_scope"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(scope_type__in=("portal", "app", "feature")),
+                name="chk_acc_scp_typ_valid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(default_role__in=("viewer", "member", "manager", "admin")),
+                name="chk_acc_scp_role_valid",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(scope_type="app") | models.Q(requestable=False),
+                name="chk_acc_scp_app_not_req",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["scope_type"], name="idx_acc_acc_scp_typ"),
+            models.Index(fields=["is_active"], name="idx_acc_acc_scp_act"),
+        ]
+
+    def __str__(self) -> str:  # 사람이 읽는 표현(커버리지 제외): pragma: no cover
+        """접근 권한 대상 표시용 문자열을 반환합니다."""
+        return self.key
+
+    def clean(self) -> None:
+        """앱 scope가 boolean 권한 계약을 벗어나는 role을 갖지 못하게 합니다."""
+
+        super().clean()
+        if self.scope_type == self.ScopeTypes.APP:
+            if self.default_role != AccessRole.VIEWER:
+                raise ValidationError({"default_role": "앱 scope의 기본 role은 viewer만 허용됩니다."})
+            if self.requestable:
+                raise ValidationError({"requestable": "앱 scope는 사용자 요청을 지원하지 않습니다."})
+
+
+class AccessPolicyRule(models.Model):
+    """scope별 기본 접근 허용 규칙을 저장합니다."""
+
+    class RuleTypes(models.TextChoices):
+        DEPARTMENT = "department", "Department"
+
+    scope = models.ForeignKey(AccessScope, on_delete=models.CASCADE, related_name="policy_rules")
+    rule_type = models.CharField(max_length=32, choices=RuleTypes.choices)
+    value = models.CharField(max_length=150, blank=True)
+    role = models.CharField(max_length=16, choices=AccessRole.choices, default=AccessRole.VIEWER)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "account_access_policy_rule"
+        constraints = [
+            models.UniqueConstraint(
+                Lower(Trim("value")),
+                "scope",
+                "rule_type",
+                name="uniq_acc_pol_scp_typ_val_ci",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(rule_type="department"),
+                name="chk_acc_pol_rule_typ_dep",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(role__in=("viewer", "member", "manager", "admin")),
+                name="chk_acc_pol_role_valid",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["scope", "is_active"], name="idx_acc_pol_rule_scp_act"),
+            models.Index(fields=["rule_type"], name="idx_acc_pol_rule_typ"),
+        ]
+
+    def __str__(self) -> str:  # 사람이 읽는 표현(커버리지 제외): pragma: no cover
+        """접근 정책 규칙 표시용 문자열을 반환합니다."""
+        return f"{self.scope.key}:{self.rule_type}:{self.value}"
+
+    def clean(self) -> None:
+        """부서 정책에 비교할 부서명이 있는지 검증합니다."""
+
+        super().clean()
+        value = (self.value or "").strip()
+        if not value:
+            raise ValidationError({"value": "정책 값은 비워둘 수 없습니다."})
+        self.value = value
+        if self.scope_id and self.scope.scope_type == AccessScope.ScopeTypes.APP and self.role != AccessRole.VIEWER:
+            raise ValidationError({"role": "앱 scope 정책의 role은 viewer만 허용됩니다."})
+
+
+class UserAccess(models.Model):
+    """사용자별 scope 접근 상태를 저장합니다."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        ALLOWED = "allowed", "Allowed"
+        DENIED = "denied", "Denied"
+
+    scope = models.ForeignKey(AccessScope, on_delete=models.CASCADE, related_name="user_accesses")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="access_grants",
+    )
+    department = models.CharField(max_length=128, null=True, blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
+    role = models.CharField(max_length=16, choices=AccessRole.choices, default=AccessRole.VIEWER)
+    reason = models.TextField(null=True, blank=True)
+    requested_at = models.DateTimeField(auto_now_add=True)
+    decided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="access_decisions",
+    )
+    decided_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "account_user_access"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["scope", "user"],
+                name="uniq_acc_usr_acc_scp_usr",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(status__in=("pending", "allowed", "denied")),
+                name="chk_acc_usr_acc_sts_valid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(role__in=("viewer", "member", "manager", "admin")),
+                name="chk_acc_usr_acc_role_valid",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["scope"], name="idx_acc_usr_acc_scp"),
+            models.Index(fields=["status"], name="idx_acc_usr_acc_sts"),
+            models.Index(fields=["department"], name="idx_acc_usr_acc_dep"),
+        ]
+
+    def __str__(self) -> str:  # 사람이 읽는 표현(커버리지 제외): pragma: no cover
+        """사용자 접근 상태 표시용 문자열을 반환합니다."""
+        return f"{self.scope_id}:{self.user_id} ({self.status})"
+
+    def clean(self) -> None:
+        """앱 사용자 접근 row가 boolean 권한 계약을 벗어나지 못하게 합니다."""
+
+        super().clean()
+        if self.scope_id and self.scope.scope_type == AccessScope.ScopeTypes.APP and self.role != AccessRole.VIEWER:
+            raise ValidationError({"role": "앱 scope 사용자 권한의 role은 viewer만 허용됩니다."})
+
+
+class AccessAuditLog(models.Model):
+    """scope 접근 권한과 정책 변경 이력을 저장합니다."""
+
+    class Actions(models.TextChoices):
+        REQUEST = "request", "Request"
+        APPROVE = "approve", "Approve"
+        REJECT = "reject", "Reject"
+        GRANT = "grant", "Grant"
+        REVOKE = "revoke", "Revoke"
+        RESET_TO_POLICY = "reset_to_policy", "Reset to policy"
+        CHANGE_ROLE = "change_role", "Change role"
+        USER_ACCESS_UPDATE = "user_access_update", "User access update"
+        POLICY_CREATE = "policy_create", "Policy create"
+        POLICY_UPDATE = "policy_update", "Policy update"
+        POLICY_DELETE = "policy_delete", "Policy delete"
+        SCOPE_CREATE = "scope_create", "Scope create"
+        SCOPE_UPDATE = "scope_update", "Scope update"
+        SCOPE_DELETE = "scope_delete", "Scope delete"
+        ACCESS_MANAGER_GRANT = "access_manager_grant", "Access manager grant"
+        ACCESS_MANAGER_REVOKE = "access_manager_revoke", "Access manager revoke"
+
+    scope = models.ForeignKey(
+        AccessScope,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="audit_logs",
+    )
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="access_audit_actions",
+    )
+    target_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="access_audit_targets",
+    )
+    policy_rule = models.ForeignKey(
+        AccessPolicyRule,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="audit_logs",
+    )
+    action = models.CharField(max_length=32, choices=Actions.choices)
+    before = models.JSONField(default=dict, blank=True)
+    after = models.JSONField(default=dict, blank=True)
+    reason = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "account_access_audit_log"
+        indexes = [
+            models.Index(fields=["scope", "created_at"], name="idx_acc_aud_scp_ct"),
+            models.Index(fields=["target_user", "created_at"], name="idx_acc_aud_tgt_ct"),
+            models.Index(fields=["actor", "created_at"], name="idx_acc_aud_act_ct"),
+            models.Index(fields=["action"], name="idx_acc_aud_action"),
+        ]
+
+    def __str__(self) -> str:  # 사람이 읽는 표현(커버리지 제외): pragma: no cover
+        """감사 로그 표시용 문자열을 반환합니다."""
+        return f"{self.action}:{self.scope_id}:{self.target_user_id}"
 
 
 class UserSdwtProdChange(models.Model):

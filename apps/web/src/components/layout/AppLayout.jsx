@@ -12,6 +12,7 @@ export function AppLayout({
   scrollAreaClassName = "overflow-y-auto",
   paddingClassName = "px-4 pb-3",
   innerClassName = "mx-auto flex h-full w-full flex-col gap-4",
+  insetClassName,
 }) {
   const { pathname } = useLocation()
   const resolvedProviderKey = providerKey ?? pathname
@@ -26,6 +27,7 @@ export function AppLayout({
       scrollAreaClassName={scrollAreaClassName}
       paddingClassName={paddingClassName}
       innerClassName={innerClassName}
+      insetClassName={insetClassName}
     >
       {children}
     </SidebarLayout>

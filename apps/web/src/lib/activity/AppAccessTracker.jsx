@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react"
 import { useLocation } from "react-router-dom"
 
 import { recordAppAccess } from "@/features/access-stats"
+import { getAppAccess } from "@/lib/access/appAccess"
 import { useAuth } from "@/lib/auth"
 
 import { resolveAppAccessTarget } from "./appAccessCatalog"
@@ -16,6 +17,8 @@ export function AppAccessTracker() {
 
     const target = resolveAppAccessTarget(location.pathname)
     if (!target) return
+    const access = getAppAccess(user, target.appId)
+    if (access && !access.allowed) return
 
     const path = `${location.pathname}${location.search || ""}`
     const trackedKey = `${user.id || user.usr_id || "user"}:${path}`

@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
+from .models import AccessPolicyRule, AccessRole
+
 
 class ExternalAffiliationRecordSerializer(serializers.Serializer):
     """외부 DB에서 전달되는 사용자 예측 소속 레코드 입력 스키마."""
@@ -51,3 +53,52 @@ class AffiliationApprovalSerializer(serializers.Serializer):
         allow_blank=True,
         allow_null=True,
     )
+
+
+class AccessDecisionSerializer(serializers.Serializer):
+    """사용자 접근 상태 결정 입력 스키마."""
+
+    requestId = serializers.IntegerField()
+    decision = serializers.ChoiceField(choices=["approve", "reject", "allow", "deny"])
+    role = serializers.ChoiceField(choices=AccessRole.values, required=False, allow_blank=True, allow_null=True)
+    rejectionReason = serializers.CharField(
+        max_length=500,
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+    )
+
+
+class AccessUserDecisionSerializer(serializers.Serializer):
+    """관리자 사용자별 접근 상태 변경 입력 스키마."""
+
+    userId = serializers.IntegerField()
+    scope = serializers.CharField(max_length=64, required=False, allow_blank=True)
+    action = serializers.ChoiceField(
+        choices=["approve", "reject", "grant", "revoke", "reset_to_policy", "change_role", "allow", "deny"]
+    )
+    role = serializers.ChoiceField(choices=AccessRole.values, required=False, allow_blank=True, allow_null=True)
+    reason = serializers.CharField(max_length=500, required=False, allow_blank=True, allow_null=True)
+    rejectionReason = serializers.CharField(
+        max_length=500,
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+    )
+
+    def validate(self, attrs):
+        """권한 변경 action별 필수 입력을 검증합니다."""
+
+        if attrs.get("action") == "change_role" and not attrs.get("role"):
+            raise serializers.ValidationError({"role": "change_role에는 role이 필요합니다."})
+        return attrs
+
+
+class AccessPolicyRuleMutationSerializer(serializers.Serializer):
+    """관리자 부서 접근 정책 규칙 변경 입력 스키마."""
+
+    scope = serializers.CharField(max_length=64, required=False, allow_blank=True)
+    ruleType = serializers.ChoiceField(choices=AccessPolicyRule.RuleTypes.values, required=False)
+    value = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    role = serializers.ChoiceField(choices=AccessRole.values, required=False, allow_blank=True, allow_null=True)
+    isActive = serializers.BooleanField(required=False)

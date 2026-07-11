@@ -4,6 +4,10 @@ import { L3SpiderPage } from "./pages/L3SpiderPage"
 
 export const l3SpiderRoutes = [
   {
+    path: "spider/l3",
+    element: <L3SpiderPage />,
+  },
+  {
     path: "l3_spider",
     element: <L3SpiderPage />,
   },

@@ -18,6 +18,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.base_user import AbstractBaseUser
 
 import api.account.selectors as account_selectors
+import api.account.services as account_services
 
 
 # =============================================================================
@@ -70,7 +71,10 @@ def get_current_user_payload(*, user: Any) -> Dict[str, Any]:
     pending_user_sdwt_prod = pending_change.to_user_sdwt_prod if pending_change else None
     has_pending_affiliation = pending_change is not None
     current_values = account_selectors.get_current_affiliation_values(user=user)
-    department = current_values.get("department") or getattr(user, "department", None)
+    raw_department = getattr(user, "department", None)
+    department = raw_department.strip() if isinstance(raw_department, str) else raw_department
+    if not department:
+        department = current_values.get("department")
 
     return {
         "id": user.pk,
@@ -86,4 +90,6 @@ def get_current_user_payload(*, user: Any) -> Dict[str, Any]:
         "user_sdwt_prod": current_values.get("user_sdwt_prod"),
         "pending_user_sdwt_prod": pending_user_sdwt_prod,
         "has_pending_affiliation": has_pending_affiliation,
+        "portal_access": account_services.get_portal_access_payload(user=user),
+        "app_access": account_services.get_app_access_payloads(user=user),
     }

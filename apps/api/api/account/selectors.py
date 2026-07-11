@@ -24,8 +24,14 @@ from api.common.services import UNKNOWN, UNCLASSIFIED_USER_SDWT_PROD
 from api.data_movement.station_master import selectors as station_master_selectors
 
 from .models import (
+    ACCESS_SCOPE_PORTAL,
+    AccessAuditLog,
+    AccessPolicyRule,
+    AccessScope,
+    AccessSource,
     Affiliation,
     ExternalAffiliationSnapshot,
+    UserAccess,
     UserCurrentAffiliation,
     UserProfile,
     UserSdwtProdAccess,
@@ -890,6 +896,350 @@ def is_operator_user(*, user: Any) -> bool:
     return get_user_profile_role(user=user) == UserProfile.Roles.ADMIN
 
 
+def get_access_scope_by_key(*, scope_key: str) -> AccessScope | None:
+    """scope key로 접근 권한 대상을 조회합니다."""
+
+    normalized = _normalize_text(scope_key) or ACCESS_SCOPE_PORTAL
+    return AccessScope.objects.filter(key=normalized).first()
+
+
+def get_access_scope_by_key_for_update(*, scope_key: str) -> AccessScope | None:
+    """트랜잭션 안에서 scope 행을 잠가 조회합니다."""
+
+    normalized = _normalize_text(scope_key) or ACCESS_SCOPE_PORTAL
+    return AccessScope.objects.select_for_update().filter(key=normalized).first()
+
+
+def list_active_app_access_scopes() -> list[AccessScope]:
+    """권한 매트릭스에 표시할 활성 앱 scope를 반환합니다."""
+
+    return list(
+        AccessScope.objects.filter(
+            scope_type=AccessScope.ScopeTypes.APP,
+            is_active=True,
+        ).order_by("name", "key")
+    )
+
+
+def list_active_access_policy_rules(*, scope: AccessScope) -> list[AccessPolicyRule]:
+    """scope의 활성 접근 정책 규칙 목록을 반환합니다."""
+
+    return list(
+        AccessPolicyRule.objects.filter(scope=scope, is_active=True)
+        .select_related("scope")
+        .order_by("rule_type", "id")
+    )
+
+
+def list_active_access_policy_rules_for_scopes(
+    *,
+    scopes: list[AccessScope],
+) -> list[AccessPolicyRule]:
+    """여러 scope의 활성 접근 정책 규칙을 한 번에 반환합니다."""
+
+    scope_ids = [scope.id for scope in scopes]
+    if not scope_ids:
+        return []
+    return list(
+        AccessPolicyRule.objects.filter(scope_id__in=scope_ids, is_active=True)
+        .select_related("scope")
+        .order_by("scope_id", "rule_type", "id")
+    )
+
+
+def get_user_access_for_scope(*, user: Any, scope: AccessScope) -> UserAccess | None:
+    """사용자의 scope별 접근 상태 행을 조회합니다."""
+
+    if not user or scope is None:
+        return None
+
+    return (
+        UserAccess.objects.filter(user=user, scope=scope)
+        .select_related("scope", "user", "decided_by")
+        .order_by("id")
+        .first()
+    )
+
+
+def get_user_access_for_scope_for_update(*, user: Any, scope: AccessScope) -> UserAccess | None:
+    """트랜잭션 안에서 사용자의 scope 접근 행을 잠가 조회합니다."""
+
+    if not user or scope is None:
+        return None
+
+    return (
+        UserAccess.objects.select_for_update(of=("self",))
+        .filter(user=user, scope=scope)
+        .select_related("scope", "user", "decided_by")
+        .first()
+    )
+
+
+def list_user_access_rows_for_scopes_and_users(
+    *,
+    scopes: list[AccessScope],
+    user_ids: list[int],
+) -> list[UserAccess]:
+    """여러 앱 scope와 사용자에 해당하는 명시 권한 행을 한 번에 반환합니다."""
+
+    scope_ids = [scope.id for scope in scopes]
+    if not scope_ids or not user_ids:
+        return []
+    return list(
+        UserAccess.objects.filter(scope_id__in=scope_ids, user_id__in=user_ids)
+        .select_related("scope", "user", "decided_by")
+        .order_by("scope_id", "user_id", "id")
+    )
+
+
+def get_user_access_by_id(*, access_id: int) -> UserAccess | None:
+    """ID로 사용자 접근 상태 행을 조회합니다."""
+
+    if not access_id:
+        return None
+
+    return (
+        UserAccess.objects.filter(id=access_id)
+        .select_related("scope", "user", "decided_by")
+        .first()
+    )
+
+
+def get_user_access_by_id_for_update(*, access_id: int) -> UserAccess | None:
+    """트랜잭션 안에서 ID에 해당하는 사용자 접근 행을 잠가 조회합니다."""
+
+    if not access_id:
+        return None
+
+    return (
+        UserAccess.objects.select_for_update(of=("self",))
+        .filter(id=access_id)
+        .select_related("scope", "user", "decided_by")
+        .first()
+    )
+
+
+def list_user_access_rows(
+    *,
+    scope_key: str | None,
+    status: str | None,
+    search: str | None,
+) -> QuerySet[UserAccess]:
+    """사용자 접근 상태 목록을 필터링하여 조회합니다."""
+
+    queryset = UserAccess.objects.select_related("scope", "user", "decided_by").order_by(
+        "-requested_at",
+        "-id",
+    )
+    normalized_scope = _normalize_text(scope_key)
+    if normalized_scope:
+        queryset = queryset.filter(scope__key=normalized_scope)
+
+    normalized_status = (status or "").strip().lower()
+    if normalized_status in UserAccess.Status.values:
+        queryset = queryset.filter(status=normalized_status)
+
+    normalized_search = _normalize_text(search)
+    if normalized_search:
+        queryset = queryset.filter(
+            Q(scope__key__icontains=normalized_search)
+            | Q(scope__name__icontains=normalized_search)
+            | Q(user__knox_id__icontains=normalized_search)
+            | Q(user__email__icontains=normalized_search)
+            | Q(user__username__icontains=normalized_search)
+            | Q(department__icontains=normalized_search)
+        )
+
+    return queryset
+
+
+def list_access_management_users(
+    *,
+    search: str | None,
+    department: str | None,
+) -> QuerySet[Any]:
+    """접근 권한 관리 화면에 표시할 활성 사용자 목록을 조회합니다."""
+
+    User = get_user_model()
+    queryset = User.objects.filter(is_active=True).select_related(
+        "current_affiliation__affiliation",
+        "profile",
+    )
+
+    normalized_department = _normalize_text(department)
+    if normalized_department:
+        queryset = queryset.filter(
+            Q(department__iexact=normalized_department)
+            | Q(current_affiliation__affiliation__department__iexact=normalized_department)
+        )
+
+    normalized_search = _normalize_text(search)
+    if normalized_search:
+        queryset = queryset.filter(
+            Q(username__icontains=normalized_search)
+            | Q(username_en__icontains=normalized_search)
+            | Q(givenname__icontains=normalized_search)
+            | Q(surname__icontains=normalized_search)
+            | Q(sabun__icontains=normalized_search)
+            | Q(knox_id__icontains=normalized_search)
+            | Q(email__icontains=normalized_search)
+            | Q(department__icontains=normalized_search)
+            | Q(current_affiliation__affiliation__department__icontains=normalized_search)
+            | Q(current_affiliation__affiliation__line__icontains=normalized_search)
+            | Q(current_affiliation__affiliation__user_sdwt_prod__icontains=normalized_search)
+        )
+
+    return queryset.order_by("department", "username", "knox_id", "id")
+
+
+def filter_access_management_users_for_fast_access_filter(
+    *,
+    queryset: QuerySet[Any],
+    scope: AccessScope,
+    status: str | None,
+    source: str | None,
+) -> tuple[QuerySet[Any], bool]:
+    """권한 관리 목록의 단순 접근 필터를 DB 조건으로 적용합니다."""
+
+    normalized_status = (_normalize_text(status) or "").lower()
+    normalized_source = (_normalize_text(source) or "").lower()
+
+    if not scope.is_active:
+        return queryset, False
+
+    if normalized_status and normalized_source:
+        return queryset, False
+
+    access_bypass_filter = Q(is_superuser=True)
+
+    if normalized_status in {UserAccess.Status.PENDING, UserAccess.Status.DENIED}:
+        return queryset.filter(
+            access_grants__scope=scope,
+            access_grants__status=normalized_status,
+        ).exclude(access_bypass_filter).distinct(), True
+
+    source_to_status = {
+        AccessSource.EXPLICIT_ALLOWED: UserAccess.Status.ALLOWED,
+        AccessSource.EXPLICIT_DENIED: UserAccess.Status.DENIED,
+        AccessSource.EXPLICIT_PENDING: UserAccess.Status.PENDING,
+    }
+    if normalized_source in source_to_status:
+        return queryset.filter(
+            access_grants__scope=scope,
+            access_grants__status=source_to_status[normalized_source],
+        ).exclude(access_bypass_filter).distinct(), True
+
+    if normalized_source == AccessSource.SUPERUSER_BYPASS:
+        return queryset.filter(is_superuser=True).distinct(), True
+
+    if normalized_source == AccessSource.POLICY_DEPARTMENT:
+        department_values = list(
+            AccessPolicyRule.objects.filter(
+                scope=scope,
+                is_active=True,
+                rule_type=AccessPolicyRule.RuleTypes.DEPARTMENT,
+            ).values_list("value", flat=True)
+        )
+        department_filter = Q()
+        for value in department_values:
+            normalized_value = _normalize_text(value)
+            if normalized_value:
+                department_filter |= Q(department__iexact=normalized_value) | (
+                    (Q(department__isnull=True) | Q(department__exact=""))
+                    & Q(current_affiliation__affiliation__department__iexact=normalized_value)
+                )
+        if not department_filter:
+            return queryset.none(), True
+        return queryset.filter(department_filter).exclude(
+            Q(access_grants__scope=scope)
+            | Q(is_superuser=True)
+        ).distinct(), True
+
+    return queryset, False
+
+
+def list_user_access_rows_by_scope_and_user_ids(
+    *,
+    scope: AccessScope,
+    user_ids: Iterable[int],
+) -> list[UserAccess]:
+    """scope와 사용자 id 목록으로 접근 상태 행을 조회합니다."""
+
+    normalized_ids = _normalize_positive_int_set(user_ids, allow_cast=True)
+    if not normalized_ids:
+        return []
+
+    return list(
+        UserAccess.objects.filter(scope=scope, user_id__in=normalized_ids)
+        .select_related("scope", "user", "decided_by")
+        .order_by("user_id", "id")
+    )
+
+
+def get_access_policy_rule_by_id(*, rule_id: int) -> AccessPolicyRule | None:
+    """ID로 접근 정책 규칙을 조회합니다."""
+
+    if not rule_id:
+        return None
+
+    return AccessPolicyRule.objects.filter(id=rule_id).select_related("scope").first()
+
+
+def get_access_policy_rule_by_id_for_update(*, rule_id: int) -> AccessPolicyRule | None:
+    """트랜잭션 안에서 ID에 해당하는 정책 규칙 행을 잠가 조회합니다."""
+
+    if not rule_id:
+        return None
+
+    return (
+        AccessPolicyRule.objects.select_for_update(of=("self",))
+        .filter(id=rule_id)
+        .select_related("scope")
+        .first()
+    )
+
+
+def list_access_policy_rules(*, scope_key: str | None) -> QuerySet[AccessPolicyRule]:
+    """scope 조건에 맞는 접근 정책 규칙 목록을 조회합니다."""
+
+    queryset = AccessPolicyRule.objects.select_related("scope").order_by(
+        "scope__key",
+        "rule_type",
+        "value",
+        "id",
+    )
+    normalized_scope = _normalize_text(scope_key)
+    if normalized_scope:
+        queryset = queryset.filter(scope__key=normalized_scope)
+    return queryset
+
+
+def list_access_audit_logs(
+    *,
+    scope_key: str | None,
+    user_id: int | None,
+    action: str | None,
+) -> QuerySet[AccessAuditLog]:
+    """접근 권한 감사 로그 목록을 필터링하여 조회합니다."""
+
+    queryset = AccessAuditLog.objects.select_related(
+        "scope",
+        "actor",
+        "target_user",
+        "policy_rule",
+    ).order_by("-created_at", "-id")
+    normalized_scope = _normalize_text(scope_key)
+    if normalized_scope:
+        queryset = queryset.filter(scope__key=normalized_scope)
+    if user_id:
+        queryset = queryset.filter(target_user_id=user_id)
+
+    normalized_action = _normalize_text(action)
+    if normalized_action:
+        queryset = queryset.filter(action=normalized_action)
+    return queryset
+
+
 def get_user_profile_by_user(*, user: Any) -> UserProfile | None:
     """사용자 프로필(UserProfile) 행을 조회합니다.
 
@@ -1009,6 +1359,21 @@ def get_user_by_id(*, user_id: int) -> Any | None:
         # 2) 미존재 처리
         # -----------------------------------------------------------------------------
         return None
+
+
+def get_user_by_id_for_update(*, user_id: int) -> Any | None:
+    """트랜잭션 안에서 사용자 행과 권한 판정용 관계를 잠가 조회합니다."""
+
+    if not user_id:
+        return None
+
+    UserModel = get_user_model()
+    return (
+        UserModel.objects.select_for_update(of=("self",))
+        .select_related("profile", "current_affiliation__affiliation")
+        .filter(id=user_id)
+        .first()
+    )
 
 
 def get_user_by_knox_id(*, knox_id: str) -> Any | None:

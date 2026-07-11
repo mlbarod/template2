@@ -9,13 +9,13 @@
 | 모듈 | Prefix | 실제 라우팅 파일 | 주요 endpoint |
 | --- | --- | --- | --- |
 | Auth | `/api/v1/auth/` | `apps/api/api/auth/urls.py` | `login`, `logout`, `me`, `config`, empty redirect |
-| Account | `/api/v1/account/` | `apps/api/api/account/urls.py` | `overview`, `affiliation`, `affiliation/approve`, `affiliation/requests`, `affiliation/members`, `affiliation/reconfirm`, `external-affiliations/sync`, `access/grants`, `access/manageable`, `users`, `line-sdwt-options` |
+| Account | `/api/v1/account/` | `apps/api/api/account/urls.py` | `overview`, `affiliation`, `affiliation/approve`, `affiliation/requests`, `affiliation/members`, `affiliation/reconfirm`, `portal-access`, `portal-access/approvals`, `access/users`, `access/matrix`, `access/users/<user_id>/decision`, `access/policy-rules`, `access/policy-rules/<rule_id>`, `access/audit-logs`, `external-affiliations/sync`, `access/grants`, `access/manageable`, `users`, `line-sdwt-options` |
 | Emails | `/api/v1/emails/` | `apps/api/api/emails/urls.py` | `inbox/`, `sent/`, `mailboxes/`, `mailboxes/summary/`, `mailboxes/members/`, `unassigned/`, `unassigned/claim/`, `ingest/`, `outbox/process/`, `assets/ocr/claim/`, `assets/ocr/update/`, `bulk-delete/`, `move/`, `<email_id>/`, `<email_id>/assets/<sequence>/`, `<email_id>/html/` |
 | Data Movement | `/api/v1/data-movement/` | `apps/api/api/data_movement/urls.py` | `<table_name>/load/` |
 | Assistant | `/api/v1/assistant/` | `apps/api/api/assistant/urls.py` | `chat`, `rag-indexes` |
 | Line Dashboard / Drone | `/api/v1/line-dashboard/` | `apps/api/api/drone/urls.py` | `early-inform`, `tables`, `tables/update`, `jira-keys`, `notification-targets`, `notification-target-mappings`, `jira-user-sdwt-prods`, `notification-recipients`, `notification-recipient-permissions`, `my-notification-recipient-targets`, `history`, `line-ids`, `line-sdwt-options`, `sop/<sop_id>/instant-inform`, `sop/<sop_id>/retry-channel`, `sop/ingest/pop3/trigger`, `sop/precheck`, `sop/trigger` |
 | L3 Spider | `/api/v1/l3_spider/` | `apps/api/api/l3_spider/urls.py` | `meta`, `structure`, `stats`, `summary`, `daily-summary`, `data`, `filter-candidates`, `exclusion-filters`, `exclusion-filters/<pk>`, `mail-rules`, `mail-rules/<pk>`, `mail-rules/<pk>/permissions`, `mail-rules/<pk>/test-send`, `mail-rules/trigger` |
-| FDC Trend | `/api/v1/fdc-trend/` | `apps/api/api/fdc_trend/urls.py` | `hard-spec/meta`, `hard-spec/recommendations` |
+| L0 Spider | `/api/v1/l0_spider/` (`/api/v1/fdc-trend/` 호환) | `apps/api/api/l0_spider/urls.py` | `hard-spec/meta`, `hard-spec/recommendations` |
 | PM SPIDER | `/api/v1/pm_spider/` | `apps/api/api/pm_comparison/urls.py` | `meta`, `compare` |
 | Observer | `/api/v1/observer/` | `apps/api/api/observer/urls.py` | `lines`, `sdwts`, `prc-groups`, `equipments`, `equipment-info/<line_id>/<eqp_id>`, `equipment-info/<eqp_id>`, `logs`, `logs/eqp`, `logs/tip`, `logs/ctttm`, `logs/racb`, `logs/esop`, `tkin-prevent/prc-groups`, `tkin-prevent/processes`, `tkin-prevent/step-seqs`, `tkin-prevent/matrix` |
 | AppStore | `/api/v1/appstore/` | `apps/api/api/appstore/urls.py` | `apps`, `apps/<app_id>`, `apps/<app_id>/cover`, `apps/<app_id>/like`, `apps/<app_id>/view`, `apps/<app_id>/comments`, `apps/<app_id>/comments/<comment_id>`, `apps/<app_id>/comments/<comment_id>/like` |
@@ -31,7 +31,7 @@
 | --- | --- | --- | --- |
 | Home | `/` | `apps/web/src/features/home/routes.jsx` | `apps/web/src/features/home/index.js` |
 | Auth | `/login` | `apps/web/src/features/auth/routes.jsx` | `apps/web/src/features/auth/index.js` |
-| Account | `/settings`, `/settings/account`, `/settings/members` | `apps/web/src/features/account/routes.jsx` | `apps/web/src/features/account/index.js` |
+| Account | `/settings`, `/settings/account`, `/settings/members`, `/settings/permissions` | `apps/web/src/features/account/routes.jsx` | `apps/web/src/features/account/index.js` |
 | Emails | `/emails/inbox`, `/emails/sent`, `/emails/members` | `apps/web/src/features/emails/routes.jsx` | `apps/web/src/features/emails/index.js` |
 | Assistant | `/assistant` | `apps/web/src/features/assistant/routes.jsx` | `apps/web/src/features/assistant/index.js` |
 | Line Dashboard | `/ESOP_Dashboard`, `/ESOP_Dashboard/status/:lineId`, `/ESOP_Dashboard/tip-status`, `/ESOP_Dashboard/tip-status/:lineId`, `/ESOP_Dashboard/history/:lineId`, `/ESOP_Dashboard/settings/:lineId`, `/ESOP_Dashboard/settings/notification/:lineId`, `/ESOP_Dashboard/settings/recipients/:lineId`, `/ESOP_Dashboard/overview` | `apps/web/src/features/line-dashboard/routes.jsx` | `apps/web/src/features/line-dashboard/index.js` |
@@ -47,7 +47,7 @@
 
 | Django app | 모델 |
 | --- | --- |
-| `api.account` | `User`, `UserProfile`, `Affiliation`, `UserCurrentAffiliation`, `UserSdwtProdAccess`, `UserSdwtProdChange`, `ExternalAffiliationSnapshot` |
+| `api.account` | `User`, `UserProfile`, `Affiliation`, `UserCurrentAffiliation`, `UserSdwtProdAccess`, `AccessRole`, `AccessSource`, `AccessScope`, `AccessPolicyRule`, `UserAccess`, `AccessAuditLog`, `UserSdwtProdChange`, `ExternalAffiliationSnapshot` |
 | `api.activity` | `ActivityLog`, `ExternalAppAccessDailyStat`, `ExternalAppUsageSyncState` |
 | `api.appstore` | `AppStoreApp`, `AppStoreLike`, `AppStoreComment`, `AppStoreCommentLike` |
 | `api.drone` | `DroneSOP`, `DroneSopTarget`, `DroneSopTargetChannelConfig`, `DroneSopNeedToSendRule`, `DroneSopTargetMapping`, `DroneSopTargetRecipient`, `DroneSopTargetDispatch`, `DroneSopDelivery`, `DroneEarlyInform` |
@@ -62,12 +62,13 @@
 | `api.data_movement.station_master` | `StationMaster`, `StationMasterLoadJob` |
 | `api.voc` | `VocPost`, `VocReply` |
 | `api.l3_spider` | `L3SpiderExclusionFilter`, `L3SpiderMailRule`, `L3SpiderMailDelivery`, `L3SpiderMailRulePermission` |
-| `api.auth`, `api.assistant`, `api.rag`, `api.observer`, `api.fdc_trend`, `api.pm_comparison`, `api.health`, `api.common` | 자체 업무 model 없이 account/common/external DB 또는 외부 API/파일을 사용 |
+| `api.auth`, `api.assistant`, `api.rag`, `api.observer`, `api.l0_spider`, `api.pm_comparison`, `api.health`, `api.common` | 자체 업무 model 없이 account/common/external DB 또는 외부 API/파일을 사용 |
 
 ## Management command
 
 | Command | 위치 | 목적 |
 | --- | --- | --- |
+| `check_access_permission_integrity` | `apps/api/api/account/management/commands/check_access_permission_integrity.py` | 배포 전 접근 권한 scope, 정책, 사용자 권한, 관리자 그룹 정합성 점검 |
 | `ensure_dev_database` | `apps/api/api/management/commands/ensure_dev_database.py` | dev 환경에서 Django 기본 DB와 필수 PostgreSQL extension 보장 |
 | `process_email_outbox` | `apps/api/api/emails/management/commands/process_email_outbox.py` | pending `EmailOutbox`를 RAG insert/delete 호출로 처리 |
 | `seed_dummy_emails` | `apps/api/api/emails/management/commands/seed_dummy_emails.py` | 로컬 개발용 더미 Email 데이터를 생성 |
@@ -99,4 +100,4 @@
 | `env/web.prod.env` | 운영 web 설정 템플릿 |
 | `env/minio.env` | 로컬 MinIO 계정과 endpoint |
 
-주요 env group은 `DJANGO_*`, `DJANGO_DB_*`, `DEV_AUTO_AFFILIATION_*`, `L3_SPIDER_*`, `FDC_HARD_SPEC_*`, `PM_COMPARISON_*`, `DATA_MOVEMENT_*`, `FTP_*`, `OIDC_*`, `ADFS_*`, `AIRFLOW_*`, `EMAIL_POP3_*`, `DRONE_*`, `KNOX_MESSENGER_*`, `ASSISTANT_*`, `RAG_*`, `MAIL_API_*`, `MINIO_*`, `VITE_*`입니다.
+주요 env group은 `DJANGO_*`, `DJANGO_DB_*`, `DEV_AUTO_AFFILIATION_*`, `L3_SPIDER_*`, `FDC_HARD_SPEC_*`, `PM_COMPARISON_*`, `DATA_MOVEMENT_*`, `FTP_*`, `OIDC_*`, `ADFS_*`, `AIRFLOW_*`, `AIRFLOW_TRIGGER_TOKEN`, `EMAIL_POP3_*`, `DRONE_*`, `KNOX_MESSENGER_*`, `ASSISTANT_*`, `RAG_*`, `MAIL_API_*`, `MINIO_*`, `VITE_*`입니다.

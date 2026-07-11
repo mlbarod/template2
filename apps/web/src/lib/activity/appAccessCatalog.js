@@ -17,22 +17,29 @@ const APP_ACCESS_RULES = [
   {
     appId: "l3-spider",
     appName: "L3 Spider",
-    prefixes: ["/l3_spider"],
+    prefixes: ["/spider/l3", "/l3_spider"],
   },
   {
-    appId: "fdc-trend",
-    appName: "FDC Trend",
-    prefixes: ["/fdc_trend"],
+    appId: "l0-spider",
+    appName: "L0 Spider",
+    matches: (pathname) => pathname === "/spider/l0",
+    prefixes: ["/l0_spider", "/fdc_trend"],
+  },
+  {
+    appId: "l1-spider",
+    appName: "L1 Spider",
+    matches: (pathname) => pathname === "/spider/l1",
+    prefixes: [],
   },
   {
     appId: "pm-spider",
     appName: "PM Spider",
-    prefixes: ["/pm_spider"],
+    prefixes: ["/spider/pm", "/pm_spider"],
   },
   {
     appId: "tttm-spider",
     appName: "TTTM Spider",
-    prefixes: ["/tttm_spider"],
+    prefixes: ["/spider/tttm", "/tttm_spider"],
   },
   {
     appId: "teamstaff",

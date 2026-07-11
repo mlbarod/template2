@@ -28,8 +28,8 @@ function AccountSummaryPanel({ pageTitle, profile, summary }) {
   const latestRequest = summary?.latestRequest
 
   return (
-    <Card className="overflow-hidden border-primary/20 bg-card py-0">
-      <CardContent className="grid gap-5 p-5">
+    <Card className="shrink-0 overflow-hidden border-primary/20 bg-card py-0">
+      <CardContent className="grid gap-5 px-5 pb-3 pt-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
@@ -75,11 +75,12 @@ function AccountSummaryPanel({ pageTitle, profile, summary }) {
 
 export default function AccountPage() {
   const { user } = useAuth()
+  const hasPortalAccess = Boolean(user?.portal_access?.allowed)
   const {
     data: overviewData,
     isLoading: overviewLoading,
     error: overviewError,
-  } = useAccountOverview()
+  } = useAccountOverview({ enabled: hasPortalAccess })
   const {
     data: affiliationData,
     isLoading: affiliationLoading,
@@ -116,8 +117,40 @@ export default function AccountPage() {
     }
   }
 
+  const affiliationContent = affiliationLoading ? (
+    <Skeleton className="h-80 w-full" />
+  ) : affiliationError ? (
+    <div className="rounded-lg border bg-card p-4" role="alert">
+      <p className="text-sm text-destructive">
+        {affiliationError?.message || "소속 정보를 불러오지 못했습니다."}
+      </p>
+    </div>
+  ) : (
+    <AffiliationCard
+      data={affiliationData}
+      onSubmit={handleAffiliationSubmit}
+      isSubmitting={updateAffiliationMutation.isPending}
+      error={submitError}
+      successMessage={submitMessage}
+    />
+  )
+
+  if (!hasPortalAccess) {
+    return (
+      <div className="flex w-full flex-col gap-4">
+        <section className="space-y-1">
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground">계정 및 소속</h2>
+          <p className="text-sm text-muted-foreground">
+            포털 접근 승인에 사용할 현재 소속을 확인하거나 변경할 수 있습니다.
+          </p>
+        </section>
+        <div className="min-w-0">{affiliationContent}</div>
+      </div>
+    )
+  }
+
   return (
-    <div className="flex w-full flex-col gap-4">
+    <div className="flex h-full min-h-0 w-full flex-col gap-4 overflow-hidden py-4">
       {overviewError ? (
         <div className="rounded-lg border bg-card p-4">
           <p className="text-sm text-destructive">
@@ -125,48 +158,36 @@ export default function AccountPage() {
           </p>
         </div>
       ) : overviewLoading ? (
-        <div className="flex w-full flex-col gap-4">
-          <Skeleton className="h-56 w-full" />
-          <section className="grid w-full grid-cols-1 items-start gap-4 xl:grid-cols-12">
-            <Skeleton className="h-80 w-full xl:col-span-7" />
-            <Skeleton className="h-80 w-full xl:col-span-5" />
+        <div className="flex h-full min-h-0 w-full flex-col gap-4 overflow-hidden">
+          <Skeleton className="h-56 w-full shrink-0" />
+          <section className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto lg:grid-cols-3 lg:overflow-hidden">
+            <Skeleton className="h-full min-h-0 w-full" />
+            <Skeleton className="h-full min-h-0 w-full" />
+            <Skeleton className="h-full min-h-0 w-full" />
           </section>
-          <Skeleton className="h-96 w-full" />
         </div>
       ) : (
-        <div className="flex w-full flex-col gap-4">
-          <AccountSummaryPanel
-            pageTitle={pageTitle}
-            profile={profile}
-            summary={accountSummary}
-          />
+        <>
+          <section className="shrink-0">
+            <AccountSummaryPanel
+              pageTitle={pageTitle}
+              profile={profile}
+              summary={accountSummary}
+            />
+          </section>
 
-          <section className="grid w-full grid-cols-1 items-start gap-4 xl:grid-cols-12">
-            <div className="min-w-0 xl:col-span-7">
-              {affiliationLoading ? (
-                <Skeleton className="h-80 w-full" />
-              ) : affiliationError ? (
-                <div className="rounded-lg border bg-card p-4">
-                  <p className="text-sm text-destructive">
-                    {affiliationError?.message || "소속 정보를 불러오지 못했습니다."}
-                  </p>
-                </div>
-              ) : (
-                <AffiliationCard
-                  data={affiliationData}
-                  onSubmit={handleAffiliationSubmit}
-                  isSubmitting={updateAffiliationMutation.isPending}
-                  error={submitError}
-                  successMessage={submitMessage}
-                />
-              )}
+          <section className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto lg:grid-cols-3 lg:overflow-hidden">
+            <div className="h-full min-h-0 min-w-0 overflow-hidden">
+              {affiliationContent}
             </div>
-            <div className="flex min-w-0 flex-col gap-4 xl:col-span-5">
+            <div className="h-full min-h-0 min-w-0 overflow-hidden">
               <ManageableGroupsCard groups={manageableGroups} />
+            </div>
+            <div className="h-full min-h-0 min-w-0 overflow-hidden">
               <AffiliationHistoryCard history={history} />
             </div>
           </section>
-        </div>
+        </>
       )}
     </div>
   )

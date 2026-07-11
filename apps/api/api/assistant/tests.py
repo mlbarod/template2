@@ -30,11 +30,24 @@ def _set_current_affiliation(user, *, user_sdwt_prod: str) -> None:
     )
 
 
+def _allow_test_scope_access(test_case: TestCase) -> None:
+    """도메인 endpoint 테스트에서 공통 portal/app 권한 경계를 격리합니다."""
+
+    for service_name in ("get_portal_access_payload", "get_access_payload"):
+        patcher = patch(
+            f"api.account.services.{service_name}",
+            return_value={"allowed": True},
+        )
+        patcher.start()
+        test_case.addCleanup(patcher.stop)
+
+
 class AssistantRagIndexViewsTests(TestCase):
     """RAG 인덱스/권한 그룹 API 동작을 검증합니다."""
 
     def setUp(self) -> None:
         """테스트용 사용자/권한 데이터를 준비합니다."""
+        _allow_test_scope_access(self)
         User = get_user_model()
         self.user = User.objects.create_user(
             sabun="S90000",

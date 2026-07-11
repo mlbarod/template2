@@ -13,16 +13,32 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from importlib import import_module
+from io import StringIO
 from unittest.mock import patch
 
+from django.apps import apps as django_apps
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group, Permission
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.management import call_command
+from django.core.management.base import CommandError
+from django.db import IntegrityError, transaction
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from django.urls import reverse
 
 from api.account.models import (
+    ACCESS_MANAGERS_GROUP_NAME,
+    ACCESS_SCOPE_PORTAL,
+    MANAGE_ACCESS_PERMISSION,
+    AccessAuditLog,
+    AccessPolicyRule,
+    AccessScope,
+    AccessSource,
     Affiliation,
     ExternalAffiliationSnapshot,
+    UserAccess,
     UserCurrentAffiliation,
     UserProfile,
     UserSdwtProdAccess,
@@ -41,14 +57,23 @@ from api.account.selectors import (
 from api.account.services import (
     approve_affiliation_change,
     auto_approve_affiliation_from_snapshot,
+    create_access_policy_rule,
+    decide_access,
+    delete_access_policy_rule,
     ensure_self_access,
     ensure_user_profile,
     get_account_overview,
+    get_access_payload,
     get_affiliation_change_requests,
     get_affiliation_overview,
+    get_portal_access_payload,
+    can_manage_access,
     request_affiliation_change,
+    request_access,
+    request_portal_access,
     submit_affiliation_reconfirm_response,
     sync_external_affiliations,
+    update_access_policy_rule,
 )
 
 
@@ -112,6 +137,29 @@ def _grant_access(
     )
 
 
+def _clear_permission_cache(user) -> None:
+    """사용자 인스턴스의 Django permission 캐시를 제거합니다."""
+
+    for cache_name in ("_perm_cache", "_user_perm_cache", "_group_perm_cache"):
+        if hasattr(user, cache_name):
+            delattr(user, cache_name)
+
+
+def _grant_manage_access(user):
+    """테스트 사용자에게 접근 권한 관리 capability를 부여합니다."""
+
+    group = Group.objects.get(name=ACCESS_MANAGERS_GROUP_NAME)
+    app_label, codename = MANAGE_ACCESS_PERMISSION.split(".", maxsplit=1)
+    permission = Permission.objects.get(
+        content_type__app_label=app_label,
+        codename=codename,
+    )
+    group.permissions.add(permission)
+    user.groups.add(group)
+    _clear_permission_cache(user)
+    return user
+
+
 class AccountEndpointTests(TestCase):
     """계정 관련 엔드포인트의 기본 흐름을 검증합니다."""
 
@@ -123,7 +171,18 @@ class AccountEndpointTests(TestCase):
         User = get_user_model()
         self.user = User.objects.create_user(sabun="S50000", password="test-password")
         self.user.knox_id = "knox-50000"
-        self.user.save(update_fields=["knox_id"])
+        self.user.department = "Dept"
+        self.user.save(update_fields=["knox_id", "department"])
+        scope, _created = AccessScope.objects.get_or_create(
+            key=ACCESS_SCOPE_PORTAL,
+            defaults={"name": "Portal", "scope_type": AccessScope.ScopeTypes.PORTAL},
+        )
+        AccessPolicyRule.objects.update_or_create(
+            scope=scope,
+            rule_type=AccessPolicyRule.RuleTypes.DEPARTMENT,
+            value="Dept",
+            defaults={"is_active": True},
+        )
         _set_current_affiliation(
             self.user,
             department="Dept",
@@ -138,6 +197,7 @@ class AccountEndpointTests(TestCase):
             sabun="S50001",
             password="test-password",
             knox_id="knox-50001",
+            department="Dept",
         )
         _set_current_affiliation(self.manager, user_sdwt_prod="group-b")
         _grant_access(user=self.manager, user_sdwt_prod="group-a", role="manager")
@@ -154,6 +214,427 @@ class AccountEndpointTests(TestCase):
 
         _affiliation(department="Dept", line="L1", user_sdwt_prod="group-a")
         _affiliation(department="Dept", line="L1", user_sdwt_prod="group-b")
+
+    def test_default_app_access_scopes_are_seeded(self) -> None:
+        """포털 내부 앱의 기본 접근 scope와 공통 속성을 검증합니다."""
+
+        expected_scopes = {
+            "access-stats": "접속 현황",
+            "appstore": "Appstore",
+            "assistant": "Assistant",
+            "emails": "Emails",
+            "l0-spider": "L0 Spider",
+            "l1-spider": "L1 Spider",
+            "l3-spider": "L3 Spider",
+            "line-dashboard": "ESOP Dashboard",
+            "observer": "Observer",
+            "pm-spider": "PM Spider",
+            "teamstaff": "Teamstaff",
+            "tttm-spider": "TTTM Spider",
+            "voc": "VoE",
+        }
+        scopes = AccessScope.objects.filter(scope_type=AccessScope.ScopeTypes.APP).order_by("key")
+
+        self.assertEqual({scope.key: scope.name for scope in scopes}, expected_scopes)
+        for scope in scopes:
+            with self.subTest(scope=scope.key):
+                self.assertTrue(scope.is_active)
+                self.assertFalse(scope.requestable)
+                self.assertEqual(scope.default_role, "viewer")
+
+    def test_new_user_does_not_receive_automatic_app_access(self) -> None:
+        """마이그레이션 이후 생성된 신규 사용자는 앱 허용 행을 자동 생성하지 않아야 합니다."""
+
+        User = get_user_model()
+        new_user = User.objects.create_user(
+            sabun="S-NEW-ACCESS",
+            password="test-password",
+            department="New Department",
+        )
+
+        self.assertFalse(
+            UserAccess.objects.filter(
+                user=new_user,
+                scope__scope_type=AccessScope.ScopeTypes.APP,
+            ).exists()
+        )
+        payload = get_access_payload(user=new_user, scope_key="appstore")
+        self.assertFalse(payload["allowed"])
+        self.assertEqual(payload["source"], AccessSource.NONE)
+
+    def test_access_permissions_migration_preserves_decisions_and_backfills_existing_users(self) -> None:
+        """순방향 권한 migration은 기존 결정을 보존하고 기존 사용자의 누락 앱을 허용해야 합니다."""
+
+        User = get_user_model()
+        inactive_user = User.objects.create_user(
+            sabun="S-INACTIVE-ACCESS",
+            password="test-password",
+            is_active=False,
+        )
+        appstore_scope = AccessScope.objects.get(key="appstore")
+        UserAccess.objects.create(
+            scope=appstore_scope,
+            user=self.user,
+            status=UserAccess.Status.DENIED,
+            role="viewer",
+            reason="기존 수동 차단 유지",
+        )
+        migration = import_module("api.account.migrations.0002_access_permissions")
+
+        migration._backfill_existing_user_app_access(django_apps)
+
+        app_scope_count = AccessScope.objects.filter(scope_type=AccessScope.ScopeTypes.APP).count()
+        self.assertEqual(
+            UserAccess.objects.filter(user=self.user, scope__scope_type=AccessScope.ScopeTypes.APP).count(),
+            app_scope_count,
+        )
+        self.assertEqual(
+            UserAccess.objects.filter(
+                user=inactive_user,
+                scope__scope_type=AccessScope.ScopeTypes.APP,
+            ).count(),
+            app_scope_count,
+        )
+        preserved = UserAccess.objects.get(user=self.user, scope=appstore_scope)
+        self.assertEqual(preserved.status, UserAccess.Status.DENIED)
+        self.assertEqual(preserved.reason, "기존 수동 차단 유지")
+
+    def test_app_scope_is_not_self_requestable(self) -> None:
+        """앱 권한은 self-service 요청 대신 권한 관리자가 직접 결정해야 합니다."""
+
+        payload, status_code = request_access(user=self.user, scope_key="appstore")
+
+        self.assertEqual(status_code, 400)
+        self.assertEqual(payload["error"], "not_requestable")
+        self.assertFalse(UserAccess.objects.filter(user=self.user, scope__key="appstore").exists())
+
+    def test_access_permissions_migration_moves_existing_managers_to_standard_group(self) -> None:
+        """순방향 권한 migration은 기존 관리자와 직접 permission 보유자를 표준 그룹으로 이전해야 합니다."""
+
+        permission = Permission.objects.get(
+            content_type__app_label="account",
+            codename="manage_access",
+        )
+        group = Group.objects.get(name=ACCESS_MANAGERS_GROUP_NAME)
+        self.manager.groups.remove(group)
+        self.manager.user_permissions.add(permission)
+        UserProfile.objects.filter(user=self.manager).update(role=UserProfile.Roles.ADMIN)
+        _clear_permission_cache(self.manager)
+        migration = import_module("api.account.migrations.0002_access_permissions")
+
+        migration._migrate_access_managers(django_apps)
+
+        _clear_permission_cache(self.manager)
+        self.assertTrue(self.manager.groups.filter(id=group.id).exists())
+        self.assertFalse(self.manager.user_permissions.filter(id=permission.id).exists())
+        self.assertTrue(self.manager.has_perm("account.manage_access"))
+
+    def test_spider_scope_migration_preserves_l0_decisions_and_backfills_l1(self) -> None:
+        """Spider scope 순방향 migration은 기존 L0 결정을 보존하고 L1 권한을 승계해야 합니다."""
+
+        User = get_user_model()
+        inactive_user = User.objects.create_user(
+            sabun="S-SPIDER-INACTIVE",
+            password="test-password",
+            is_active=False,
+        )
+        legacy_scope = AccessScope.objects.get(key="l0-spider")
+        legacy_scope.key = "fdc-trend"
+        legacy_scope.name = "FDC Trend"
+        legacy_scope.save(update_fields=["key", "name"])
+        AccessScope.objects.filter(key="l1-spider").delete()
+        denied_access = UserAccess.objects.create(
+            scope=legacy_scope,
+            user=self.user,
+            status=UserAccess.Status.DENIED,
+            role="viewer",
+            reason="기존 L0 차단 유지",
+        )
+        migration = import_module("api.account.migrations.0003_spider_access_scopes")
+
+        migration.migrate_spider_access_scopes(django_apps, None)
+
+        migrated_scope = AccessScope.objects.get(key="l0-spider")
+        self.assertEqual(migrated_scope.id, legacy_scope.id)
+        self.assertEqual(migrated_scope.name, "L0 Spider")
+        self.assertFalse(AccessScope.objects.filter(key="fdc-trend").exists())
+        denied_access.refresh_from_db()
+        self.assertEqual(denied_access.scope_id, migrated_scope.id)
+        self.assertEqual(denied_access.status, UserAccess.Status.DENIED)
+        self.assertEqual(denied_access.reason, "기존 L0 차단 유지")
+
+        l1_scope = AccessScope.objects.get(key="l1-spider")
+        inherited_rows = UserAccess.objects.filter(scope=l1_scope)
+        self.assertEqual(
+            set(inherited_rows.values_list("user_id", flat=True)),
+            set(User.objects.values_list("id", flat=True)),
+        )
+        self.assertFalse(inherited_rows.exclude(status=UserAccess.Status.ALLOWED, role="viewer").exists())
+        self.assertTrue(inherited_rows.filter(user=inactive_user).exists())
+
+        migration.restore_legacy_fdc_scope(django_apps, None)
+        restored_scope = AccessScope.objects.get(key="fdc-trend")
+        self.assertEqual(restored_scope.id, legacy_scope.id)
+        self.assertEqual(restored_scope.name, "FDC Trend")
+        self.assertTrue(AccessScope.objects.filter(key="l1-spider").exists())
+
+    def test_access_source_contract_uses_explicit_stable_values(self) -> None:
+        """접근 판정 source 값은 API 계약에 사용하는 명시적 목록으로 고정되어야 합니다."""
+
+        self.assertEqual(
+            set(AccessSource.values),
+            {
+                "superuser_bypass",
+                "scope_inactive",
+                "explicit_denied",
+                "explicit_allowed",
+                "explicit_pending",
+                "policy_department",
+                "none",
+                "scope_not_found",
+            },
+        )
+
+    def test_app_scope_models_reject_non_viewer_roles(self) -> None:
+        """앱 scope 관련 모델은 호환 필드에 viewer 외 role을 허용하지 않아야 합니다."""
+
+        scope = AccessScope.objects.get(key="appstore")
+        scope.default_role = "manager"
+        policy = AccessPolicyRule(
+            scope=scope,
+            rule_type=AccessPolicyRule.RuleTypes.DEPARTMENT,
+            value="Role Validation Dept",
+            role="manager",
+        )
+        access = UserAccess(
+            scope=scope,
+            user=self.user,
+            status=UserAccess.Status.ALLOWED,
+            role="manager",
+        )
+
+        with self.assertRaises(ValidationError):
+            scope.full_clean()
+        with self.assertRaises(ValidationError):
+            policy.full_clean()
+        with self.assertRaises(ValidationError):
+            access.full_clean()
+
+        requestable_scope = AccessScope(
+            key="requestable-app",
+            name="Requestable App",
+            scope_type=AccessScope.ScopeTypes.APP,
+            requestable=True,
+        )
+        with self.assertRaises(ValidationError):
+            requestable_scope.full_clean()
+
+    def test_user_access_database_rejects_unknown_status(self) -> None:
+        """UserAccess status는 DB에서도 pending/allowed/denied 외 값을 거부해야 합니다."""
+
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                UserAccess.objects.create(
+                    scope=AccessScope.objects.get(key="appstore"),
+                    user=self.user,
+                    status="unknown",
+                )
+
+    def test_account_admin_blocks_non_superuser_privilege_escalation(self) -> None:
+        """일반 staff는 민감 권한 필드와 privileged user를 변경하지 못해야 합니다."""
+
+        from django.contrib.admin.sites import AdminSite
+        from django.test import RequestFactory
+
+        from api.account.admin import AccountUserAdmin
+
+        User = get_user_model()
+        staff_user = self.manager
+        staff_user.is_staff = True
+        staff_user.save(update_fields=["is_staff"])
+        staff_user.user_permissions.add(
+            *Permission.objects.filter(
+                content_type__app_label="account",
+                codename__in=("change_user", "delete_user"),
+            )
+        )
+        _clear_permission_cache(staff_user)
+        request = RequestFactory().get("/admin/account/user/")
+        request.user = staff_user
+        user_admin = AccountUserAdmin(User, AdminSite())
+
+        readonly_fields = set(user_admin.get_readonly_fields(request, self.user))
+        self.assertTrue({"is_staff", "is_superuser", "groups", "user_permissions"} <= readonly_fields)
+        self.assertTrue(user_admin.has_change_permission(request, self.user))
+        self.assertTrue(user_admin.has_delete_permission(request, self.user))
+
+        _grant_manage_access(self.user)
+
+        self.assertFalse(user_admin.has_change_permission(request, self.user))
+        self.assertFalse(user_admin.has_delete_permission(request, self.user))
+        self.assertFalse(user_admin.has_change_permission(request, self.superuser))
+
+        superuser_request = RequestFactory().get("/admin/account/user/")
+        superuser_request.user = self.superuser
+        superuser_readonly_fields = set(user_admin.get_readonly_fields(superuser_request, self.user))
+        self.assertFalse(
+            {"is_staff", "is_superuser", "groups", "user_permissions"}
+            & superuser_readonly_fields
+        )
+        self.assertTrue(user_admin.has_change_permission(superuser_request, self.user))
+
+    def test_group_admin_is_superuser_only_and_protects_access_managers(self) -> None:
+        """Django Group 변경은 superuser 전용이며 표준 권한 관리자 그룹은 불변이어야 합니다."""
+
+        from django.contrib.admin.sites import AdminSite
+        from django.test import RequestFactory
+
+        from api.account.admin import AccountGroupAdmin
+
+        staff_user = self.manager
+        staff_user.is_staff = True
+        staff_user.save(update_fields=["is_staff"])
+        staff_user.user_permissions.add(
+            Permission.objects.get(
+                content_type__app_label="auth",
+                codename="change_group",
+            )
+        )
+        _clear_permission_cache(staff_user)
+        group_admin = AccountGroupAdmin(Group, AdminSite())
+        standard_group = Group.objects.get(name=ACCESS_MANAGERS_GROUP_NAME)
+        other_group = Group.objects.create(name="Other Operators")
+        staff_request = RequestFactory().get("/admin/auth/group/")
+        staff_request.user = staff_user
+        superuser_request = RequestFactory().get("/admin/auth/group/")
+        superuser_request.user = self.superuser
+
+        self.assertFalse(group_admin.has_add_permission(staff_request))
+        self.assertFalse(group_admin.has_change_permission(staff_request, other_group))
+        self.assertFalse(group_admin.has_delete_permission(staff_request, other_group))
+        self.assertTrue(group_admin.has_add_permission(superuser_request))
+        self.assertTrue(group_admin.has_change_permission(superuser_request, other_group))
+        self.assertFalse(group_admin.has_change_permission(superuser_request, standard_group))
+        self.assertFalse(group_admin.has_delete_permission(superuser_request, standard_group))
+
+    def test_access_model_admin_writes_require_superuser(self) -> None:
+        """scope, 정책, 사용자 접근 row의 Django Admin 쓰기는 superuser만 가능해야 합니다."""
+
+        from django.contrib.admin.sites import AdminSite
+        from django.test import RequestFactory
+
+        from api.account.admin import AccessPolicyRuleAdmin, AccessScopeAdmin, UserAccessAdmin
+
+        staff_user = self.manager
+        staff_user.is_staff = True
+        staff_user.save(update_fields=["is_staff"])
+        staff_user.user_permissions.add(
+            *Permission.objects.filter(
+                content_type__app_label="account",
+                codename__in=(
+                    "add_accessscope",
+                    "change_accessscope",
+                    "delete_accessscope",
+                    "add_accesspolicyrule",
+                    "change_accesspolicyrule",
+                    "delete_accesspolicyrule",
+                    "add_useraccess",
+                    "change_useraccess",
+                    "delete_useraccess",
+                ),
+            )
+        )
+        _clear_permission_cache(staff_user)
+        scope = AccessScope.objects.get(key="appstore")
+        policy = AccessPolicyRule.objects.create(
+            scope=scope,
+            rule_type=AccessPolicyRule.RuleTypes.DEPARTMENT,
+            value="Admin Security Dept",
+            role="viewer",
+        )
+        access = UserAccess.objects.create(
+            scope=scope,
+            user=self.user,
+            status=UserAccess.Status.ALLOWED,
+            role="viewer",
+        )
+        site = AdminSite()
+        admin_objects = (
+            (AccessScopeAdmin(AccessScope, site), scope),
+            (AccessPolicyRuleAdmin(AccessPolicyRule, site), policy),
+            (UserAccessAdmin(UserAccess, site), access),
+        )
+        staff_request = RequestFactory().get("/admin/account/")
+        staff_request.user = staff_user
+        superuser_request = RequestFactory().get("/admin/account/")
+        superuser_request.user = self.superuser
+
+        for model_admin, obj in admin_objects:
+            with self.subTest(model=obj._meta.label_lower):
+                self.assertFalse(model_admin.has_add_permission(staff_request))
+                self.assertFalse(model_admin.has_change_permission(staff_request, obj))
+                self.assertFalse(model_admin.has_delete_permission(staff_request, obj))
+                self.assertTrue(model_admin.has_add_permission(superuser_request))
+                self.assertTrue(model_admin.has_change_permission(superuser_request, obj))
+                expected_delete = not isinstance(model_admin, AccessScopeAdmin)
+                self.assertEqual(model_admin.has_delete_permission(superuser_request, obj), expected_delete)
+
+    def test_account_admin_audits_manage_access_capability_changes(self) -> None:
+        """Django Admin의 capability 부여와 회수는 account 감사 로그에 남아야 합니다."""
+
+        from django.contrib.admin.sites import AdminSite
+        from django.test import RequestFactory
+
+        from api.account.admin import AccountUserAdmin
+
+        class GroupMembershipForm:
+            """Admin save_related 호출을 위한 최소 M2M 테스트 폼입니다."""
+
+            def __init__(self, *, instance, group, add: bool):
+                self.instance = instance
+                self.group = group
+                self.add = add
+                self.cleaned_data = {}
+
+            def save_m2m(self):
+                """테스트 대상 그룹 멤버십을 추가하거나 제거합니다."""
+
+                if self.add:
+                    self.instance.groups.add(self.group)
+                else:
+                    self.instance.groups.remove(self.group)
+
+        User = get_user_model()
+        group = Group.objects.get(name=ACCESS_MANAGERS_GROUP_NAME)
+        user_admin = AccountUserAdmin(User, AdminSite())
+
+        grant_request = RequestFactory().post("/admin/account/user/")
+        grant_request.user = self.superuser
+        grant_form = GroupMembershipForm(instance=self.user, group=group, add=True)
+        user_admin.save_model(grant_request, self.user, grant_form, True)
+        user_admin.save_related(grant_request, grant_form, [], True)
+
+        grant_log = AccessAuditLog.objects.get(
+            target_user=self.user,
+            action=AccessAuditLog.Actions.ACCESS_MANAGER_GRANT,
+        )
+        self.assertEqual(grant_log.actor, self.superuser)
+        self.assertEqual(grant_log.before, {"canManageAccess": False})
+        self.assertEqual(grant_log.after, {"canManageAccess": True})
+
+        revoke_request = RequestFactory().post("/admin/account/user/")
+        revoke_request.user = self.superuser
+        revoke_form = GroupMembershipForm(instance=self.user, group=group, add=False)
+        user_admin.save_model(revoke_request, self.user, revoke_form, True)
+        user_admin.save_related(revoke_request, revoke_form, [], True)
+
+        revoke_log = AccessAuditLog.objects.get(
+            target_user=self.user,
+            action=AccessAuditLog.Actions.ACCESS_MANAGER_REVOKE,
+        )
+        self.assertEqual(revoke_log.actor, self.superuser)
+        self.assertEqual(revoke_log.before, {"canManageAccess": True})
+        self.assertEqual(revoke_log.after, {"canManageAccess": False})
 
     def test_account_overview_and_affiliation_endpoints(self) -> None:
         """개요/소속/옵션 엔드포인트가 정상 응답하는지 확인합니다."""
@@ -453,6 +934,1439 @@ class AccountEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(len(payload["results"]), 505)
+
+    def test_portal_access_allows_configured_department(self) -> None:
+        """허용 부서 사용자는 별도 승인 없이 포털 접근이 허용되어야 합니다."""
+
+        scope, _created = AccessScope.objects.get_or_create(
+            key=ACCESS_SCOPE_PORTAL,
+            defaults={"name": "Portal", "scope_type": AccessScope.ScopeTypes.PORTAL},
+        )
+        AccessPolicyRule.objects.update_or_create(
+            scope=scope,
+            rule_type=AccessPolicyRule.RuleTypes.DEPARTMENT,
+            value="메모리Etch기술팀(글로벌 제조&인프라총괄)",
+            defaults={"is_active": True},
+        )
+        self.user.department = "메모리Etch기술팀(글로벌 제조&인프라총괄)"
+        self.user.save(update_fields=["department"])
+
+        payload = get_portal_access_payload(user=self.user)
+
+        self.assertTrue(payload["allowed"])
+        self.assertEqual(payload["reason"], "department_allowed")
+        self.assertTrue(payload["departmentAllowed"])
+
+    def test_portal_access_rejected_row_blocks_allowed_department(self) -> None:
+        """허용 부서 사용자도 거절 상태 행이 있으면 수동 차단되어야 합니다."""
+
+        scope, _created = AccessScope.objects.get_or_create(
+            key=ACCESS_SCOPE_PORTAL,
+            defaults={"name": "Portal", "scope_type": AccessScope.ScopeTypes.PORTAL},
+        )
+        AccessPolicyRule.objects.update_or_create(
+            scope=scope,
+            rule_type=AccessPolicyRule.RuleTypes.DEPARTMENT,
+            value="메모리Etch기술팀(글로벌 제조&인프라총괄)",
+            defaults={"is_active": True},
+        )
+        self.user.department = "메모리Etch기술팀(글로벌 제조&인프라총괄)"
+        self.user.save(update_fields=["department"])
+        UserAccess.objects.create(
+            user=self.user,
+            scope=scope,
+            department=self.user.department,
+            status=UserAccess.Status.DENIED,
+            reason="수동 차단",
+        )
+
+        payload = get_portal_access_payload(user=self.user)
+
+        self.assertFalse(payload["allowed"])
+        self.assertEqual(payload["reason"], "denied")
+        self.assertEqual(payload["rejectionReason"], "수동 차단")
+
+        self.client.force_login(self.user)
+        onboarding_response = self.client.get(reverse("account-affiliation"))
+        self.assertEqual(onboarding_response.status_code, 200)
+
+        response = self.client.get(reverse("account-overview"))
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["error"], "portal_access_required")
+
+        request_list_response = self.client.get(reverse("account-affiliation-requests"))
+        self.assertEqual(request_list_response.status_code, 403)
+        self.assertEqual(request_list_response.json()["error"], "portal_access_required")
+
+        request_payload, request_status = request_portal_access(user=self.user)
+        self.assertEqual(request_status, 200)
+        self.assertEqual(request_payload["status"], "pending")
+        self.assertFalse(request_payload["portalAccess"]["allowed"])
+        self.assertEqual(request_payload["portalAccess"]["reason"], "pending")
+
+        approval = UserAccess.objects.get(user=self.user, scope=scope)
+        self.assertEqual(approval.status, UserAccess.Status.PENDING)
+
+        response_after_rerequest = self.client.get(reverse("account-overview"))
+        self.assertEqual(response_after_rerequest.status_code, 403)
+        self.assertEqual(response_after_rerequest.json()["portalAccess"]["reason"], "pending")
+
+    def test_portal_access_request_and_admin_approval_flow(self) -> None:
+        """비허용 부서 사용자가 요청 후 account admin 승인으로 접근 가능한지 확인합니다."""
+
+        self.user.department = "OtherDept"
+        self.user.save(update_fields=["department"])
+        admin_user = self.manager
+        _grant_manage_access(admin_user)
+
+        request_payload, request_status = request_portal_access(user=self.user)
+        approval = UserAccess.objects.get(user=self.user, scope__key=ACCESS_SCOPE_PORTAL)
+
+        self.assertEqual(request_status, 200)
+        self.assertEqual(request_payload["status"], "pending")
+        self.assertFalse(request_payload["portalAccess"]["allowed"])
+        self.assertEqual(approval.department, "OtherDept")
+
+        self.client.force_login(admin_user)
+        list_response = self.client.get(reverse("account-portal-access-approvals"))
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(list_response.json()["results"][0]["id"], approval.id)
+
+        approve_response = self.client.post(
+            reverse("account-portal-access-approvals"),
+            data='{"requestId": %d, "decision": "approve"}' % approval.id,
+            content_type="application/json",
+        )
+        self.assertEqual(approve_response.status_code, 200)
+
+        payload = get_portal_access_payload(user=self.user)
+        self.assertTrue(payload["allowed"])
+        self.assertEqual(payload["reason"], "allowed")
+
+    def test_portal_access_admin_approval_applies_role(self) -> None:
+        """포털 접근 승인 API가 요청 role을 사용자 접근 행에 반영하는지 확인합니다."""
+
+        self.user.department = "OtherDept"
+        self.user.save(update_fields=["department"])
+        admin_user = self.manager
+        _grant_manage_access(admin_user)
+        request_portal_access(user=self.user)
+        approval = UserAccess.objects.get(user=self.user, scope__key=ACCESS_SCOPE_PORTAL)
+
+        self.client.force_login(admin_user)
+        response = self.client.post(
+            reverse("account-portal-access-approvals"),
+            data='{"requestId": %d, "decision": "approve", "role": "manager"}' % approval.id,
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        approval.refresh_from_db()
+        self.assertEqual(approval.status, UserAccess.Status.ALLOWED)
+        self.assertEqual(approval.role, "manager")
+        self.assertEqual(response.json()["approval"]["role"], "manager")
+
+    def test_portal_access_admin_approval_rejects_invalid_role(self) -> None:
+        """포털 접근 승인 API는 정의되지 않은 role 입력을 거절해야 합니다."""
+
+        self.user.department = "OtherDept"
+        self.user.save(update_fields=["department"])
+        admin_user = self.manager
+        _grant_manage_access(admin_user)
+        request_portal_access(user=self.user)
+        approval = UserAccess.objects.get(user=self.user, scope__key=ACCESS_SCOPE_PORTAL)
+
+        self.client.force_login(admin_user)
+        response = self.client.post(
+            reverse("account-portal-access-approvals"),
+            data='{"requestId": %d, "decision": "approve", "role": "owner"}' % approval.id,
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        approval.refresh_from_db()
+        self.assertEqual(approval.status, UserAccess.Status.PENDING)
+
+    def test_portal_access_admin_approval_requires_explicit_decision(self) -> None:
+        """포털 접근 승인 API는 decision 누락을 묵시 승인으로 처리하지 않아야 합니다."""
+
+        self.user.department = "OtherDept"
+        self.user.save(update_fields=["department"])
+        admin_user = self.manager
+        _grant_manage_access(admin_user)
+        request_portal_access(user=self.user)
+        approval = UserAccess.objects.get(user=self.user, scope__key=ACCESS_SCOPE_PORTAL)
+
+        self.client.force_login(admin_user)
+        response = self.client.post(
+            reverse("account-portal-access-approvals"),
+            data='{"requestId": %d}' % approval.id,
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        approval.refresh_from_db()
+        self.assertEqual(approval.status, UserAccess.Status.PENDING)
+        self.assertIsNone(approval.decided_by)
+        self.assertIsNone(approval.decided_at)
+
+    def test_portal_access_admin_approval_rejects_non_portal_scope_request(self) -> None:
+        """포털 접근 승인 API는 portal scope 요청만 결정해야 합니다."""
+
+        non_portal_scope = AccessScope.objects.create(
+            key="app-alpha",
+            name="App Alpha",
+            scope_type=AccessScope.ScopeTypes.APP,
+            requestable=False,
+        )
+        approval = UserAccess.objects.create(
+            user=self.user,
+            scope=non_portal_scope,
+            department=self.user.department,
+            status=UserAccess.Status.PENDING,
+        )
+        admin_user = self.manager
+        _grant_manage_access(admin_user)
+
+        self.client.force_login(admin_user)
+        response = self.client.post(
+            reverse("account-portal-access-approvals"),
+            data='{"requestId": %d, "decision": "approve"}' % approval.id,
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 404)
+        approval.refresh_from_db()
+        self.assertEqual(approval.status, UserAccess.Status.PENDING)
+        self.assertIsNone(approval.decided_by)
+        self.assertIsNone(approval.decided_at)
+
+    def test_portal_access_request_uses_current_affiliation_department_fallback(self) -> None:
+        """접근 요청 row의 부서는 현재 소속 부서 fallback과 일치해야 합니다."""
+
+        self.user.department = ""
+        self.user.save(update_fields=["department"])
+        _set_current_affiliation(
+            self.user,
+            department="FallbackDept",
+            line="L9",
+            user_sdwt_prod="group-fallback",
+        )
+        self.user = get_user_model().objects.get(id=self.user.id)
+
+        payload, status_code = request_portal_access(user=self.user)
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(payload["status"], "pending")
+        approval = UserAccess.objects.get(user=self.user, scope__key=ACCESS_SCOPE_PORTAL)
+        self.assertEqual(approval.department, "FallbackDept")
+
+    def test_portal_access_rerequest_updates_requested_at(self) -> None:
+        """거절 사용자가 재요청하면 pending 전환 시 요청 시각을 갱신해야 합니다."""
+
+        scope = AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL)
+        approval = UserAccess.objects.create(
+            user=self.user,
+            scope=scope,
+            department=self.user.department,
+            status=UserAccess.Status.DENIED,
+            reason="사유 확인 필요",
+            decided_by=self.manager,
+            decided_at=timezone.now() - timedelta(days=1),
+        )
+        old_requested_at = timezone.now() - timedelta(days=2)
+        UserAccess.objects.filter(id=approval.id).update(requested_at=old_requested_at)
+        before_request = timezone.now()
+
+        payload, status_code = request_portal_access(user=self.user)
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(payload["status"], "pending")
+        approval.refresh_from_db()
+        self.assertEqual(approval.status, UserAccess.Status.PENDING)
+        self.assertIsNone(approval.reason)
+        self.assertIsNone(approval.decided_by)
+        self.assertIsNone(approval.decided_at)
+        self.assertGreaterEqual(approval.requested_at, before_request)
+
+    def test_portal_access_rerequest_resets_role_to_scope_default(self) -> None:
+        """거절 사용자가 재요청하면 이전 고권한 role을 기본 role로 초기화해야 합니다."""
+
+        scope = AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL)
+        scope.default_role = "viewer"
+        scope.save(update_fields=["default_role"])
+        approval = UserAccess.objects.create(
+            user=self.user,
+            scope=scope,
+            department=self.user.department,
+            status=UserAccess.Status.DENIED,
+            role="manager",
+            reason="권한 회수",
+            decided_by=self.manager,
+            decided_at=timezone.now(),
+        )
+
+        payload, status_code = request_portal_access(user=self.user)
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(payload["status"], "pending")
+        approval.refresh_from_db()
+        self.assertEqual(approval.status, UserAccess.Status.PENDING)
+        self.assertEqual(approval.role, "viewer")
+
+    def test_portal_access_request_records_initial_and_rerequest_audit_snapshots(self) -> None:
+        """최초 요청과 거절 후 재요청은 각각 당시 상태 snapshot을 감사 로그에 남겨야 합니다."""
+
+        self.user.department = "OtherDept"
+        self.user.save(update_fields=["department"])
+
+        request_portal_access(user=self.user)
+        approval = UserAccess.objects.get(user=self.user, scope__key=ACCESS_SCOPE_PORTAL)
+        first_log = AccessAuditLog.objects.get(
+            action=AccessAuditLog.Actions.REQUEST,
+            target_user=self.user,
+        )
+        self.assertEqual(first_log.before, {})
+        self.assertEqual(first_log.after["status"], UserAccess.Status.PENDING)
+
+        approval.status = UserAccess.Status.DENIED
+        approval.reason = "추가 확인"
+        approval.decided_by = self.manager
+        approval.decided_at = timezone.now()
+        approval.save(update_fields=["status", "reason", "decided_by", "decided_at", "updated_at"])
+
+        request_portal_access(user=self.user)
+        logs = list(
+            AccessAuditLog.objects.filter(
+                action=AccessAuditLog.Actions.REQUEST,
+                target_user=self.user,
+            ).order_by("id")
+        )
+        self.assertEqual(len(logs), 2)
+        self.assertEqual(logs[1].before["status"], UserAccess.Status.DENIED)
+        self.assertEqual(logs[1].before["rejectionReason"], "추가 확인")
+        self.assertEqual(logs[1].after["status"], UserAccess.Status.PENDING)
+        self.assertIsNone(logs[1].after["rejectionReason"])
+
+    def test_portal_access_request_rolls_back_when_audit_creation_fails(self) -> None:
+        """접근 요청 감사 로그 생성 실패 시 pending 행도 남지 않아야 합니다."""
+
+        self.user.department = "OtherDept"
+        self.user.save(update_fields=["department"])
+
+        with patch(
+            "api.account.services.access_control._create_access_audit_log",
+            side_effect=RuntimeError("audit failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "audit failed"):
+                request_portal_access(user=self.user)
+
+        self.assertFalse(
+            UserAccess.objects.filter(user=self.user, scope__key=ACCESS_SCOPE_PORTAL).exists()
+        )
+
+    def test_decide_access_rolls_back_when_audit_creation_fails(self) -> None:
+        """승인 감사 로그 생성 실패 시 pending 상태를 유지해야 합니다."""
+
+        scope = AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL)
+        _grant_manage_access(self.manager)
+        self.manager.refresh_from_db()
+        approval = UserAccess.objects.create(
+            user=self.user,
+            scope=scope,
+            department=self.user.department,
+            status=UserAccess.Status.PENDING,
+        )
+
+        with patch(
+            "api.account.services.access_control._create_access_audit_log",
+            side_effect=RuntimeError("audit failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "audit failed"):
+                decide_access(
+                    actor=self.manager,
+                    access_id=approval.id,
+                    decision="approve",
+                    reason=None,
+                )
+
+        approval.refresh_from_db()
+        self.assertEqual(approval.status, UserAccess.Status.PENDING)
+        self.assertIsNone(approval.decided_by)
+        self.assertIsNone(approval.decided_at)
+
+    def test_decide_access_rejects_stale_already_decided_request(self) -> None:
+        """이미 결정된 요청을 다시 승인하거나 거절하지 않아야 합니다."""
+
+        scope = AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL)
+        _grant_manage_access(self.manager)
+        self.manager.refresh_from_db()
+        approval = UserAccess.objects.create(
+            user=self.user,
+            scope=scope,
+            department=self.user.department,
+            status=UserAccess.Status.ALLOWED,
+            decided_by=self.manager,
+            decided_at=timezone.now(),
+        )
+
+        payload, status_code = decide_access(
+            actor=self.manager,
+            access_id=approval.id,
+            decision="reject",
+            reason="늦게 도착한 요청",
+        )
+
+        self.assertEqual(status_code, 409)
+        self.assertEqual(payload["error"], "invalid_status_transition")
+        approval.refresh_from_db()
+        self.assertEqual(approval.status, UserAccess.Status.ALLOWED)
+        self.assertFalse(
+            AccessAuditLog.objects.filter(target_user=self.user, action=AccessAuditLog.Actions.REJECT).exists()
+        )
+
+    def test_decide_access_rejects_invalid_service_role(self) -> None:
+        """서비스 직접 호출에서도 정의되지 않은 role은 조용히 viewer로 바꾸지 않아야 합니다."""
+
+        scope = AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL)
+        _grant_manage_access(self.manager)
+        self.manager.refresh_from_db()
+        approval = UserAccess.objects.create(
+            user=self.user,
+            scope=scope,
+            department=self.user.department,
+            status=UserAccess.Status.PENDING,
+        )
+
+        payload, status_code = decide_access(
+            actor=self.manager,
+            access_id=approval.id,
+            decision="approve",
+            reason=None,
+            role="owner",
+        )
+
+        self.assertEqual(status_code, 400)
+        self.assertEqual(payload["error"], "invalid_role")
+        approval.refresh_from_db()
+        self.assertEqual(approval.status, UserAccess.Status.PENDING)
+
+    def test_decide_access_rejects_invalid_service_decision(self) -> None:
+        """서비스 직접 호출에서도 정의되지 않은 decision은 승인으로 처리하지 않아야 합니다."""
+
+        scope = AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL)
+        _grant_manage_access(self.manager)
+        self.manager.refresh_from_db()
+        approval = UserAccess.objects.create(
+            user=self.user,
+            scope=scope,
+            department=self.user.department,
+            status=UserAccess.Status.PENDING,
+        )
+
+        payload, status_code = decide_access(
+            actor=self.manager,
+            access_id=approval.id,
+            decision="aprove",
+            reason=None,
+        )
+
+        self.assertEqual(status_code, 400)
+        self.assertEqual(payload["error"], "invalid_decision")
+        approval.refresh_from_db()
+        self.assertEqual(approval.status, UserAccess.Status.PENDING)
+        self.assertIsNone(approval.decided_by)
+        self.assertIsNone(approval.decided_at)
+
+    def test_inactive_portal_scope_cannot_be_requested(self) -> None:
+        """비활성 portal scope는 화면에서 승인 요청 가능 상태로 노출하지 않아야 합니다."""
+
+        scope = AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL)
+        scope.is_active = False
+        scope.save(update_fields=["is_active"])
+
+        payload = get_portal_access_payload(user=self.user)
+
+        self.assertFalse(payload["allowed"])
+        self.assertEqual(payload["reason"], "scope_inactive")
+        self.assertFalse(payload["canRequest"])
+
+    def test_superuser_is_allowed_when_portal_scope_is_missing(self) -> None:
+        """portal scope 설정이 누락되어도 superuser 비상 접근은 허용해야 합니다."""
+
+        AccessScope.objects.filter(key=ACCESS_SCOPE_PORTAL).delete()
+        self.user.is_superuser = True
+        self.user.save(update_fields=["is_superuser"])
+
+        payload = get_portal_access_payload(user=self.user)
+
+        self.assertTrue(payload["allowed"])
+        self.assertEqual(payload["reason"], "superuser_bypass")
+        self.assertEqual(payload["source"], "superuser_bypass")
+        self.assertEqual(payload["role"], "admin")
+
+    def test_portal_access_staff_without_capability_cannot_approve(self) -> None:
+        """is_staff만 있는 사용자는 포털 접근 승인 관리자가 아니어야 합니다."""
+
+        staff_user = self.manager
+        staff_user.is_staff = True
+        staff_user.save(update_fields=["is_staff"])
+        UserProfile.objects.filter(user=staff_user).update(role=UserProfile.Roles.VIEWER)
+
+        self.user.department = "OtherDept"
+        self.user.save(update_fields=["department"])
+        request_portal_access(user=self.user)
+        approval = UserAccess.objects.get(user=self.user, scope__key=ACCESS_SCOPE_PORTAL)
+
+        self.client.force_login(staff_user)
+        response = self.client.post(
+            reverse("account-portal-access-approvals"),
+            data='{"requestId": %d, "decision": "approve"}' % approval.id,
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        approval.refresh_from_db()
+        self.assertEqual(approval.status, UserAccess.Status.PENDING)
+
+    def test_access_management_lists_policy_allowed_user_and_revoke_blocks(self) -> None:
+        """권한 관리 목록은 정책 허용 사용자를 표시하고 명시 회수로 차단할 수 있어야 합니다."""
+
+        admin_user = self.manager
+        _grant_manage_access(admin_user)
+        self.user.department = "Dept"
+        self.user.save(update_fields=["department"])
+
+        self.client.force_login(admin_user)
+        list_response = self.client.get(reverse("account-access-users"), {"search": self.user.knox_id})
+        self.assertEqual(list_response.status_code, 200)
+        row = list_response.json()["results"][0]
+        self.assertEqual(row["user"]["id"], self.user.id)
+        self.assertTrue(row["access"]["allowed"])
+        self.assertEqual(row["access"]["source"], "policy_department")
+        self.assertIsNone(row["access"]["explicitStatus"])
+
+        revoke_response = self.client.post(
+            reverse("account-access-user-decision", kwargs={"user_id": self.user.id}),
+            data='{"action": "revoke", "reason": "운영 회수"}',
+            content_type="application/json",
+        )
+        self.assertEqual(revoke_response.status_code, 200)
+        self.assertEqual(revoke_response.json()["row"]["access"]["source"], "explicit_denied")
+
+        payload = get_portal_access_payload(user=self.user)
+        self.assertFalse(payload["allowed"])
+        self.assertEqual(payload["reason"], "denied")
+        self.assertEqual(UserAccess.objects.get(user=self.user, scope__key=ACCESS_SCOPE_PORTAL).status, UserAccess.Status.DENIED)
+        self.assertTrue(
+            AccessAuditLog.objects.filter(
+                action=AccessAuditLog.Actions.REVOKE,
+                target_user=self.user,
+                actor=admin_user,
+            ).exists()
+        )
+
+    def test_access_management_change_role_requires_explicit_role(self) -> None:
+        """change_role action은 정책 허용 사용자에게도 명시적인 role이 필요합니다."""
+
+        admin_user = self.manager
+        _grant_manage_access(admin_user)
+        self.client.force_login(admin_user)
+
+        response = self.client.post(
+            reverse("account-access-user-decision", kwargs={"user_id": self.user.id}),
+            data='{"action": "change_role"}',
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("role", response.json())
+        self.assertFalse(
+            UserAccess.objects.filter(user=self.user, scope__key=ACCESS_SCOPE_PORTAL).exists()
+        )
+
+    def test_access_management_approve_requires_pending_request(self) -> None:
+        """운영 승인 action은 pending 요청이 없으면 직접 부여로 동작하지 않아야 합니다."""
+
+        admin_user = self.manager
+        _grant_manage_access(admin_user)
+        self.client.force_login(admin_user)
+
+        response = self.client.post(
+            reverse("account-access-user-decision", kwargs={"user_id": self.user.id}),
+            data='{"action": "approve", "role": "viewer"}',
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"], "invalid_status_transition")
+        self.assertFalse(
+            UserAccess.objects.filter(user=self.user, scope__key=ACCESS_SCOPE_PORTAL).exists()
+        )
+
+    def test_access_management_fast_filters_only_exclude_superuser_bypass(self) -> None:
+        """명시 상태 필터는 capability 사용자를 포함하고 superuser만 제외해야 합니다."""
+
+        scope = AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL)
+        admin_user = self.manager
+        _grant_manage_access(admin_user)
+        User = get_user_model()
+        capability_user = User.objects.create_user(
+            sabun="S51000",
+            password="test-password",
+            knox_id="knox-51000",
+            department="Dept",
+        )
+        _grant_manage_access(capability_user)
+        UserAccess.objects.create(
+            user=capability_user,
+            scope=scope,
+            status=UserAccess.Status.PENDING,
+        )
+        UserAccess.objects.create(
+            user=self.user,
+            scope=scope,
+            status=UserAccess.Status.PENDING,
+        )
+        UserAccess.objects.create(
+            user=self.superuser,
+            scope=scope,
+            status=UserAccess.Status.DENIED,
+        )
+
+        self.client.force_login(admin_user)
+        pending_response = self.client.get(reverse("account-access-users"), {"status": "pending"})
+        denied_source_response = self.client.get(
+            reverse("account-access-users"),
+            {"source": "explicit_denied"},
+        )
+        bypass_source_response = self.client.get(
+            reverse("account-access-users"),
+            {"source": "superuser_bypass"},
+        )
+        legacy_bypass_source_response = self.client.get(
+            reverse("account-access-users"),
+            {"source": "admin"},
+        )
+
+        pending_ids = {row["user"]["id"] for row in pending_response.json()["results"]}
+        denied_ids = {row["user"]["id"] for row in denied_source_response.json()["results"]}
+        bypass_ids = {row["user"]["id"] for row in bypass_source_response.json()["results"]}
+        legacy_bypass_ids = {
+            row["user"]["id"] for row in legacy_bypass_source_response.json()["results"]
+        }
+        self.assertIn(self.user.id, pending_ids)
+        self.assertIn(capability_user.id, pending_ids)
+        self.assertNotIn(self.superuser.id, denied_ids)
+        self.assertIn(self.superuser.id, bypass_ids)
+        self.assertNotIn(self.user.id, bypass_ids)
+        self.assertNotIn(capability_user.id, bypass_ids)
+        self.assertEqual(legacy_bypass_ids, bypass_ids)
+
+    def test_profile_admin_without_capability_cannot_manage_or_bypass_access(self) -> None:
+        """프로필 admin 역할만으로는 권한 관리나 접근 제한 우회가 허용되지 않아야 합니다."""
+
+        UserProfile.objects.filter(user=self.manager).update(role=UserProfile.Roles.ADMIN)
+        UserAccess.objects.create(
+            user=self.manager,
+            scope=AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL),
+            status=UserAccess.Status.DENIED,
+        )
+        self.manager.refresh_from_db()
+
+        payload = get_portal_access_payload(user=self.manager)
+
+        self.assertFalse(can_manage_access(user=self.manager))
+        self.assertFalse(payload["allowed"])
+        self.assertFalse(payload["canManage"])
+        self.assertEqual(payload["source"], "explicit_denied")
+
+    def test_manage_access_capability_does_not_bypass_explicit_denial(self) -> None:
+        """권한 관리 capability 보유자도 자신의 명시적 차단을 우회하지 못해야 합니다."""
+
+        _grant_manage_access(self.manager)
+        UserAccess.objects.create(
+            user=self.manager,
+            scope=AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL),
+            status=UserAccess.Status.DENIED,
+        )
+
+        payload = get_portal_access_payload(user=self.manager)
+
+        self.assertTrue(can_manage_access(user=self.manager))
+        self.assertTrue(payload["canManage"])
+        self.assertFalse(payload["allowed"])
+        self.assertEqual(payload["source"], "explicit_denied")
+
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse("account-access-users"))
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["error"], "portal_access_required")
+        self.assertTrue(response.json()["portalAccess"]["canManage"])
+
+    def test_pending_access_remains_denied_when_department_policy_matches(self) -> None:
+        """승인 대기 상태는 부서 자동 허용 규칙보다 우선해 접근을 차단해야 합니다."""
+
+        UserAccess.objects.create(
+            user=self.user,
+            scope=AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL),
+            status=UserAccess.Status.PENDING,
+        )
+
+        payload = get_portal_access_payload(user=self.user)
+
+        self.assertTrue(payload["policyMatched"])
+        self.assertFalse(payload["allowed"])
+        self.assertEqual(payload["effectiveStatus"], "pending")
+        self.assertEqual(payload["source"], "explicit_pending")
+
+    def test_access_admin_mutations_require_json_content_type(self) -> None:
+        """브라우저 form Content-Type으로 권한과 정책을 변경할 수 없어야 합니다."""
+
+        scope = AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL)
+        admin_user = self.manager
+        _grant_manage_access(admin_user)
+        approval = UserAccess.objects.create(
+            user=self.user,
+            scope=scope,
+            status=UserAccess.Status.PENDING,
+        )
+        rule = AccessPolicyRule.objects.get(
+            scope=scope,
+            rule_type=AccessPolicyRule.RuleTypes.DEPARTMENT,
+            value="Dept",
+        )
+        self.client.force_login(admin_user)
+
+        approval_response = self.client.post(
+            reverse("account-portal-access-approvals"),
+            data='{"requestId": %d, "decision": "approve"}' % approval.id,
+            content_type="text/plain",
+        )
+        user_response = self.client.post(
+            reverse("account-access-user-decision", kwargs={"user_id": self.user.id}),
+            data='{"action": "grant"}',
+            content_type="application/x-www-form-urlencoded",
+        )
+        create_response = self.client.post(
+            reverse("account-access-policy-rules"),
+            data='{"ruleType": "department", "value": "FormDept"}',
+            content_type="text/plain",
+        )
+        patch_response = self.client.patch(
+            reverse("account-access-policy-rule-detail", kwargs={"rule_id": rule.id}),
+            data='{"role": "manager"}',
+            content_type="text/plain",
+        )
+
+        self.assertEqual(approval_response.status_code, 415)
+        self.assertEqual(user_response.status_code, 415)
+        self.assertEqual(create_response.status_code, 415)
+        self.assertEqual(patch_response.status_code, 415)
+        approval.refresh_from_db()
+        rule.refresh_from_db()
+        self.assertEqual(approval.status, UserAccess.Status.PENDING)
+        self.assertEqual(rule.role, "viewer")
+        self.assertFalse(AccessPolicyRule.objects.filter(value="FormDept").exists())
+
+    def test_access_management_users_paginates_default_list(self) -> None:
+        """권한 관리 기본 사용자 목록은 페이지 크기만큼만 응답해야 합니다."""
+
+        admin_user = self.manager
+        _grant_manage_access(admin_user)
+        User = get_user_model()
+        for index in range(25):
+            User.objects.create_user(
+                sabun=f"S51{index:03d}",
+                password="test-password",
+                knox_id=f"knox-51{index:03d}",
+                department="Dept",
+            )
+
+        self.client.force_login(admin_user)
+        response = self.client.get(reverse("account-access-users"), {"page_size": "5"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["results"]), 5)
+        self.assertEqual(payload["pagination"]["pageSize"], 5)
+        self.assertEqual(payload["pagination"]["total"], payload["summary"]["total"])
+        self.assertEqual(payload["summary"]["pageTotal"], 5)
+
+    def test_app_access_matrix_returns_allowed_denied_contract_without_roles(self) -> None:
+        """앱 권한 매트릭스는 role 없이 명시 권한과 자동 정책 결과를 반환해야 합니다."""
+
+        admin_user = self.manager
+        _grant_manage_access(admin_user)
+        appstore_scope = AccessScope.objects.get(key="appstore")
+        line_dashboard_scope = AccessScope.objects.get(key="line-dashboard")
+        UserAccess.objects.create(
+            user=self.user,
+            scope=appstore_scope,
+            department="Dept",
+            status=UserAccess.Status.ALLOWED,
+            role="member",
+        )
+        AccessPolicyRule.objects.create(
+            scope=line_dashboard_scope,
+            rule_type=AccessPolicyRule.RuleTypes.DEPARTMENT,
+            value="Dept",
+            role="viewer",
+        )
+
+        self.client.force_login(admin_user)
+        response = self.client.get(
+            reverse("account-access-matrix"),
+            {"search": self.user.knox_id, "page_size": 5},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["scopes"]), 13)
+        self.assertEqual(payload["pagination"]["total"], 1)
+        self.assertNotIn("defaultRole", payload["scopes"][0])
+        row = payload["results"][0]
+        self.assertEqual(row["user"]["id"], self.user.id)
+        self.assertEqual(row["accesses"]["appstore"]["source"], "explicit_allowed")
+        self.assertNotIn("role", row["accesses"]["appstore"])
+        self.assertNotIn("role", row["accesses"]["appstore"]["policy"])
+        self.assertEqual(row["accesses"]["line-dashboard"]["source"], "policy_department")
+        self.assertTrue(row["accesses"]["line-dashboard"]["allowed"])
+        self.assertNotIn("role", row["accesses"]["line-dashboard"])
+        self.assertEqual(row["accesses"]["observer"]["effectiveStatus"], "not_requested")
+
+    def test_app_access_matrix_requires_access_admin(self) -> None:
+        """일반 사용자는 앱 권한 매트릭스를 조회할 수 없어야 합니다."""
+
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("account-access-matrix"))
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_app_access_matrix_decision_updates_selected_app_scope(self) -> None:
+        """매트릭스의 수동 권한 변경은 선택한 앱 scope에만 저장되어야 합니다."""
+
+        admin_user = self.manager
+        _grant_manage_access(admin_user)
+        self.client.force_login(admin_user)
+
+        response = self.client.post(
+            reverse("account-access-user-decision", kwargs={"user_id": self.user.id}),
+            data='{"scope": "appstore", "action": "grant"}',
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        app_access = UserAccess.objects.get(user=self.user, scope__key="appstore")
+        self.assertEqual(app_access.status, UserAccess.Status.ALLOWED)
+        self.assertEqual(app_access.role, "viewer")
+        self.assertNotIn("role", response.json()["row"]["access"])
+        self.assertFalse(
+            UserAccess.objects.filter(user=self.user, scope__key=ACCESS_SCOPE_PORTAL).exists()
+        )
+
+    def test_app_access_decision_rejects_role_input_and_change_role(self) -> None:
+        """앱 scope는 role 입력과 change_role action을 허용하지 않아야 합니다."""
+
+        admin_user = self.manager
+        _grant_manage_access(admin_user)
+        self.client.force_login(admin_user)
+        endpoint = reverse("account-access-user-decision", kwargs={"user_id": self.user.id})
+
+        role_response = self.client.post(
+            endpoint,
+            data='{"scope": "appstore", "action": "grant", "role": "manager"}',
+            content_type="application/json",
+        )
+        change_role_response = self.client.post(
+            endpoint,
+            data='{"scope": "appstore", "action": "change_role", "role": "viewer"}',
+            content_type="application/json",
+        )
+
+        self.assertEqual(role_response.status_code, 400)
+        self.assertEqual(role_response.json()["error"], "app_role_not_supported")
+        self.assertEqual(change_role_response.status_code, 400)
+        self.assertEqual(change_role_response.json()["error"], "app_role_not_supported")
+        self.assertFalse(UserAccess.objects.filter(user=self.user, scope__key="appstore").exists())
+
+    def test_app_access_policy_rejects_role_and_omits_role_from_response(self) -> None:
+        """앱 자동 정책도 role 없이 allowed 정책으로만 관리되어야 합니다."""
+
+        admin_user = self.manager
+        _grant_manage_access(admin_user)
+        self.client.force_login(admin_user)
+        endpoint = reverse("account-access-policy-rules")
+
+        role_response = self.client.post(
+            endpoint,
+            data='{"scope":"appstore","ruleType":"department","value":"Role Dept","role":"manager"}',
+            content_type="application/json",
+        )
+        create_response = self.client.post(
+            endpoint,
+            data='{"scope":"appstore","ruleType":"department","value":"Allowed Dept"}',
+            content_type="application/json",
+        )
+
+        self.assertEqual(role_response.status_code, 400)
+        self.assertEqual(role_response.json()["error"], "app_role_not_supported")
+        self.assertEqual(create_response.status_code, 201)
+        self.assertNotIn("role", create_response.json()["policyRule"])
+        rule = AccessPolicyRule.objects.get(scope__key="appstore", value="Allowed Dept")
+        self.assertEqual(rule.role, "viewer")
+
+    def test_access_management_users_combined_status_source_filter_requires_both(self) -> None:
+        """권한 관리 복합 필터는 status와 source를 모두 만족하는 사용자만 반환해야 합니다."""
+
+        admin_user = self.manager
+        _grant_manage_access(admin_user)
+        User = get_user_model()
+        pending_user = User.objects.create_user(
+            sabun="S52000",
+            password="test-password",
+            knox_id="knox-52000",
+            department="OtherDept",
+        )
+        UserAccess.objects.create(
+            user=pending_user,
+            scope=AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL),
+            department="OtherDept",
+            status=UserAccess.Status.PENDING,
+        )
+
+        self.client.force_login(admin_user)
+        impossible_response = self.client.get(
+            reverse("account-access-users"),
+            {"status": "pending", "source": "policy_department"},
+        )
+        self.assertEqual(impossible_response.status_code, 200)
+        self.assertEqual(impossible_response.json()["results"], [])
+
+        policy_allowed_response = self.client.get(
+            reverse("account-access-users"),
+            {"status": "allowed", "source": "policy_department"},
+        )
+        self.assertEqual(policy_allowed_response.status_code, 200)
+        self.assertIn(self.user.id, {row["user"]["id"] for row in policy_allowed_response.json()["results"]})
+        self.assertNotIn(pending_user.id, {row["user"]["id"] for row in policy_allowed_response.json()["results"]})
+
+    def test_access_management_users_inactive_scope_uses_effective_status_filter(self) -> None:
+        """비활성 scope에서는 명시 상태 fast filter보다 최종 inactive 판정을 우선해야 합니다."""
+
+        admin_user = self.manager
+        _grant_manage_access(admin_user)
+        scope = AccessScope.objects.get(key="appstore")
+        UserAccess.objects.create(
+            user=self.user,
+            scope=scope,
+            department=self.user.department,
+            status=UserAccess.Status.DENIED,
+            reason="운영 차단",
+        )
+        scope.is_active = False
+        scope.save(update_fields=["is_active"])
+
+        self.client.force_login(admin_user)
+        denied_response = self.client.get(
+            reverse("account-access-users"),
+            {"scope": scope.key, "status": "denied"},
+        )
+        explicit_denied_response = self.client.get(
+            reverse("account-access-users"),
+            {"scope": scope.key, "source": "explicit_denied"},
+        )
+        inactive_response = self.client.get(
+            reverse("account-access-users"),
+            {"scope": scope.key, "status": "inactive"},
+        )
+
+        self.assertEqual(denied_response.status_code, 200)
+        self.assertEqual(explicit_denied_response.status_code, 200)
+        self.assertEqual(inactive_response.status_code, 200)
+        self.assertNotIn(self.user.id, {row["user"]["id"] for row in denied_response.json()["results"]})
+        self.assertNotIn(self.user.id, {row["user"]["id"] for row in explicit_denied_response.json()["results"]})
+        self.assertIn(self.user.id, {row["user"]["id"] for row in inactive_response.json()["results"]})
+
+    def test_access_management_reset_to_policy_restores_policy_allowed(self) -> None:
+        """명시 차단을 정책 기준으로 복귀하면 부서 정책 허용이 다시 적용되어야 합니다."""
+
+        admin_user = self.manager
+        _grant_manage_access(admin_user)
+        scope = AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL)
+        self.user.department = "Dept"
+        self.user.save(update_fields=["department"])
+        UserAccess.objects.create(
+            user=self.user,
+            scope=scope,
+            department="Dept",
+            status=UserAccess.Status.DENIED,
+            reason="임시 차단",
+        )
+
+        self.client.force_login(admin_user)
+        response = self.client.post(
+            reverse("account-access-user-decision", kwargs={"user_id": self.user.id}),
+            data='{"action": "reset_to_policy"}',
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["row"]["access"]["source"], "policy_department")
+        self.assertFalse(UserAccess.objects.filter(user=self.user, scope=scope).exists())
+        self.assertTrue(get_portal_access_payload(user=self.user)["allowed"])
+        self.assertTrue(
+            AccessAuditLog.objects.filter(
+                action=AccessAuditLog.Actions.RESET_TO_POLICY,
+                target_user=self.user,
+                actor=admin_user,
+            ).exists()
+        )
+
+    def test_access_policy_rule_management_crud_and_audit_log(self) -> None:
+        """관리자는 기본 허용 정책 규칙을 생성, 수정, 삭제하고 감사 로그를 남길 수 있어야 합니다."""
+
+        admin_user = self.manager
+        _grant_manage_access(admin_user)
+        self.client.force_login(admin_user)
+
+        create_response = self.client.post(
+            reverse("account-access-policy-rules"),
+            data='{"ruleType": "department", "value": "NewDept", "role": "member", "isActive": true}',
+            content_type="application/json",
+        )
+        self.assertEqual(create_response.status_code, 201)
+        rule_id = create_response.json()["policyRule"]["id"]
+        self.assertEqual(create_response.json()["policyRule"]["role"], "member")
+
+        patch_response = self.client.patch(
+            reverse("account-access-policy-rule-detail", kwargs={"rule_id": rule_id}),
+            data='{"isActive": false, "role": "viewer"}',
+            content_type="application/json",
+        )
+        self.assertEqual(patch_response.status_code, 200)
+        self.assertFalse(patch_response.json()["policyRule"]["isActive"])
+
+        list_response = self.client.get(reverse("account-access-policy-rules"))
+        self.assertEqual(list_response.status_code, 200)
+        self.assertIn(rule_id, {row["id"] for row in list_response.json()["results"]})
+
+        delete_response = self.client.delete(
+            reverse("account-access-policy-rule-detail", kwargs={"rule_id": rule_id})
+        )
+        self.assertEqual(delete_response.status_code, 200)
+        self.assertFalse(AccessPolicyRule.objects.filter(id=rule_id).exists())
+        self.assertTrue(
+            AccessAuditLog.objects.filter(
+                action=AccessAuditLog.Actions.POLICY_CREATE,
+                actor=admin_user,
+            ).exists()
+        )
+        self.assertTrue(
+            AccessAuditLog.objects.filter(
+                action=AccessAuditLog.Actions.POLICY_UPDATE,
+                actor=admin_user,
+            ).exists()
+        )
+        self.assertTrue(
+            AccessAuditLog.objects.filter(
+                action=AccessAuditLog.Actions.POLICY_DELETE,
+                actor=admin_user,
+            ).exists()
+        )
+        audit_response = self.client.get(
+            reverse("account-access-audit-logs"),
+            {"action": AccessAuditLog.Actions.POLICY_DELETE},
+        )
+        self.assertEqual(audit_response.status_code, 200)
+        self.assertEqual(audit_response.json()["results"][0]["policyRule"]["value"], "NewDept")
+
+    def test_access_policy_rule_api_rejects_non_department_types(self) -> None:
+        """정책 API는 부서 이외의 적용 기준을 거부해야 합니다."""
+
+        admin_user = self.manager
+        _grant_manage_access(admin_user)
+        self.client.force_login(admin_user)
+
+        for rule_type in ("profile_role", "user_sdwt_prod_role", "authenticated"):
+            with self.subTest(rule_type=rule_type):
+                response = self.client.post(
+                    reverse("account-access-policy-rules"),
+                    data={"ruleType": rule_type, "value": "invalid", "role": "viewer"},
+                    content_type="application/json",
+                )
+
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("ruleType", response.json())
+
+        self.assertFalse(AccessPolicyRule.objects.filter(value="invalid").exists())
+
+    def test_access_policy_mutations_roll_back_when_audit_creation_fails(self) -> None:
+        """정책 생성, 수정, 삭제는 감사 로그 실패 시 모두 원래 상태로 복구되어야 합니다."""
+
+        admin_user = self.manager
+        _grant_manage_access(admin_user)
+        admin_user.refresh_from_db()
+
+        with patch(
+            "api.account.services.access_control._create_access_audit_log",
+            side_effect=RuntimeError("audit failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "audit failed"):
+                create_access_policy_rule(
+                    actor=admin_user,
+                    scope_key=ACCESS_SCOPE_PORTAL,
+                    rule_type=AccessPolicyRule.RuleTypes.DEPARTMENT,
+                    value="RollbackCreateDept",
+                    role="viewer",
+                    is_active=True,
+                )
+        self.assertFalse(AccessPolicyRule.objects.filter(value="RollbackCreateDept").exists())
+
+        scope = AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL)
+        rule = AccessPolicyRule.objects.create(
+            scope=scope,
+            rule_type=AccessPolicyRule.RuleTypes.DEPARTMENT,
+            value="RollbackMutationDept",
+            role="viewer",
+        )
+        with patch(
+            "api.account.services.access_control._create_access_audit_log",
+            side_effect=RuntimeError("audit failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "audit failed"):
+                update_access_policy_rule(
+                    actor=admin_user,
+                    rule_id=rule.id,
+                    scope_key=None,
+                    rule_type=None,
+                    value=None,
+                    role="manager",
+                    is_active=None,
+                )
+        rule.refresh_from_db()
+        self.assertEqual(rule.role, "viewer")
+
+        with patch(
+            "api.account.services.access_control._create_access_audit_log",
+            side_effect=RuntimeError("audit failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "audit failed"):
+                delete_access_policy_rule(actor=admin_user, rule_id=rule.id)
+        self.assertTrue(AccessPolicyRule.objects.filter(id=rule.id).exists())
+
+    def test_access_audit_api_prefers_event_policy_snapshot(self) -> None:
+        """과거 정책 감사 응답은 이후 수정된 live 정책 값이 아니라 당시 snapshot을 반환해야 합니다."""
+
+        admin_user = self.manager
+        _grant_manage_access(admin_user)
+        self.client.force_login(admin_user)
+        create_response = self.client.post(
+            reverse("account-access-policy-rules"),
+            data='{"ruleType": "department", "value": "SnapshotBefore", "role": "viewer"}',
+            content_type="application/json",
+        )
+        rule_id = create_response.json()["policyRule"]["id"]
+        patch_response = self.client.patch(
+            reverse("account-access-policy-rule-detail", kwargs={"rule_id": rule_id}),
+            data='{"value": "SnapshotAfter", "role": "manager"}',
+            content_type="application/json",
+        )
+        self.assertEqual(patch_response.status_code, 200)
+
+        audit_response = self.client.get(
+            reverse("account-access-audit-logs"),
+            {"action": AccessAuditLog.Actions.POLICY_CREATE},
+        )
+        matching_log = next(
+            row for row in audit_response.json()["results"] if row["policyRule"]["id"] == rule_id
+        )
+        self.assertEqual(matching_log["policyRule"]["value"], "SnapshotBefore")
+        self.assertEqual(matching_log["policyRule"]["role"], "viewer")
+
+    def test_access_admin_direct_policy_and_user_access_changes_are_audited(self) -> None:
+        """superuser의 Django Admin 직접 변경도 접근 권한 감사 로그에 기록되어야 합니다."""
+
+        from django.contrib.admin.sites import AdminSite
+        from django.test import RequestFactory
+
+        from api.account.admin import AccessPolicyRuleAdmin, UserAccessAdmin
+
+        admin_user = self.superuser
+        request = RequestFactory().post("/admin/")
+        request.user = admin_user
+        scope = AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL)
+
+        policy_admin = AccessPolicyRuleAdmin(AccessPolicyRule, AdminSite())
+        rule = AccessPolicyRule(
+            scope=scope,
+            rule_type=AccessPolicyRule.RuleTypes.DEPARTMENT,
+            value="AdminDept",
+            role="member",
+        )
+        policy_admin.save_model(request, rule, form=None, change=False)
+
+        self.assertTrue(
+            AccessAuditLog.objects.filter(
+                action=AccessAuditLog.Actions.POLICY_CREATE,
+                actor=admin_user,
+                policy_rule=rule,
+            ).exists()
+        )
+
+        user_access = UserAccess.objects.create(
+            user=self.user,
+            scope=scope,
+            department=self.user.department,
+            status=UserAccess.Status.PENDING,
+            role="viewer",
+        )
+        user_access.status = UserAccess.Status.ALLOWED
+        user_access.role = "member"
+        user_access.decided_by = admin_user
+
+        user_access_admin = UserAccessAdmin(UserAccess, AdminSite())
+        user_access_admin.save_model(request, user_access, form=None, change=True)
+
+        self.assertTrue(
+            AccessAuditLog.objects.filter(
+                action=AccessAuditLog.Actions.GRANT,
+                actor=admin_user,
+                target_user=self.user,
+                after__status=UserAccess.Status.ALLOWED,
+            ).exists()
+        )
+
+    def test_access_scope_admin_protects_system_scopes_and_audits_custom_scope_changes(self) -> None:
+        """Admin은 시스템 scope 식별자와 삭제를 막고 사용자 정의 scope 변경을 기록해야 합니다."""
+
+        from django.contrib.admin.sites import AdminSite
+        from django.test import RequestFactory
+
+        from api.account.admin import AccessScopeAdmin
+
+        request = RequestFactory().post("/admin/")
+        request.user = self.superuser
+        scope_admin = AccessScopeAdmin(AccessScope, AdminSite())
+        portal_scope = AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL)
+
+        self.assertIn("key", scope_admin.get_readonly_fields(request, portal_scope))
+        self.assertIn("scope_type", scope_admin.get_readonly_fields(request, portal_scope))
+        self.assertFalse(scope_admin.has_delete_permission(request, portal_scope))
+        portal_scope.key = "renamed-portal"
+        with self.assertRaises(ValidationError):
+            scope_admin.save_model(request, portal_scope, form=None, change=True)
+        portal_scope.refresh_from_db()
+        self.assertEqual(portal_scope.key, ACCESS_SCOPE_PORTAL)
+        with self.assertRaises(PermissionDenied):
+            scope_admin.delete_model(request, portal_scope)
+
+        appstore_scope = AccessScope.objects.get(key="appstore")
+        self.assertIn("key", scope_admin.get_readonly_fields(request, appstore_scope))
+        self.assertIn("scope_type", scope_admin.get_readonly_fields(request, appstore_scope))
+        self.assertFalse(scope_admin.has_delete_permission(request, appstore_scope))
+        appstore_scope.scope_type = AccessScope.ScopeTypes.FEATURE
+        with self.assertRaises(ValidationError):
+            scope_admin.save_model(request, appstore_scope, form=None, change=True)
+        appstore_scope.refresh_from_db()
+        self.assertEqual(appstore_scope.scope_type, AccessScope.ScopeTypes.APP)
+        with self.assertRaises(PermissionDenied):
+            scope_admin.delete_model(request, appstore_scope)
+
+        app_scope = AccessScope(
+            key="audited-app",
+            name="Audited App",
+            scope_type=AccessScope.ScopeTypes.APP,
+            requestable=False,
+        )
+        scope_admin.save_model(request, app_scope, form=None, change=False)
+        app_scope.name = "Audited App Updated"
+        scope_admin.save_model(request, app_scope, form=None, change=True)
+        app_scope_id = app_scope.id
+        scope_admin.delete_model(request, app_scope)
+
+        self.assertFalse(AccessScope.objects.filter(id=app_scope_id).exists())
+        self.assertTrue(
+            AccessAuditLog.objects.filter(
+                action=AccessAuditLog.Actions.SCOPE_CREATE,
+                before={},
+                after__key="audited-app",
+            ).exists()
+        )
+        self.assertTrue(
+            AccessAuditLog.objects.filter(
+                action=AccessAuditLog.Actions.SCOPE_UPDATE,
+                before__name="Audited App",
+                after__name="Audited App Updated",
+            ).exists()
+        )
+        self.assertTrue(
+            AccessAuditLog.objects.filter(
+                action=AccessAuditLog.Actions.SCOPE_DELETE,
+                before__key="audited-app",
+            ).exists()
+        )
+
+    def test_access_audit_log_admin_is_fully_read_only(self) -> None:
+        """Django Admin에서 감사 로그를 추가, 수정, 삭제할 수 없어야 합니다."""
+
+        from django.contrib.admin.sites import AdminSite
+        from django.test import RequestFactory
+
+        from api.account.admin import AccessAuditLogAdmin
+
+        request = RequestFactory().get("/admin/")
+        request.user = self.superuser
+        audit_admin = AccessAuditLogAdmin(AccessAuditLog, AdminSite())
+
+        self.assertFalse(audit_admin.has_add_permission(request))
+        self.assertFalse(audit_admin.has_change_permission(request))
+        self.assertFalse(audit_admin.has_delete_permission(request))
+        self.assertEqual(
+            set(audit_admin.readonly_fields),
+            {
+                "id",
+                "scope",
+                "actor",
+                "target_user",
+                "policy_rule",
+                "action",
+                "before",
+                "after",
+                "reason",
+                "created_at",
+            },
+        )
+
+    def test_access_audit_log_endpoint_requires_access_admin(self) -> None:
+        """감사 로그는 권한 관리자에게 전체 scope를 기본 제공하고 scope 필터를 지원해야 합니다."""
+
+        self.client.force_login(self.user)
+        forbidden_response = self.client.get(reverse("account-access-audit-logs"))
+        self.assertEqual(forbidden_response.status_code, 403)
+
+        admin_user = self.manager
+        _grant_manage_access(admin_user)
+        AccessAuditLog.objects.create(
+            scope=AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL),
+            actor=admin_user,
+            target_user=self.user,
+            action=AccessAuditLog.Actions.GRANT,
+            after={"status": "allowed"},
+        )
+        AccessAuditLog.objects.create(
+            scope=AccessScope.objects.get(key="appstore"),
+            actor=admin_user,
+            target_user=self.user,
+            action=AccessAuditLog.Actions.REVOKE,
+            after={"status": "denied"},
+        )
+        AccessAuditLog.objects.create(
+            scope=None,
+            actor=self.superuser,
+            target_user=admin_user,
+            action=AccessAuditLog.Actions.ACCESS_MANAGER_GRANT,
+            after={"canManageAccess": True},
+        )
+
+        self.client.force_login(admin_user)
+        response = self.client.get(reverse("account-access-audit-logs"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["pagination"]["total"], 3)
+        self.assertEqual(
+            {row["action"] for row in response.json()["results"]},
+            {
+                AccessAuditLog.Actions.GRANT,
+                AccessAuditLog.Actions.REVOKE,
+                AccessAuditLog.Actions.ACCESS_MANAGER_GRANT,
+            },
+        )
+
+        portal_response = self.client.get(
+            reverse("account-access-audit-logs"),
+            {"scope": ACCESS_SCOPE_PORTAL},
+        )
+        self.assertEqual(portal_response.status_code, 200)
+        self.assertEqual(portal_response.json()["pagination"]["total"], 1)
+        self.assertEqual(portal_response.json()["results"][0]["action"], AccessAuditLog.Actions.GRANT)
+
+    def test_access_policy_rule_only_accepts_department_type(self) -> None:
+        """모델 검증과 DB 제약은 부서 이외의 정책 유형을 차단해야 합니다."""
+
+        scope = AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL)
+        self.assertEqual(AccessPolicyRule.RuleTypes.values, ["department"])
+
+        with self.assertRaises(ValidationError):
+            AccessPolicyRule(
+                scope=scope,
+                rule_type="profile_role",
+                value="viewer",
+            ).full_clean()
+
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                AccessPolicyRule.objects.create(
+                    scope=scope,
+                    rule_type="authenticated",
+                    value="*",
+                )
+
+    def test_access_policy_rule_requires_department_value(self) -> None:
+        """부서 정책에는 비교할 부서명이 필요합니다."""
+
+        scope = AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL)
+        rule = AccessPolicyRule(
+            scope=scope,
+            rule_type=AccessPolicyRule.RuleTypes.DEPARTMENT,
+            value="",
+        )
+
+        with self.assertRaises(ValidationError):
+            rule.full_clean()
+
+    def test_access_policy_rule_normalizes_value_and_rejects_semantic_duplicates(self) -> None:
+        """정책 값은 공백을 제거하고 대소문자가 다른 의미상 중복도 차단해야 합니다."""
+
+        scope = AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL)
+        normalized_rule = AccessPolicyRule(
+            scope=scope,
+            rule_type=AccessPolicyRule.RuleTypes.DEPARTMENT,
+            value="  New Department  ",
+        )
+        normalized_rule.full_clean()
+        self.assertEqual(normalized_rule.value, "New Department")
+
+        AccessPolicyRule.objects.create(
+            scope=scope,
+            rule_type=AccessPolicyRule.RuleTypes.DEPARTMENT,
+            value="Case Department",
+        )
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                AccessPolicyRule.objects.create(
+                    scope=scope,
+                    rule_type=AccessPolicyRule.RuleTypes.DEPARTMENT,
+                    value=" case department ",
+                )
+
+    def test_access_permission_integrity_command_reports_group_misconfiguration(self) -> None:
+        """운영 점검 명령은 정상 상태를 통과시키고 관리자 그룹 오류를 실패로 보고해야 합니다."""
+
+        output = StringIO()
+        call_command("check_access_permission_integrity", stdout=output)
+        self.assertIn("무결성 점검을 통과", output.getvalue())
+
+        app_label, codename = MANAGE_ACCESS_PERMISSION.split(".", maxsplit=1)
+        permission = Permission.objects.get(
+            content_type__app_label=app_label,
+            codename=codename,
+        )
+        Group.objects.get(name=ACCESS_MANAGERS_GROUP_NAME).permissions.remove(permission)
+
+        with self.assertRaises(CommandError):
+            call_command("check_access_permission_integrity", stdout=StringIO(), stderr=StringIO())
 
     def test_auth_me_does_not_create_access_row_for_current_affiliation(self) -> None:
         """auth_me 호출이 현재 소속 접근 권한 행을 백필하지 않는지 확인합니다."""

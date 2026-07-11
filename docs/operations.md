@@ -97,6 +97,7 @@ make makemigrations-check
 
 | Command | 설명 |
 | --- | --- |
+| `check_access_permission_integrity` | 배포 전 접근 권한 scope, 정책, 사용자 권한, 관리자 그룹 정합성 점검 |
 | `ensure_dev_database` | dev 환경에서 Django 기본 DB와 필수 PostgreSQL extension 생성 |
 | `process_email_outbox` | EmailOutbox RAG 작업 처리 |
 | `seed_dummy_emails` | 로컬 개발용 더미 Email 데이터 생성 |
@@ -117,6 +118,8 @@ make makemigrations-check
 실행 예시:
 
 ```bash
+docker compose -f docker-compose.dev.yml exec -T api python manage.py migrate --noinput
+docker compose -f docker-compose.dev.yml exec -T api python manage.py check_access_permission_integrity
 docker compose -f docker-compose.dev.yml exec -T api python manage.py ensure_dev_database
 docker compose -f docker-compose.dev.yml exec -T api python manage.py process_email_outbox
 docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_dummy_emails
@@ -134,6 +137,8 @@ docker compose -f docker-compose.dev.yml exec -T api python manage.py seed_drone
 docker compose -f docker-compose.dev.yml exec -T api python manage.py prune_drone_sop
 docker compose -f docker-compose.dev.yml exec -T api python manage.py purge_drone_sop --dry-run
 ```
+
+서버의 account migration이 `0001_initial`까지 적용된 상태에서 `account.0002_access_permissions`를 적용하면 기존 사용자의 활성 앱 누락 권한을 보충합니다. 적용 후 `check_access_permission_integrity`를 실행하며, migration 적용 이후 생성된 신규 사용자는 자동 허용하지 않습니다.
 
 로컬 dev 로그인 사용자는 `env/api.dev.env`의 `DEV_AUTO_AFFILIATION_ALLOWED=1` 설정으로 기본 소속이 보장됩니다.
 OIDC/운영 환경에서는 자동 소속 변경을 실행하지 않습니다.

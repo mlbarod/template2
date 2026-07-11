@@ -121,7 +121,7 @@ INSTALLED_APPS = [
     "api.data_movement.station_master",
     "api.drone",
     "api.emails",
-    "api.fdc_trend",
+    "api.l0_spider",
     "api.health",
     "api.l3_spider",
     "api.management",
@@ -154,6 +154,7 @@ MIDDLEWARE = [
     # 사용자 활동 로깅 (커스텀)
     "api.common.services.middleware.ActivityLoggingMiddleware",
     "api.common.services.middleware.KnoxIdRequiredMiddleware",
+    "api.common.services.middleware.AccessRequiredMiddleware",
 ]
 
 
@@ -312,9 +313,10 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "api.auth.services.authentication.CsrfExemptSessionAuthentication",
-        "rest_framework.authentication.BasicAuthentication",
+        "api.auth.services.authentication.PortalAccessBasicAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
+        "api.common.permissions.PortalAccessRequiredPermission",
         "rest_framework.permissions.IsAuthenticatedOrReadOnly",
     ],
     "DEFAULT_SCHEMA_CLASS": "api.common.services.schema.FeatureAutoSchema",

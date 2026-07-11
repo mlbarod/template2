@@ -1,6 +1,6 @@
 # =============================================================================
-# 모듈 설명: 활동 로그 기록/knox_id 검증 미들웨어를 제공합니다.
-# - 주요 클래스: ActivityLoggingMiddleware, KnoxIdRequiredMiddleware
+# 모듈 설명: 활동 로그 기록/knox_id/포털 접근 검증 미들웨어를 제공합니다.
+# - 주요 클래스: ActivityLoggingMiddleware, KnoxIdRequiredMiddleware, AccessRequiredMiddleware
 # - 불변 조건: 활동 로그 저장은 activity 서비스 파사드를 통해 수행합니다.
 # =============================================================================
 
@@ -19,6 +19,13 @@ from typing import Any, Dict, Iterable, Mapping, Optional
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.utils.deprecation import MiddlewareMixin  # Django 미들웨어 호환성 클래스
+
+from api.common.permissions import (
+    get_request_app_access_payload,
+    get_request_portal_access_payload,
+    is_portal_access_protected_path,
+    resolve_app_access_scope_for_path,
+)
 
 from .request_helpers import _load_json_bytes
 
@@ -520,3 +527,62 @@ class KnoxIdRequiredMiddleware(MiddlewareMixin):
         # 3) 프리픽스 매칭
         # -----------------------------------------------------------------------------
         return any(path.startswith(prefix) for prefix in self.EXEMPT_PATH_PREFIXES)
+
+
+class AccessRequiredMiddleware(MiddlewareMixin):
+    """인증 사용자의 portal/app scope 접근 상태를 API 레벨에서 검사합니다."""
+
+    def process_request(self, request: HttpRequest) -> HttpResponse | None:
+        """포털과 앱 접근 승인 상태를 검사하고 차단 시 403을 반환합니다.
+
+        입력:
+        - 요청: Django HttpRequest
+
+        반환:
+        - HttpResponse | None: 차단 시 JsonResponse, 통과 시 None
+
+        부작용:
+        - 없음
+
+        오류:
+        - 403: 인증 사용자이지만 포털 접근이 허용되지 않을 때
+        """
+
+        path = getattr(request, "path", "") or ""
+        if not is_portal_access_protected_path(path):
+            return None
+
+        user = getattr(request, "user", None)
+        if not user or not getattr(user, "is_authenticated", False):
+            return None
+
+        portal_access = get_request_portal_access_payload(request=request, user=user)
+        if not portal_access.get("allowed"):
+            return JsonResponse(
+                {
+                    "error": "portal_access_required",
+                    "portalAccess": portal_access,
+                },
+                status=403,
+            )
+
+        scope_key = resolve_app_access_scope_for_path(path)
+        if scope_key is None:
+            return None
+
+        app_access = get_request_app_access_payload(
+            request=request,
+            user=user,
+            scope_key=scope_key,
+        )
+        if app_access.get("allowed"):
+            return None
+
+        return JsonResponse(
+            {
+                "error": "app_access_required",
+                "scope": scope_key,
+                "appAccess": app_access,
+            },
+            status=403,
+        )

@@ -20,12 +20,26 @@ from django.utils import timezone
 from api.activity.models import ActivityLog, ExternalAppAccessDailyStat, ExternalAppUsageSyncState
 
 
+def _allow_test_scope_access(test_case: TestCase) -> None:
+    """도메인 endpoint 테스트에서 공통 portal/app 권한 경계를 격리합니다."""
+
+    for service_name in ("get_portal_access_payload", "get_access_payload"):
+        patcher = patch(
+            f"api.account.services.{service_name}",
+            return_value={"allowed": True},
+        )
+        patcher.start()
+        test_case.addCleanup(patcher.stop)
+
+
 @override_settings(EXTERNAL_APP_USAGE_API_URLS="[]")
 class ActivityLogEndpointTests(TestCase):
     """Activity 로그 조회 엔드포인트 테스트 모음."""
 
     def setUp(self) -> None:
         """테스트에 사용할 기본 사용자 계정을 생성합니다."""
+        _allow_test_scope_access(self)
+
         # -----------------------------------------------------------------------------
         # 1) 기본 사용자 생성
         # -----------------------------------------------------------------------------

@@ -95,17 +95,17 @@ const EMAILS_GROUP_BASE = Object.freeze({
   items: EMAIL_NAV_ITEMS,
 })
 
-const FDC_TREND_GROUP = Object.freeze({
-  key: "fdc-trend",
-  title: "L0 Spider",
-  url: "/fdc_trend",
+const L0_SPIDER_GROUP = Object.freeze({
+  key: "l0-spider",
+  title: "Spider",
+  url: "/spider",
   icon: Activity,
   isActive: true,
   scope: "global",
   items: [
     {
-      title: "이상 FDC Trend",
-      url: "/fdc_trend",
+      title: "Spider",
+      url: "/spider",
       scope: "global",
     },
   ],
@@ -121,6 +121,12 @@ const SETTINGS_NAV_ITEMS = Object.freeze([
     title: "Members",
     url: "/settings/members",
     scope: "global",
+  },
+  {
+    title: "Permissions",
+    url: "/settings/permissions",
+    scope: "global",
+    accessAdminOnly: true,
   },
 ])
 
@@ -156,7 +162,7 @@ export const NAVIGATION_CONFIG = Object.freeze({
     email: "m@example.com",
     avatar: "/avatars/shadcn.jpg",
   },
-  navMain: [LINE_DASHBOARD_GROUP, FDC_TREND_GROUP, EMAILS_GROUP_BASE, SETTINGS_GROUP],
+  navMain: [LINE_DASHBOARD_GROUP, L0_SPIDER_GROUP, EMAILS_GROUP_BASE, SETTINGS_GROUP],
   projects: [
     // 예시: 프로젝트 그룹
     // {
@@ -167,24 +173,29 @@ export const NAVIGATION_CONFIG = Object.freeze({
   ],
 })
 
-function filterSuperuserItems(items, includeSuperuser) {
+function filterRestrictedItems(items, includeSuperuser, canManageAccess) {
   return (Array.isArray(items) ? items : [])
-    .filter((item) => includeSuperuser || !item?.superuserOnly)
+    .filter((item) => (includeSuperuser || !item?.superuserOnly) && (canManageAccess || !item?.accessAdminOnly))
     .map((item) => {
       if (!Array.isArray(item?.items)) return item
       return {
         ...item,
-        items: filterSuperuserItems(item.items, includeSuperuser),
+        items: filterRestrictedItems(item.items, includeSuperuser, canManageAccess),
       }
     })
 }
 
-export function buildNavigationConfig({ mailbox, disableEmailMembers = false, includeSuperuser = false } = {}) {
+export function buildNavigationConfig({
+  mailbox,
+  disableEmailMembers = false,
+  includeSuperuser = false,
+  canManageAccess = false,
+} = {}) {
   const trimmedMailbox = normalizeMailbox(mailbox)
   if (!trimmedMailbox) {
     return {
       ...NAVIGATION_CONFIG,
-      navMain: filterSuperuserItems(NAVIGATION_CONFIG.navMain, includeSuperuser),
+      navMain: filterRestrictedItems(NAVIGATION_CONFIG.navMain, includeSuperuser, canManageAccess),
     }
   }
 
@@ -206,11 +217,12 @@ export function buildNavigationConfig({ mailbox, disableEmailMembers = false, in
 
   return {
     ...NAVIGATION_CONFIG,
-    navMain: filterSuperuserItems(
+    navMain: filterRestrictedItems(
       NAVIGATION_CONFIG.navMain.map((item) =>
         item?.key === EMAILS_GROUP_BASE.key ? emailsGroup : item,
       ),
       includeSuperuser,
+      canManageAccess,
     ),
   }
 }
