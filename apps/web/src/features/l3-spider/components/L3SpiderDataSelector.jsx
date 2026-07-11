@@ -277,7 +277,7 @@ export function L3SpiderDataSelector({
   }
 
   const selectorCards = (
-    <div className="grid h-[320px] grid-cols-3 gap-4">
+    <div className="grid h-[320px] grid-cols-[9rem_9rem_9rem] gap-4">
       <MultiSelectColumnCard
         title={hasLineGroups ? "Line Name" : "Line ID"}
         badge={`${lineItemsForPanel.length}`}
@@ -413,7 +413,7 @@ export function L3SpiderDataSelector({
       <L3SpiderGuideDialog guideKey={guideDocumentKey} onGuideKeyChange={setGuideDocumentKey} />
       {showBody ? (
         rightContent ? (
-          <div className="flex min-h-0 items-stretch gap-4 border-t px-6 py-2">
+          <div className="flex min-h-0 items-stretch gap-4 overflow-x-auto border-t px-6 py-2">
             <div className="shrink-0">
               {selectorCards}
             </div>

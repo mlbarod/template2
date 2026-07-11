@@ -9,47 +9,61 @@ import { cn } from "@/lib/utils"
 
 import { sortedValues } from "../utils/selection"
 
-function SelectRow({ label, hint, timeHint, selected, onClick }) {
+function SelectRow({ label, hint, timeHint, selected, onClick, showFullLabel = false }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "flex h-9 w-full min-w-0 items-center justify-between gap-3 rounded-md border border-transparent px-3 text-left transition",
+        "flex h-9 w-full min-w-0 items-center gap-3 rounded-md border border-transparent px-3 text-left transition",
         "hover:border-border hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        showFullLabel && "min-w-max",
         selected && "border-primary/30 bg-primary/10 text-primary shadow-sm",
       )}
     >
       <span
         className={cn(
-          "min-w-0 flex-1 truncate text-[13px] font-medium leading-5 text-foreground",
+          "text-[13px] font-medium leading-5 text-foreground",
+          showFullLabel ? "shrink-0 whitespace-nowrap" : "min-w-0 flex-1 truncate",
           selected && "text-primary",
         )}
+        title={showFullLabel ? label : undefined}
       >
         {label}
       </span>
-      {hint != null && (
-        <span className="shrink-0 text-[11px] text-muted-foreground">
-          {hint}
-        </span>
-      )}
-      {timeHint != null && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
-              <Clock className="size-3" aria-hidden="true" />
-              {timeHint}
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>Last TKin Time</TooltipContent>
-        </Tooltip>
-      )}
-      <ChevronRight className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <span className="ml-auto flex shrink-0 items-center gap-3">
+        {hint != null && (
+          <span className="shrink-0 text-[11px] text-muted-foreground">
+            {hint}
+          </span>
+        )}
+        {timeHint != null && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="flex shrink-0 items-center justify-end gap-1 text-right text-[11px] tabular-nums text-muted-foreground">
+                <Clock className="size-3" aria-hidden="true" />
+                {timeHint}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>Last TKin Time</TooltipContent>
+          </Tooltip>
+        )}
+        <ChevronRight className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+      </span>
     </button>
   )
 }
 
-function ColumnCard({ title, badge, disabled, placeholder, isActive, isLoading, children }) {
+function ColumnCard({
+  title,
+  badge,
+  disabled,
+  placeholder,
+  isActive,
+  isLoading,
+  allowHorizontalScroll = false,
+  children,
+}) {
   const [query, setQuery] = useState("")
 
   return (
@@ -93,7 +107,12 @@ function ColumnCard({ title, badge, disabled, placeholder, isActive, isLoading, 
           disabled={disabled}
         />
       </div>
-      <CardContent className="min-h-0 overflow-y-auto bg-background/60 p-2">
+      <CardContent
+        className={cn(
+          "min-h-0 overflow-y-auto bg-background/60 p-2",
+          allowHorizontalScroll ? "overflow-x-auto" : "overflow-x-hidden",
+        )}
+      >
         {disabled ? (
           <div className="flex h-full min-h-16 items-center justify-center text-center text-sm text-muted-foreground">
             {placeholder}
@@ -194,7 +213,7 @@ export function L3SpiderFilterPanel({
   }
 
   return (
-    <section className="grid h-[320px] grid-cols-4 gap-4">
+    <section className="grid h-[320px] min-w-[936px] grid-cols-[minmax(8.5rem,1fr)_27rem_minmax(11.5rem,1.35fr)_minmax(8.5rem,1fr)] gap-4">
       <ColumnCard
         title="Step Seq"
         badge={totalStepCount > 0 ? `${totalStepCount}` : null}
@@ -235,6 +254,7 @@ export function L3SpiderFilterPanel({
         disabled={!checkedStep}
         placeholder="Step Seq를 먼저 선택하세요"
         isActive={checkedPpid !== null}
+        allowHorizontalScroll
       >
         {(query) =>
           applyQuery(visiblePpids, query).map((ppid) => {
@@ -245,6 +265,7 @@ export function L3SpiderFilterPanel({
                 key={ppid}
                 label={ppid}
                 timeHint={lastTkin}
+                showFullLabel
                 selected={checkedPpid === ppid}
                 onClick={() => selectPpid(ppid)}
               />

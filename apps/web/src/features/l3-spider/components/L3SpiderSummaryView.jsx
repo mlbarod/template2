@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Inbox, ListFilter, Loader2, Maximize2, Minimize2 } from "lucide-react"
+import { ArrowDown, ArrowUp, ArrowUpDown, Inbox, ListFilter, Loader2, Maximize2, Minimize2 } from "lucide-react"
 import {
   Bar,
   BarChart,
@@ -38,13 +38,6 @@ const LINE_COLORS = [
 ]
 const HIGH_RISK_BAR_COLOR = "rgb(220, 38, 38)"
 const ANOMALY_BAR_COLOR = "rgb(217, 119, 6)"
-const LINE_TOTAL_ITEMS = [
-  { key: "groups", label: "분석 그룹", className: "text-foreground", tooltip: "이상 감지 분석 대상인 (line_id × process_id × eds_step) 조합의 수입니다." },
-  { key: "warning", label: "Warning", className: "text-chart-4" },
-  { key: "highRisk", label: "High Risk", className: "text-destructive" },
-  { key: "anomalies", label: "이상 건수", className: "text-foreground" },
-  { key: "highRiskEqpchs", label: "이상 EQPCH", className: "text-destructive" },
-]
 
 // 전 라인 요약 테이블 — 이상감지 없는 라인도 포함, 클릭 시 매트릭스 필터, 드래그로 순서 변경
 function LineTable({ rows, selectedLine, onSelectLine, onReorder, runStatsMap = {} }) {
@@ -246,7 +239,8 @@ function LineSummaryTotals({ headline, runStats }) {
 function ColumnFilter({ values, selected, onChange }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
-  const isFiltered = selected.length > 0 && selected.length < values.length
+  const allChecked = selected === null
+  const isFiltered = !allChecked
 
   useEffect(() => {
     if (!open) return
@@ -255,7 +249,6 @@ function ColumnFilter({ values, selected, onChange }) {
     return () => document.removeEventListener("mousedown", handler)
   }, [open])
 
-  const allChecked = selected.length === 0
   const isChecked = (v) => allChecked || selected.includes(v)
 
   function toggle(v) {
@@ -263,7 +256,7 @@ function ColumnFilter({ values, selected, onChange }) {
       onChange(values.filter((x) => x !== v))
     } else {
       const next = selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v]
-      onChange(next.length === values.length ? [] : next)
+      onChange(next.length === values.length ? null : next)
     }
   }
 
@@ -283,7 +276,13 @@ function ColumnFilter({ values, selected, onChange }) {
         <div className="absolute left-0 top-full z-50 mt-1 max-h-56 min-w-[160px] overflow-auto rounded-md border bg-popover shadow-md">
           <div className="p-1">
             <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs hover:bg-muted">
-              <input type="checkbox" checked={allChecked} onChange={() => onChange([])} className="size-3.5 accent-primary" />
+              <input
+                type="checkbox"
+                checked={allChecked}
+                onChange={() => onChange(allChecked ? [] : null)}
+                className="size-3.5 accent-primary"
+                aria-label={allChecked ? "전체 선택 해제" : "전체 선택"}
+              />
               <span className="font-medium">전체 선택</span>
             </label>
             <div className="my-1 border-t" />
@@ -297,6 +296,28 @@ function ColumnFilter({ values, selected, onChange }) {
         </div>
       )}
     </div>
+  )
+}
+
+function ColumnSortButton({ column, label, sortConfig, onSort, align = "left" }) {
+  const isActive = sortConfig.key === column
+  const direction = isActive ? sortConfig.direction : null
+  const SortIcon = direction === "asc" ? ArrowUp : direction === "desc" ? ArrowDown : ArrowUpDown
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(column)}
+      className={cn(
+        "inline-flex items-center gap-1 rounded-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        align === "right" && "ml-auto justify-end",
+      )}
+      aria-label={`${label} 정렬`}
+      title={direction === "asc" ? "오름차순" : direction === "desc" ? "내림차순" : "정렬 안 함"}
+    >
+      <span>{label}</span>
+      <SortIcon className={cn("size-3", !isActive && "opacity-40")} aria-hidden="true" />
+    </button>
   )
 }
 
@@ -347,7 +368,8 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
   const hasRows = rows.length > 0
 
   const [hideNormal, setHideNormal] = useState(false)
-  const [filters, setFilters] = useState({ lineName: [], processId: [], edsStep: [] })
+  const [filters, setFilters] = useState({ lineName: null, processId: null, edsStep: null })
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: null })
 
   const uniqueLineNames = useMemo(() => [...new Set(rows.map((r) => r.line))].sort(), [rows])
   const uniqueProcessIds = useMemo(() => [...new Set(rows.map((r) => r.process))].sort(), [rows])
@@ -356,12 +378,41 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
   const filteredRows = useMemo(() => {
     return rows.filter((row) => {
       if (hideNormal && !row.active) return false
-      if (filters.lineName.length && !filters.lineName.includes(row.line)) return false
-      if (filters.processId.length && !filters.processId.includes(row.process)) return false
-      if (filters.edsStep.length && !filters.edsStep.includes(String(row.edsStep))) return false
+      if (filters.lineName !== null && !filters.lineName.includes(row.line)) return false
+      if (filters.processId !== null && !filters.processId.includes(row.process)) return false
+      if (filters.edsStep !== null && !filters.edsStep.includes(String(row.edsStep))) return false
       return true
     })
   }, [rows, hideNormal, filters])
+
+  const displayedRows = useMemo(() => {
+    if (!sortConfig.key) return filteredRows
+    const numericColumns = new Set(["warning", "highRisk", "stepSeq", "eqpch"])
+    const direction = sortConfig.direction === "desc" ? -1 : 1
+    return [...filteredRows].sort((a, b) => {
+      const delta = numericColumns.has(sortConfig.key)
+        ? Number(a[sortConfig.key] ?? 0) - Number(b[sortConfig.key] ?? 0)
+        : String(a[sortConfig.key] ?? "").localeCompare(
+          String(b[sortConfig.key] ?? ""),
+          undefined,
+          { numeric: true },
+        )
+      return delta * direction
+    })
+  }, [filteredRows, sortConfig])
+
+  function toggleSort(key) {
+    setSortConfig((current) => {
+      if (current.key !== key) return { key, direction: "asc" }
+      if (current.direction === "asc") return { key, direction: "desc" }
+      return { key: null, direction: null }
+    })
+  }
+
+  function ariaSort(key) {
+    if (sortConfig.key !== key) return "none"
+    return sortConfig.direction === "asc" ? "ascending" : "descending"
+  }
 
   const activeCount = useMemo(() => filteredRows.filter((r) => r.active).length, [filteredRows])
 
@@ -419,32 +470,40 @@ function ProcessEdsSummaryCard({ matrix, selectedLine, onDrill, isMaximized, onT
             </colgroup>
             <thead className="sticky top-0 z-10 bg-card">
               <tr className="h-[58px] border-b text-xs text-muted-foreground">
-                <th className="sticky left-0 z-20 bg-card px-3 py-0 text-left font-semibold">
+                <th aria-sort={ariaSort("line")} className="sticky left-0 z-20 bg-card px-3 py-0 text-left font-semibold">
                   <span className="flex items-center gap-1.5">
-                    Line_name
+                    <ColumnSortButton column="line" label="Line_name" sortConfig={sortConfig} onSort={toggleSort} />
                     <ColumnFilter values={uniqueLineNames} selected={filters.lineName} onChange={(v) => setFilters((f) => ({ ...f, lineName: v }))} />
                   </span>
                 </th>
-                <th className="px-3 py-0 text-left font-semibold">
+                <th aria-sort={ariaSort("process")} className="px-3 py-0 text-left font-semibold">
                   <span className="flex items-center gap-1.5">
-                    process_id
+                    <ColumnSortButton column="process" label="process_id" sortConfig={sortConfig} onSort={toggleSort} />
                     <ColumnFilter values={uniqueProcessIds} selected={filters.processId} onChange={(v) => setFilters((f) => ({ ...f, processId: v }))} />
                   </span>
                 </th>
-                <th className="px-3 py-0 text-left font-semibold">
+                <th aria-sort={ariaSort("edsStep")} className="px-3 py-0 text-left font-semibold">
                   <span className="flex items-center gap-1.5">
-                    eds_step
+                    <ColumnSortButton column="edsStep" label="eds_step" sortConfig={sortConfig} onSort={toggleSort} />
                     <ColumnFilter values={uniqueEdsSteps} selected={filters.edsStep} onChange={(v) => setFilters((f) => ({ ...f, edsStep: v }))} />
                   </span>
                 </th>
-                <th className="px-3 py-0 text-right font-semibold text-chart-4">Warning</th>
-                <th className="px-3 py-0 text-right font-semibold text-destructive">High Risk</th>
-                <th className="px-3 py-0 text-right font-semibold">이상 step_seq</th>
-                <th className="pl-3 pr-6 py-0 text-right font-semibold">이상 EQPCH</th>
+                <th aria-sort={ariaSort("warning")} className="px-3 py-0 text-right font-semibold text-chart-4">
+                  <ColumnSortButton column="warning" label="Warning" sortConfig={sortConfig} onSort={toggleSort} align="right" />
+                </th>
+                <th aria-sort={ariaSort("highRisk")} className="px-3 py-0 text-right font-semibold text-destructive">
+                  <ColumnSortButton column="highRisk" label="High Risk" sortConfig={sortConfig} onSort={toggleSort} align="right" />
+                </th>
+                <th aria-sort={ariaSort("stepSeq")} className="px-3 py-0 text-right font-semibold">
+                  <ColumnSortButton column="stepSeq" label="이상 step_seq" sortConfig={sortConfig} onSort={toggleSort} align="right" />
+                </th>
+                <th aria-sort={ariaSort("eqpch")} className="py-0 pl-3 pr-6 text-right font-semibold">
+                  <ColumnSortButton column="eqpch" label="이상 EQPCH" sortConfig={sortConfig} onSort={toggleSort} align="right" />
+                </th>
               </tr>
             </thead>
             <tbody>
-              {filteredRows.map((row) => (
+              {displayedRows.map((row) => (
                 <tr
                   key={row.key}
                   onClick={() => row.active ? onDrill?.({ line: row.line, process: row.process, edsStep: row.edsStep }) : undefined}
@@ -836,11 +895,12 @@ export function L3SpiderSummaryView({ date, onDrill, selectedLine, onSelectLine,
 
   const runStatsMap = useMemo(() => {
     const map = {}
-    for (const entry of (data?.runStats?.byLine ?? [])) {
+    const entries = data?.runStats?.byLineName ?? data?.runStats?.byLine ?? []
+    for (const entry of entries) {
       map[entry.lineName ?? entry.lineId] = entry.stepSeqCount
     }
     return map
-  }, [data?.runStats?.byLine])
+  }, [data?.runStats?.byLine, data?.runStats?.byLineName])
 
   if (!date || query.isLoading || query.error || !hasData) {
     let message
