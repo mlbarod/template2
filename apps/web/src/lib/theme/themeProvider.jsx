@@ -6,7 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 const THEME_STORAGE_KEY = "app-theme"
 const COLOR_STORAGE_KEY = "app-theme-color"
 const DEFAULT_THEME = "system"
-const DEFAULT_COLOR = "violet"
+const DEFAULT_COLOR = "sky"
 const VALID_THEMES = new Set(["light", "dark", "system"])
 const VALID_COLORS = new Set([
   "violet",
