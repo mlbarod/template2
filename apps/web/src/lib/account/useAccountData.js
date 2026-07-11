@@ -6,6 +6,8 @@ import {
   useQueryClient,
 } from "@tanstack/react-query"
 
+import { useAuth } from "@/lib/auth"
+
 import { accountApi } from "./accountApi"
 import { normalizeAccountOverview } from "./accountOverview"
 import {
@@ -20,6 +22,7 @@ export const AFFILIATION_MEMBERS_QUERY_KEY = ["account", "affiliationMembers"]
 export const MANAGEABLE_QUERY_KEY = ["account", "manageable"]
 export const OVERVIEW_QUERY_KEY = ["account", "overview"]
 export const ACCESS_USERS_QUERY_KEY = ["account", "accessUsers"]
+export const ACCESS_MATRIX_QUERY_KEY = ["account", "accessMatrix"]
 export const ACCESS_POLICY_RULES_QUERY_KEY = ["account", "accessPolicyRules"]
 export const ACCESS_AUDIT_LOGS_QUERY_KEY = ["account", "accessAuditLogs"]
 
@@ -187,12 +190,30 @@ export function useAccessUsers({
   })
 }
 
+export function useAccessMatrix({
+  page = 1,
+  pageSize = 20,
+  search = "",
+  department = "",
+  enabled = true,
+} = {}) {
+  return useQuery({
+    queryKey: [...ACCESS_MATRIX_QUERY_KEY, page, pageSize, search, department],
+    queryFn: () => accountApi.fetchAccessMatrix({ page, pageSize, search, department }),
+    placeholderData: keepPreviousData,
+    enabled,
+  })
+}
+
 export function useAccessUserDecision() {
   const queryClient = useQueryClient()
+  const { refresh: refreshAuth } = useAuth()
   return useMutation({
     mutationFn: accountApi.decideAccessUser,
     onSuccess: async () => {
       await Promise.all([
+        refreshAuth(),
+        queryClient.invalidateQueries({ queryKey: ACCESS_MATRIX_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: ACCESS_USERS_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: ACCESS_AUDIT_LOGS_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: OVERVIEW_QUERY_KEY }),
@@ -254,7 +275,7 @@ export function useDeleteAccessPolicyRule() {
 export function useAccessAuditLogs({
   page = 1,
   pageSize = 20,
-  scope = "portal",
+  scope = "",
   userId = "",
   action = "",
   enabled = true,

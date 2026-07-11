@@ -57,8 +57,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useAuth } from "@/lib/auth"
 
 import { AccountDataTable } from "../components/AccountDataTable"
+import { AppPermissionMatrix } from "../components/AppPermissionMatrix"
 import {
   useAccessAuditLogs,
+  useAccessMatrix,
   useAccessPolicyRules,
   useAccessUserDecision,
   useAccessUsers,
@@ -83,10 +85,19 @@ const INITIAL_FILTER_DRAFT = {
   department: "",
 }
 
+const INITIAL_MATRIX_FILTERS = {
+  page: 1,
+  search: "",
+  department: "",
+}
+
+const INITIAL_MATRIX_FILTER_DRAFT = {
+  search: "",
+  department: "",
+}
+
 const INITIAL_POLICY_FORM = {
-  ruleType: "department",
   value: "",
-  matchRole: "viewer",
   role: "viewer",
   isActive: true,
 }
@@ -105,10 +116,7 @@ const SOURCE_OPTIONS = [
   { value: "explicit_denied", label: "개별 차단" },
   { value: "explicit_pending", label: "개별 승인 대기" },
   { value: "policy_department", label: "부서 자동 규칙" },
-  { value: "policy_profile_role", label: "프로필 역할 자동 규칙" },
-  { value: "policy_user_sdwt_prod_role", label: "소속 권한 자동 규칙" },
-  { value: "policy_authenticated", label: "로그인 사용자 자동 규칙" },
-  { value: "admin", label: "관리자 권한" },
+  { value: "superuser_bypass", label: "슈퍼유저 우회" },
   { value: "none", label: "결정 기준 없음" },
 ]
 
@@ -118,32 +126,6 @@ const ROLE_OPTIONS = [
   { value: "manager", label: "운영 권한" },
   { value: "admin", label: "관리자 권한" },
 ]
-
-const RULE_TYPE_OPTIONS = [
-  { value: "department", label: "부서 일치" },
-  { value: "profile_role", label: "프로필 역할 일치" },
-  { value: "user_sdwt_prod_role", label: "소속 권한 기준" },
-  { value: "authenticated", label: "로그인 사용자 전체" },
-]
-
-const PROFILE_ROLE_OPTIONS = [
-  { value: "viewer", label: "일반 사용자" },
-  { value: "manager", label: "운영 담당자" },
-  { value: "admin", label: "관리자" },
-]
-
-const USER_SDWT_ROLE_OPTIONS = [
-  { value: "viewer", label: "조회 권한 이상" },
-  { value: "member", label: "일반 권한 이상" },
-  { value: "manager", label: "운영 권한" },
-]
-
-const POLICY_CONDITION_LABELS = {
-  department: "대상 부서",
-  profile_role: "대상 프로필 역할",
-  user_sdwt_prod_role: "대상 소속 / 최소 권한",
-  authenticated: "적용 대상",
-}
 
 const ACTION_LABELS = {
   request: "승인 요청",
@@ -160,6 +142,8 @@ const ACTION_LABELS = {
   scope_create: "권한 범위 생성",
   scope_update: "권한 범위 수정",
   scope_delete: "권한 범위 삭제",
+  access_manager_grant: "권한 관리자 지정",
+  access_manager_revoke: "권한 관리자 해제",
 }
 
 const STATUS_LABELS = {
@@ -170,19 +154,25 @@ const STATUS_LABELS = {
   inactive: "비활성",
 }
 
-const SOURCE_LABELS = Object.fromEntries(SOURCE_OPTIONS.map((option) => [option.value, option.label]))
+const SOURCE_LABELS = {
+  ...Object.fromEntries(SOURCE_OPTIONS.map((option) => [option.value, option.label])),
+  admin: "슈퍼유저 우회",
+}
 const ROLE_LABELS = Object.fromEntries(ROLE_OPTIONS.map((option) => [option.value, option.label]))
-const RULE_TYPE_LABELS = Object.fromEntries(RULE_TYPE_OPTIONS.map((option) => [option.value, option.label]))
-const PROFILE_ROLE_LABELS = Object.fromEntries(PROFILE_ROLE_OPTIONS.map((option) => [option.value, option.label]))
-const USER_SDWT_ROLE_LABELS = Object.fromEntries(USER_SDWT_ROLE_OPTIONS.map((option) => [option.value, option.label]))
+const RULE_TYPE_LABELS = { department: "부서 일치" }
 
 const MUTATION_ERROR_LABELS = {
+  app_role_not_supported: "앱 권한은 허용 또는 차단으로만 변경할 수 있습니다.",
   duplicate_policy_rule: "동일한 자동 접근 규칙이 이미 등록되어 있습니다.",
   forbidden: "권한 관리 권한이 없습니다.",
   invalid_policy_rule: "적용 조건 형식을 확인해 주세요.",
   invalid_role: "지원하지 않는 권한입니다.",
   invalid_status_transition: "이미 상태가 변경되었습니다. 목록을 새로고침해 주세요.",
   role_required: "변경할 권한을 선택해 주세요.",
+}
+
+function isSuperuserBypass(access) {
+  return access?.source === "superuser_bypass" || access?.source === "admin"
 }
 
 function getMutationErrorMessage(error, fallback) {
@@ -192,27 +182,6 @@ function getMutationErrorMessage(error, fallback) {
     return fallback
   }
   return message
-}
-
-function getPolicyValue(form) {
-  if (form.ruleType === "authenticated") return "*"
-  const value = form.value.trim()
-  if (form.ruleType === "user_sdwt_prod_role") {
-    return value ? `${value}:${form.matchRole}` : ""
-  }
-  return value
-}
-
-function formatPolicyCondition(ruleType, value) {
-  if (ruleType === "authenticated") return "로그인한 모든 사용자"
-  if (ruleType === "profile_role") return PROFILE_ROLE_LABELS[value] || value || "-"
-  if (ruleType === "user_sdwt_prod_role") {
-    const [userSdwtProd, minimumRole] = String(value || "").split(":", 2)
-    if (userSdwtProd && minimumRole) {
-      return `${userSdwtProd} / ${USER_SDWT_ROLE_LABELS[minimumRole] || minimumRole}`
-    }
-  }
-  return value || "-"
 }
 
 function getAuditIdentity(user) {
@@ -227,6 +196,7 @@ function formatAuditValue(field, value) {
   if (field === "ruleType") return RULE_TYPE_LABELS[value] || value
   if (field === "isActive") return value ? "사용" : "사용 안 함"
   if (field === "requestable") return value ? "가능" : "불가"
+  if (field === "canManageAccess") return value ? "있음" : "없음"
   if (field === "source") return SOURCE_LABELS[value] || value
   return String(value)
 }
@@ -250,6 +220,7 @@ function getAuditChanges(row) {
     "scopeType",
     "requestable",
     "defaultRole",
+    "canManageAccess",
   ]
   return fields.flatMap((field) => {
     const before = getAuditSnapshotValue(row.before, field)
@@ -268,6 +239,7 @@ function getAuditChanges(row) {
       scopeType: "권한 범위 유형",
       requestable: "요청 가능",
       defaultRole: "기본 권한",
+      canManageAccess: "권한 관리",
     }[field]
     return [`${label}: ${formatAuditValue(field, before)} -> ${formatAuditValue(field, after)}`]
   })
@@ -415,21 +387,18 @@ function AccessSourceMeta({ access }) {
   const policy = access?.policy
   const policyLabel =
     policy?.matched && policy?.ruleType
-      ? `${RULE_TYPE_LABELS[policy.ruleType] || policy.ruleType} / ${formatPolicyCondition(
-        policy.ruleType,
-        policy.value,
-      )}`
+      ? `${RULE_TYPE_LABELS[policy.ruleType] || policy.ruleType} / ${policy.value || "-"}`
       : ""
 
   return (
-    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
+    <span className="inline-flex min-w-0 items-center gap-1.5">
       <Badge variant="outline">{SOURCE_LABELS[source] || source || "-"}</Badge>
       {policyLabel ? (
         <span className="max-w-56 truncate text-xs text-muted-foreground" title={policyLabel}>
           {policyLabel}
         </span>
       ) : null}
-    </div>
+    </span>
   )
 }
 
@@ -442,16 +411,18 @@ function getUserInitials(user) {
 
 function UserIdentity({ user }) {
   const name = user?.displayName || user?.username || user?.knoxId || "미지정"
+  const identifier = user?.knoxId || user?.sabun || "-"
   return (
-    <div className="flex min-w-0 items-center gap-3">
+    <div className="flex min-w-0 items-center gap-3 whitespace-nowrap">
       <Avatar className="size-9 border">
         <AvatarFallback className="text-xs font-medium text-muted-foreground">
           {getUserInitials(user)}
         </AvatarFallback>
       </Avatar>
-      <span className="flex min-w-0 flex-col">
+      <span className="flex min-w-0 items-center gap-1.5">
         <span className="truncate font-medium">{name}</span>
-        <span className="truncate text-xs text-muted-foreground">{user?.knoxId || user?.sabun || "-"}</span>
+        <span className="text-xs text-muted-foreground">/</span>
+        <span className="truncate text-xs text-muted-foreground">{identifier}</span>
       </span>
     </div>
   )
@@ -645,8 +616,8 @@ function UserActions({ row, onDecision, disabled = false }) {
   const status = access.effectiveStatus
   const userLabel = row.user.displayName || row.user.knoxId || row.user.username || "사용자"
 
-  if (access.source === "admin") {
-    return <span className="text-xs text-muted-foreground">관리자 권한으로 허용</span>
+  if (isSuperuserBypass(access)) {
+    return <span className="whitespace-nowrap text-xs text-muted-foreground">슈퍼유저 권한으로 허용</span>
   }
 
   const primaryAction = status === "pending"
@@ -661,7 +632,7 @@ function UserActions({ row, onDecision, disabled = false }) {
 
   return (
     <>
-      <div className="flex flex-wrap justify-end gap-2 xl:hidden">
+      <div className="flex items-center justify-end gap-2 whitespace-nowrap xl:hidden">
         {status === "pending" ? (
           <>
             <Button
@@ -821,8 +792,9 @@ function AccessUsersTable({
       id: "affiliation",
       header: "소속",
       cell: ({ row }) => (
-        <div className="flex min-w-0 flex-col">
+        <div className="flex min-w-0 items-center gap-1.5 whitespace-nowrap">
           <span className="truncate text-sm">{row.original.user.department || "-"}</span>
+          <span className="text-xs text-muted-foreground">/</span>
           <span className="truncate text-xs text-muted-foreground">
             {row.original.user.userSdwtProd || "-"}
           </span>
@@ -837,7 +809,7 @@ function AccessUsersTable({
       id: "accessStatus",
       header: "접근 상태 / 결정 기준",
       cell: ({ row }) => (
-        <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-2 whitespace-nowrap">
           <AccessStatusBadge access={row.original.access || {}} />
           <AccessSourceMeta access={row.original.access || {}} />
         </div>
@@ -1108,7 +1080,6 @@ function PolicyPanel({ query }) {
   const updateMutation = useUpdateAccessPolicyRule()
   const deleteMutation = useDeleteAccessPolicyRule()
   const [deleteTarget, setDeleteTarget] = useState(null)
-  const [policyConfirm, setPolicyConfirm] = useState(null)
   const [mutationError, setMutationError] = useState("")
   const [form, setForm] = useState(INITIAL_POLICY_FORM)
   const rules = query.data?.results || []
@@ -1153,9 +1124,9 @@ function PolicyPanel({ query }) {
     event.preventDefault()
     if (isMutating) return
 
-    const value = getPolicyValue(form)
+    const value = form.value.trim()
     if (!value) {
-      const message = "적용 조건을 입력해 주세요."
+      const message = "대상 부서를 입력해 주세요."
       setMutationError(message)
       toast.error(message)
       return
@@ -1163,15 +1134,10 @@ function PolicyPanel({ query }) {
 
     const payload = {
       scope: "portal",
-      ruleType: form.ruleType,
+      ruleType: "department",
       value,
       role: form.role,
       isActive: form.isActive,
-    }
-    if (form.ruleType === "authenticated" && form.isActive) {
-      setMutationError("")
-      setPolicyConfirm({ kind: "create", payload })
-      return
     }
     await createPolicy(payload)
   }
@@ -1192,30 +1158,7 @@ function PolicyPanel({ query }) {
 
   const handlePolicyToggle = async (rule, checked) => {
     if (isMutating) return
-    if (rule.ruleType === "authenticated" && checked && !rule.isActive) {
-      setMutationError("")
-      setPolicyConfirm({ kind: "activate", rule })
-      return
-    }
     await updatePolicyActive(rule, checked)
-  }
-
-  const handleRiskConfirm = async () => {
-    if (!policyConfirm || isMutating) return
-    const didComplete = policyConfirm.kind === "create"
-      ? await createPolicy(policyConfirm.payload)
-      : await updatePolicyActive(policyConfirm.rule, true)
-    if (didComplete) setPolicyConfirm(null)
-  }
-
-  const handleRuleTypeChange = (value) => {
-    setMutationError("")
-    setForm((current) => ({
-      ...current,
-      ruleType: value,
-      value: value === "authenticated" ? "*" : value === "profile_role" ? "viewer" : "",
-      matchRole: "viewer",
-    }))
   }
 
   return (
@@ -1229,90 +1172,20 @@ function PolicyPanel({ query }) {
       </CardHeader>
       <CardContent className="grid min-w-0 grid-rows-[auto_auto] gap-4 p-4 xl:min-h-0 xl:grid-rows-[min-content_minmax(0,1fr)]">
         <form
-          className="grid gap-3 border-b pb-4 xl:grid-cols-[190px_minmax(240px,1fr)_150px_120px_auto]"
+          className="grid gap-3 border-b pb-4 xl:grid-cols-[minmax(240px,1fr)_150px_120px_auto]"
           onSubmit={handleSubmit}
         >
           <div className="grid gap-1.5">
-            <Label htmlFor="access-policy-rule-type">적용 기준</Label>
-            <Select
-              value={form.ruleType}
-              onValueChange={handleRuleTypeChange}
+            <Label htmlFor="access-policy-value">대상 부서</Label>
+            <Input
+              id="access-policy-value"
+              value={form.value}
+              onChange={(event) => setForm((current) => ({ ...current, value: event.target.value }))}
+              placeholder="부서명"
+              maxLength={150}
+              required
               disabled={isMutating}
-            >
-              <SelectTrigger id="access-policy-rule-type" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {RULE_TYPE_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="access-policy-value">
-              {POLICY_CONDITION_LABELS[form.ruleType] || "적용 조건"}
-            </Label>
-            {form.ruleType === "authenticated" ? (
-              <Input id="access-policy-value" value="로그인한 모든 사용자" disabled readOnly />
-            ) : form.ruleType === "profile_role" ? (
-              <Select
-                value={form.value || "viewer"}
-                onValueChange={(value) => setForm((current) => ({ ...current, value }))}
-                disabled={isMutating}
-              >
-                <SelectTrigger id="access-policy-value" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PROFILE_ROLE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : form.ruleType === "user_sdwt_prod_role" ? (
-              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_140px]">
-                <Input
-                  id="access-policy-value"
-                  value={form.value}
-                  onChange={(event) => setForm((current) => ({ ...current, value: event.target.value }))}
-                  placeholder="소속 코드"
-                  maxLength={130}
-                  required
-                  disabled={isMutating}
-                />
-                <Select
-                  value={form.matchRole}
-                  onValueChange={(value) => setForm((current) => ({ ...current, matchRole: value }))}
-                  disabled={isMutating}
-                >
-                  <SelectTrigger className="w-full" aria-label="최소 소속 권한">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {USER_SDWT_ROLE_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : (
-              <Input
-                id="access-policy-value"
-                value={form.value}
-                onChange={(event) => setForm((current) => ({ ...current, value: event.target.value }))}
-                placeholder="부서명"
-                maxLength={150}
-                required
-                disabled={isMutating}
-              />
-            )}
+            />
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor="access-policy-role">부여 권한</Label>
@@ -1355,7 +1228,7 @@ function PolicyPanel({ query }) {
             {createMutation.isPending ? "추가 중" : "규칙 추가"}
           </Button>
           {mutationError ? (
-            <p className="text-sm text-destructive xl:col-span-5" role="alert">
+            <p className="text-sm text-destructive xl:col-span-4" role="alert">
               {mutationError}
             </p>
           ) : null}
@@ -1374,8 +1247,7 @@ function PolicyPanel({ query }) {
             <Table stickyHeader>
               <TableHeader>
                 <TableRow>
-                  <TableHead>적용 기준</TableHead>
-                  <TableHead>적용 조건</TableHead>
+                  <TableHead>대상 부서</TableHead>
                   <TableHead>부여 권한</TableHead>
                   <TableHead>사용 여부</TableHead>
                   <TableHead className="text-right">작업</TableHead>
@@ -1386,17 +1258,14 @@ function PolicyPanel({ query }) {
                   const isUpdating = updateMutation.isPending && updateMutation.variables?.id === rule.id
                   return (
                     <TableRow key={rule.id}>
-                      <TableCell>{RULE_TYPE_LABELS[rule.ruleType] || rule.ruleType}</TableCell>
-                      <TableCell className="max-w-lg truncate">
-                        {formatPolicyCondition(rule.ruleType, rule.value)}
-                      </TableCell>
+                      <TableCell className="max-w-lg truncate">{rule.value || "-"}</TableCell>
                       <TableCell>{ROLE_LABELS[rule.role] || rule.role}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Switch
                             checked={Boolean(rule.isActive)}
                             onCheckedChange={(checked) => handlePolicyToggle(rule, checked)}
-                            aria-label={`${formatPolicyCondition(rule.ruleType, rule.value)} 규칙 사용`}
+                            aria-label={`${rule.value || "부서"} 규칙 사용`}
                             disabled={isMutating}
                           />
                           <Badge variant={rule.isActive ? "secondary" : "outline"}>
@@ -1431,10 +1300,7 @@ function PolicyPanel({ query }) {
         title="자동 접근 규칙 삭제"
         description={
           deleteTarget
-            ? `${RULE_TYPE_LABELS[deleteTarget.ruleType] || deleteTarget.ruleType} / ${formatPolicyCondition(
-              deleteTarget.ruleType,
-              deleteTarget.value,
-            )}`
+            ? `대상 부서: ${deleteTarget.value || "-"}`
             : ""
         }
         confirmLabel="삭제"
@@ -1445,31 +1311,32 @@ function PolicyPanel({ query }) {
         onConfirm={handleDeleteConfirm}
         errorMessage={deleteTarget ? mutationError : ""}
       />
-      <ConfirmActionDialog
-        open={Boolean(policyConfirm)}
-        title={policyConfirm?.kind === "create" ? "로그인 사용자 전체 규칙 추가" : "로그인 사용자 전체 규칙 사용"}
-        description="이 규칙을 사용하면 로그인한 모든 사용자가 포털에 접근할 수 있습니다. 계속하시겠습니까?"
-        confirmLabel={policyConfirm?.kind === "create" ? "규칙 추가" : "사용"}
-        isSubmitting={createMutation.isPending || updateMutation.isPending}
-        onOpenChange={(open) => {
-          if (!open) setPolicyConfirm(null)
-        }}
-        onConfirm={handleRiskConfirm}
-        errorMessage={policyConfirm ? mutationError : ""}
-        confirmIcon={ShieldCheck}
-      />
     </Card>
   )
 }
 
-function AuditPanel({ query, onPageChange }) {
+function AuditPanel({ query, scope, scopeOptions, onScopeChange, onPageChange }) {
   const rows = query.data?.results || []
 
   return (
     <Card className="grid min-w-0 grid-rows-[auto_auto] overflow-hidden py-0 xl:h-full xl:min-h-0 xl:grid-rows-[min-content_minmax(0,1fr)] xl:gap-0">
       <CardHeader className="border-b px-4 py-3 xl:grid-rows-[auto] xl:content-start xl:pb-3!">
-        <CardTitle className="text-base">변경 이력</CardTitle>
-        <CardDescription>{(query.data?.pagination?.total || 0).toLocaleString("ko-KR")}건</CardDescription>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle className="text-base">변경 이력</CardTitle>
+            <CardDescription>{(query.data?.pagination?.total || 0).toLocaleString("ko-KR")}건</CardDescription>
+          </div>
+          <Select value={scope} onValueChange={onScopeChange}>
+            <SelectTrigger className="w-48" aria-label="권한 범위 필터">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {scopeOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </CardHeader>
       <CardContent className="grid min-w-0 grid-rows-[auto_auto] p-0 xl:min-h-0 xl:grid-rows-[minmax(0,1fr)_auto]">
         {query.isPending ? (
@@ -1538,13 +1405,17 @@ function AuditPanel({ query, onPageChange }) {
 export default function PermissionsPage() {
   const { user, isLoading } = useAuth()
   const canManage = Boolean(user?.portal_access?.canManage)
-  const [activeTab, setActiveTab] = useState("users")
+  const [activeTab, setActiveTab] = useState("matrix")
   const [filters, setFilters] = useState(INITIAL_FILTERS)
   const [filterDraft, setFilterDraft] = useState(INITIAL_FILTER_DRAFT)
   const [pendingPage, setPendingPage] = useState(1)
   const [auditPage, setAuditPage] = useState(1)
+  const [auditScope, setAuditScope] = useState("all")
   const [decision, setDecision] = useState(null)
   const [decisionError, setDecisionError] = useState("")
+  const [matrixFilters, setMatrixFilters] = useState(INITIAL_MATRIX_FILTERS)
+  const [matrixFilterDraft, setMatrixFilterDraft] = useState(INITIAL_MATRIX_FILTER_DRAFT)
+  const [pendingMatrixCell, setPendingMatrixCell] = useState("")
 
   const usersQuery = useAccessUsers({
     page: filters.page,
@@ -1565,7 +1436,15 @@ export default function PermissionsPage() {
   const auditQuery = useAccessAuditLogs({
     page: auditPage,
     pageSize: PAGE_SIZE,
+    scope: auditScope === "all" ? "" : auditScope,
     enabled: canManage && activeTab === "audit",
+  })
+  const matrixQuery = useAccessMatrix({
+    page: matrixFilters.page,
+    pageSize: PAGE_SIZE,
+    search: matrixFilters.search,
+    department: matrixFilters.department,
+    enabled: canManage && activeTab === "matrix",
   })
   const decisionMutation = useAccessUserDecision()
   const usersSummary = usersQuery.data?.summary || {}
@@ -1573,11 +1452,16 @@ export default function PermissionsPage() {
   const usersPageTotal = usersSummary.pageTotal ?? usersQuery.data?.results?.length ?? 0
   const pendingTotal = pendingQuery.data?.pagination?.total ?? 0
   const policyTotal = policyQuery.data?.results?.length ?? 0
+  const auditScopeOptions = [
+    { value: "all", label: "전체 권한 범위" },
+    { value: "portal", label: "Portal" },
+    ...Object.keys(user?.app_access || {}).sort().map((scopeKey) => ({ value: scopeKey, label: scopeKey })),
+  ]
   const hasAppliedFilters = Boolean(
     filters.status !== "all" || filters.source !== "all" || filters.search || filters.department,
   )
   const isRefreshing =
-    usersQuery.isFetching || pendingQuery.isFetching || policyQuery.isFetching || auditQuery.isFetching
+    usersQuery.isFetching || pendingQuery.isFetching || policyQuery.isFetching || auditQuery.isFetching || matrixQuery.isFetching
 
   const handleDecisionOpen = (row, action, label) => {
     if (decisionMutation.isPending) return
@@ -1618,11 +1502,59 @@ export default function PermissionsPage() {
     setFilters({ ...INITIAL_FILTERS })
   }
 
+  const handleApplyMatrixFilters = () => {
+    setMatrixFilters({
+      page: 1,
+      search: matrixFilterDraft.search.trim(),
+      department: matrixFilterDraft.department.trim(),
+    })
+  }
+
+  const handleResetMatrixFilters = () => {
+    setMatrixFilterDraft({ ...INITIAL_MATRIX_FILTER_DRAFT })
+    setMatrixFilters({ ...INITIAL_MATRIX_FILTERS })
+  }
+
+  const handleMatrixAccessChange = async ({ user: targetUser, scope, access, nextValue }) => {
+    if (decisionMutation.isPending || isSuperuserBypass(access)) return
+
+    let action = ""
+    if (nextValue === "inherit") {
+      if (!access?.explicitStatus) return
+      action = "reset_to_policy"
+    } else if (nextValue === "denied") {
+      if (access?.explicitStatus === "denied") return
+      action = "revoke"
+    } else if (nextValue === "allowed") {
+      if (access?.explicitStatus === "allowed") return
+      action = "grant"
+    } else {
+      return
+    }
+
+    const cellKey = `${targetUser.id}:${scope.key}`
+    setPendingMatrixCell(cellKey)
+    try {
+      await decisionMutation.mutateAsync({
+        userId: targetUser.id,
+        scope: scope.key,
+        action,
+        reason: "앱 권한 매트릭스에서 수동 변경",
+      })
+      toast.success(`${scope.name} 권한을 변경했습니다.`)
+    } catch (error) {
+      toast.error(getMutationErrorMessage(error, `${scope.name} 권한을 변경하지 못했습니다.`))
+    } finally {
+      setPendingMatrixCell("")
+    }
+  }
+
   const handleRefresh = () => {
     usersQuery.refetch()
     pendingQuery.refetch()
     policyQuery.refetch()
     if (activeTab === "audit") auditQuery.refetch()
+    if (activeTab === "matrix") matrixQuery.refetch()
   }
 
   return (
@@ -1631,9 +1563,9 @@ export default function PermissionsPage() {
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-2xl font-semibold tracking-tight text-foreground">권한 관리</h2>
-            <Badge variant="outline">Portal</Badge>
+            <Badge variant="outline">Portal + Apps</Badge>
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">포털 접근 권한</p>
+          <p className="mt-1 text-sm text-muted-foreground">포털 및 앱별 접근 권한</p>
         </div>
         <Button variant="outline" onClick={handleRefresh} disabled={!canManage || isRefreshing}>
           <RefreshCw className={isRefreshing ? "size-4 animate-spin" : "size-4"} />
@@ -1728,6 +1660,10 @@ export default function PermissionsPage() {
             >
               <div className="min-w-0 shrink-0 overflow-x-auto pb-1">
                 <TabsList className="w-max shrink-0">
+                  <TabsTrigger value="matrix">
+                    <SlidersHorizontal className="size-4" />
+                    앱별 권한
+                  </TabsTrigger>
                   <TabsTrigger value="users">
                     <Users className="size-4" />
                     인원별 권한
@@ -1766,6 +1702,20 @@ export default function PermissionsPage() {
                 </TabsList>
               </div>
 
+              <TabsContent value="matrix" className="min-w-0 xl:min-h-0 xl:overflow-hidden">
+                <AppPermissionMatrix
+                  query={matrixQuery}
+                  filters={matrixFilters}
+                  filterDraft={matrixFilterDraft}
+                  setFilterDraft={setMatrixFilterDraft}
+                  onApplyFilters={handleApplyMatrixFilters}
+                  onResetFilters={handleResetMatrixFilters}
+                  onPageChange={(page) => setMatrixFilters((current) => ({ ...current, page }))}
+                  onAccessChange={handleMatrixAccessChange}
+                  pendingCell={pendingMatrixCell}
+                />
+              </TabsContent>
+
               <TabsContent value="users" className="min-w-0 xl:min-h-0 xl:overflow-hidden">
                 <UsersPanel
                   query={usersQuery}
@@ -1795,7 +1745,16 @@ export default function PermissionsPage() {
                 <PolicyPanel query={policyQuery} />
               </TabsContent>
               <TabsContent value="audit" className="min-w-0 xl:min-h-0 xl:overflow-hidden">
-                <AuditPanel query={auditQuery} onPageChange={setAuditPage} />
+                <AuditPanel
+                  query={auditQuery}
+                  scope={auditScope}
+                  scopeOptions={auditScopeOptions}
+                  onScopeChange={(value) => {
+                    setAuditScope(value)
+                    setAuditPage(1)
+                  }}
+                  onPageChange={setAuditPage}
+                />
               </TabsContent>
             </Tabs>
           </div>

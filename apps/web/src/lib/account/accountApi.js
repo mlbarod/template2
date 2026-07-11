@@ -9,6 +9,7 @@ const endpoints = {
   grants: "/api/v1/account/access/grants",
   manageable: "/api/v1/account/access/manageable",
   accessUsers: "/api/v1/account/access/users",
+  accessMatrix: "/api/v1/account/access/matrix",
   accessPolicyRules: "/api/v1/account/access/policy-rules",
   accessAuditLogs: "/api/v1/account/access/audit-logs",
   users: "/api/v1/account/users",
@@ -221,6 +222,18 @@ export const accountApi = {
     return unwrap(response, "Failed to load access users")
   },
 
+  async fetchAccessMatrix({ page = 1, pageSize = 20, search = "", department = "" } = {}) {
+    const params = new URLSearchParams()
+    params.set("page", String(page))
+    params.set("page_size", String(pageSize))
+    if (search) params.set("q", search)
+    if (department) params.set("department", department)
+
+    const url = buildBackendUrl(`${endpoints.accessMatrix}?${params.toString()}`)
+    const response = await request(url, { cache: "no-store" })
+    return unwrap(response, "Failed to load app access matrix")
+  },
+
   async decideAccessUser({ userId, ...payload }) {
     const url = buildBackendUrl(`${endpoints.accessUsers}/${userId}/decision`)
     const response = await request(url, {
@@ -268,7 +281,7 @@ export const accountApi = {
   async fetchAccessAuditLogs({
     page = 1,
     pageSize = 20,
-    scope = "portal",
+    scope = "",
     userId = "",
     action = "",
   } = {}) {

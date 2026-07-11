@@ -19,6 +19,7 @@ from .views import (
     AccountAccessPolicyRuleView,
     AccountAccessUserDecisionView,
     AccountAccessUserView,
+    AccountAppAccessMatrixView,
     AccountAffiliationApprovalView,
     AccountAffiliationMembersView,
     AccountAffiliationView,
@@ -64,6 +65,7 @@ urlpatterns = [
         name="account-portal-access-approvals",
     ),
     path("access/users", AccountAccessUserView.as_view(), name="account-access-users"),
+    path("access/matrix", AccountAppAccessMatrixView.as_view(), name="account-access-matrix"),
     path(
         "access/users/<int:user_id>/decision",
         AccountAccessUserDecisionView.as_view(),

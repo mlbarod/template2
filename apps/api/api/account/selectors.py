@@ -28,6 +28,7 @@ from .models import (
     AccessAuditLog,
     AccessPolicyRule,
     AccessScope,
+    AccessSource,
     Affiliation,
     ExternalAffiliationSnapshot,
     UserAccess,
@@ -909,6 +910,17 @@ def get_access_scope_by_key_for_update(*, scope_key: str) -> AccessScope | None:
     return AccessScope.objects.select_for_update().filter(key=normalized).first()
 
 
+def list_active_app_access_scopes() -> list[AccessScope]:
+    """권한 매트릭스에 표시할 활성 앱 scope를 반환합니다."""
+
+    return list(
+        AccessScope.objects.filter(
+            scope_type=AccessScope.ScopeTypes.APP,
+            is_active=True,
+        ).order_by("name", "key")
+    )
+
+
 def list_active_access_policy_rules(*, scope: AccessScope) -> list[AccessPolicyRule]:
     """scope의 활성 접근 정책 규칙 목록을 반환합니다."""
 
@@ -916,6 +928,22 @@ def list_active_access_policy_rules(*, scope: AccessScope) -> list[AccessPolicyR
         AccessPolicyRule.objects.filter(scope=scope, is_active=True)
         .select_related("scope")
         .order_by("rule_type", "id")
+    )
+
+
+def list_active_access_policy_rules_for_scopes(
+    *,
+    scopes: list[AccessScope],
+) -> list[AccessPolicyRule]:
+    """여러 scope의 활성 접근 정책 규칙을 한 번에 반환합니다."""
+
+    scope_ids = [scope.id for scope in scopes]
+    if not scope_ids:
+        return []
+    return list(
+        AccessPolicyRule.objects.filter(scope_id__in=scope_ids, is_active=True)
+        .select_related("scope")
+        .order_by("scope_id", "rule_type", "id")
     )
 
 
@@ -944,6 +972,23 @@ def get_user_access_for_scope_for_update(*, user: Any, scope: AccessScope) -> Us
         .filter(user=user, scope=scope)
         .select_related("scope", "user", "decided_by")
         .first()
+    )
+
+
+def list_user_access_rows_for_scopes_and_users(
+    *,
+    scopes: list[AccessScope],
+    user_ids: list[int],
+) -> list[UserAccess]:
+    """여러 앱 scope와 사용자에 해당하는 명시 권한 행을 한 번에 반환합니다."""
+
+    scope_ids = [scope.id for scope in scopes]
+    if not scope_ids or not user_ids:
+        return []
+    return list(
+        UserAccess.objects.filter(scope_id__in=scope_ids, user_id__in=user_ids)
+        .select_related("scope", "user", "decided_by")
+        .order_by("scope_id", "user_id", "id")
     )
 
 
@@ -1065,29 +1110,29 @@ def filter_access_management_users_for_fast_access_filter(
     if normalized_status and normalized_source:
         return queryset, False
 
-    access_admin_filter = Q(is_superuser=True) | Q(profile__role=UserProfile.Roles.ADMIN)
+    access_bypass_filter = Q(is_superuser=True)
 
     if normalized_status in {UserAccess.Status.PENDING, UserAccess.Status.DENIED}:
         return queryset.filter(
             access_grants__scope=scope,
             access_grants__status=normalized_status,
-        ).exclude(access_admin_filter).distinct(), True
+        ).exclude(access_bypass_filter).distinct(), True
 
     source_to_status = {
-        "explicit_allowed": UserAccess.Status.ALLOWED,
-        "explicit_denied": UserAccess.Status.DENIED,
-        "explicit_pending": UserAccess.Status.PENDING,
+        AccessSource.EXPLICIT_ALLOWED: UserAccess.Status.ALLOWED,
+        AccessSource.EXPLICIT_DENIED: UserAccess.Status.DENIED,
+        AccessSource.EXPLICIT_PENDING: UserAccess.Status.PENDING,
     }
     if normalized_source in source_to_status:
         return queryset.filter(
             access_grants__scope=scope,
             access_grants__status=source_to_status[normalized_source],
-        ).exclude(access_admin_filter).distinct(), True
+        ).exclude(access_bypass_filter).distinct(), True
 
-    if normalized_source == "admin":
-        return queryset.filter(Q(is_superuser=True) | Q(profile__role=UserProfile.Roles.ADMIN)).distinct(), True
+    if normalized_source == AccessSource.SUPERUSER_BYPASS:
+        return queryset.filter(is_superuser=True).distinct(), True
 
-    if normalized_source == "policy_department":
+    if normalized_source == AccessSource.POLICY_DEPARTMENT:
         department_values = list(
             AccessPolicyRule.objects.filter(
                 scope=scope,
@@ -1108,7 +1153,6 @@ def filter_access_management_users_for_fast_access_filter(
         return queryset.filter(department_filter).exclude(
             Q(access_grants__scope=scope)
             | Q(is_superuser=True)
-            | Q(profile__role=UserProfile.Roles.ADMIN)
         ).distinct(), True
 
     return queryset, False

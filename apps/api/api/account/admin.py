@@ -16,16 +16,22 @@ from django import forms
 from django.contrib import admin
 from django.contrib import messages
 from django.contrib.admin.widgets import AdminSplitDateTime
+from django.contrib.auth.admin import GroupAdmin as DjangoGroupAdmin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.contrib.auth.forms import BaseUserCreationForm, SetUnusablePasswordMixin, UserChangeForm, UsernameField
+from django.contrib.auth.models import Group
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from api.account import services
 from api.account.selectors import get_current_affiliation_values, get_current_user_sdwt_prod_change
 from api.account.models import (
+    ACCESS_MANAGERS_GROUP_NAME,
     ACCESS_SCOPE_PORTAL,
+    MANAGE_ACCESS_PERMISSION,
+    SYSTEM_ACCESS_SCOPE_KEYS,
     AccessAuditLog,
     AccessPolicyRule,
     AccessScope,
@@ -39,6 +45,80 @@ from api.account.models import (
     UserSdwtProdChange,
 )
 from api.common.services import UNASSIGNED_USER_SDWT_PROD
+
+
+_SENSITIVE_USER_PERMISSION_FIELDS = ("is_staff", "is_superuser", "groups", "user_permissions")
+_MANAGE_ACCESS_BEFORE_ATTRIBUTE = "_account_manage_access_before"
+
+
+def _user_has_manage_access_capability(*, user_id: int | None) -> bool:
+    """DB 기준으로 사용자의 접근 권한 관리 capability 보유 여부를 반환합니다."""
+
+    if not user_id:
+        return False
+    app_label, codename = MANAGE_ACCESS_PERMISSION.split(".", maxsplit=1)
+    return User.objects.filter(pk=user_id).filter(
+        Q(is_superuser=True)
+        | Q(
+            user_permissions__content_type__app_label=app_label,
+            user_permissions__codename=codename,
+        )
+        | Q(
+            groups__permissions__content_type__app_label=app_label,
+            groups__permissions__codename=codename,
+        )
+    ).exists()
+
+
+class SuperuserWriteAdminMixin:
+    """민감한 접근 권한 모델의 Admin 쓰기를 superuser에게만 허용합니다."""
+
+    def has_add_permission(self, request):
+        """superuser에게만 생성 권한을 허용합니다."""
+
+        return bool(getattr(request.user, "is_superuser", False)) and super().has_add_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        """superuser에게만 변경 권한을 허용합니다."""
+
+        return bool(getattr(request.user, "is_superuser", False)) and super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        """superuser에게만 삭제 권한을 허용합니다."""
+
+        return bool(getattr(request.user, "is_superuser", False)) and super().has_delete_permission(request, obj)
+
+
+try:
+    admin.site.unregister(Group)
+except admin.sites.NotRegistered:
+    pass
+
+
+@admin.register(Group)
+class AccountGroupAdmin(DjangoGroupAdmin):
+    """Django Group의 권한 구성을 superuser만 관리하도록 제한합니다."""
+
+    actions = ()
+
+    def has_add_permission(self, request):
+        """superuser에게만 그룹 생성 권한을 허용합니다."""
+
+        return bool(getattr(request.user, "is_superuser", False)) and super().has_add_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        """표준 권한 관리자 그룹은 불변으로 두고 나머지는 superuser만 변경합니다."""
+
+        if obj is not None and obj.name == ACCESS_MANAGERS_GROUP_NAME:
+            return False
+        return bool(getattr(request.user, "is_superuser", False)) and super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        """표준 권한 관리자 그룹 삭제를 막고 나머지는 superuser만 삭제합니다."""
+
+        if obj is not None and obj.name == ACCESS_MANAGERS_GROUP_NAME:
+            return False
+        return bool(getattr(request.user, "is_superuser", False)) and super().has_delete_permission(request, obj)
 
 
 class AccountUserCreationForm(SetUnusablePasswordMixin, BaseUserCreationForm):
@@ -304,6 +384,36 @@ class AccountUserAdmin(DjangoUserAdmin):
         ),
     )
 
+    def get_readonly_fields(self, request, obj=None):
+        """일반 staff가 인증·권한 관련 민감 필드를 변경하지 못하게 합니다."""
+
+        readonly_fields = tuple(super().get_readonly_fields(request, obj))
+        if getattr(request.user, "is_superuser", False):
+            return readonly_fields
+        return tuple(dict.fromkeys((*readonly_fields, *_SENSITIVE_USER_PERMISSION_FIELDS)))
+
+    def has_change_permission(self, request, obj=None):
+        """일반 staff가 superuser 또는 권한 관리자 계정을 변경하지 못하게 합니다."""
+
+        if (
+            obj is not None
+            and not getattr(request.user, "is_superuser", False)
+            and _user_has_manage_access_capability(user_id=obj.pk)
+        ):
+            return False
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        """일반 staff가 superuser 또는 권한 관리자 계정을 삭제하지 못하게 합니다."""
+
+        if (
+            obj is not None
+            and not getattr(request.user, "is_superuser", False)
+            and _user_has_manage_access_capability(user_id=obj.pk)
+        ):
+            return False
+        return super().has_delete_permission(request, obj)
+
     @admin.display(
         ordering="current_affiliation__affiliation__department",
         description="현재 department",
@@ -356,6 +466,12 @@ class AccountUserAdmin(DjangoUserAdmin):
         오류:
         - 없음
         """
+        setattr(
+            request,
+            _MANAGE_ACCESS_BEFORE_ATTRIBUTE,
+            _user_has_manage_access_capability(user_id=obj.pk),
+        )
+
         # -----------------------------------------------------------------------------
         # 1) 기본 저장 처리
         # -----------------------------------------------------------------------------
@@ -407,6 +523,33 @@ class AccountUserAdmin(DjangoUserAdmin):
                 request,
                 f"user_sdwt_prod 변경 시각을 {effective_from.isoformat()}로 업데이트했습니다.",
                 level=messages.SUCCESS,
+            )
+
+    def save_related(self, request, form, formsets, change):
+        """권한 관리자 capability의 유효 부여·회수를 감사 로그에 기록합니다."""
+
+        before = bool(
+            getattr(
+                request,
+                _MANAGE_ACCESS_BEFORE_ATTRIBUTE,
+                _user_has_manage_access_capability(user_id=form.instance.pk),
+            )
+        )
+        with transaction.atomic():
+            super().save_related(request, form, formsets, change)
+            after = _user_has_manage_access_capability(user_id=form.instance.pk)
+            if before == after:
+                return
+            AccessAuditLog.objects.create(
+                actor=request.user if getattr(request.user, "is_authenticated", False) else None,
+                target_user=form.instance,
+                action=(
+                    AccessAuditLog.Actions.ACCESS_MANAGER_GRANT
+                    if after
+                    else AccessAuditLog.Actions.ACCESS_MANAGER_REVOKE
+                ),
+                before={"canManageAccess": before},
+                after={"canManageAccess": after},
             )
 
     def get_result_label(self, result):  # 타입 검사 생략: type: ignore[override]
@@ -578,7 +721,7 @@ def _resolve_admin_user_access_action(*, before, after):
 
 
 @admin.register(AccessScope)
-class AccessScopeAdmin(admin.ModelAdmin):
+class AccessScopeAdmin(SuperuserWriteAdminMixin, admin.ModelAdmin):
     """접근 권한 대상 관리 화면 설정입니다."""
 
     list_display = ("key", "name", "scope_type", "is_active", "requestable", "default_role", "created_at")
@@ -587,16 +730,16 @@ class AccessScopeAdmin(admin.ModelAdmin):
     ordering = ("key",)
 
     def get_readonly_fields(self, request, obj=None):
-        """portal scope의 식별 키는 Admin에서 변경하지 못하게 합니다."""
+        """시스템 scope의 식별 키와 유형은 Admin에서 변경하지 못하게 합니다."""
 
-        if obj is not None and obj.key == ACCESS_SCOPE_PORTAL:
-            return ("key",)
+        if obj is not None and obj.key in SYSTEM_ACCESS_SCOPE_KEYS:
+            return ("key", "scope_type")
         return ()
 
     def has_delete_permission(self, request, obj=None):
-        """기본 portal scope 삭제 권한을 항상 거부합니다."""
+        """시스템 scope 삭제 권한을 항상 거부합니다."""
 
-        if obj is not None and obj.key == ACCESS_SCOPE_PORTAL:
+        if obj is not None and obj.key in SYSTEM_ACCESS_SCOPE_KEYS:
             return False
         return super().has_delete_permission(request, obj)
 
@@ -605,8 +748,11 @@ class AccessScopeAdmin(admin.ModelAdmin):
 
         with transaction.atomic():
             before_obj = AccessScope.objects.filter(pk=obj.pk).first() if change else None
-            if before_obj is not None and before_obj.key == ACCESS_SCOPE_PORTAL and obj.key != ACCESS_SCOPE_PORTAL:
-                raise ValidationError({"key": "portal scope key는 변경할 수 없습니다."})
+            if before_obj is not None and before_obj.key in SYSTEM_ACCESS_SCOPE_KEYS:
+                if obj.key != before_obj.key:
+                    raise ValidationError({"key": "시스템 scope key는 변경할 수 없습니다."})
+                if obj.scope_type != before_obj.scope_type:
+                    raise ValidationError({"scope_type": "시스템 scope 유형은 변경할 수 없습니다."})
 
             before = _serialize_admin_access_scope(before_obj)
             super().save_model(request, obj, form, change)
@@ -620,10 +766,10 @@ class AccessScopeAdmin(admin.ModelAdmin):
             )
 
     def delete_model(self, request, obj):
-        """일반 scope 삭제를 기록하고 portal scope 삭제는 거부합니다."""
+        """일반 scope 삭제를 기록하고 시스템 scope 삭제는 거부합니다."""
 
-        if obj.key == ACCESS_SCOPE_PORTAL:
-            raise PermissionDenied("portal scope는 삭제할 수 없습니다.")
+        if obj.key in SYSTEM_ACCESS_SCOPE_KEYS:
+            raise PermissionDenied("시스템 scope는 삭제할 수 없습니다.")
 
         with transaction.atomic():
             before = _serialize_admin_access_scope(obj)
@@ -637,15 +783,15 @@ class AccessScopeAdmin(admin.ModelAdmin):
             super().delete_model(request, obj)
 
     def delete_queryset(self, request, queryset):
-        """일괄 삭제에서도 portal scope를 제외하고 개별 감사 로그를 남깁니다."""
+        """일괄 삭제에서도 시스템 scope를 제외하고 개별 감사 로그를 남깁니다."""
 
         for obj in list(queryset):
-            if obj.key != ACCESS_SCOPE_PORTAL:
+            if obj.key not in SYSTEM_ACCESS_SCOPE_KEYS:
                 self.delete_model(request, obj)
 
 
 @admin.register(AccessPolicyRule)
-class AccessPolicyRuleAdmin(admin.ModelAdmin):
+class AccessPolicyRuleAdmin(SuperuserWriteAdminMixin, admin.ModelAdmin):
     """scope별 기본 접근 정책 관리 화면 설정입니다."""
 
     list_display = ("scope_key", "rule_type", "value", "role", "is_active", "created_at")
@@ -698,7 +844,7 @@ class AccessPolicyRuleAdmin(admin.ModelAdmin):
 
 
 @admin.register(UserAccess)
-class UserAccessAdmin(admin.ModelAdmin):
+class UserAccessAdmin(SuperuserWriteAdminMixin, admin.ModelAdmin):
     """사용자별 scope 접근 상태 관리 화면 설정입니다."""
 
     list_display = (

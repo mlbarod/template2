@@ -6,11 +6,15 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 API_ROOT = ROOT_DIR / "apps" / "api" / "api"
 ALLOWLIST = ROOT_DIR / "scripts" / "agent" / "backend-boundary-allowlist.txt"
+API_URLS = API_ROOT / "urls.py"
+COMMON_PERMISSIONS = API_ROOT / "common" / "permissions.py"
+ACCOUNT_MODELS = API_ROOT / "account" / "models.py"
 
 SHARED_DOMAINS = {"common", "data_movement.common"}
 ALLOWED_APP_FILES = {
@@ -317,6 +321,183 @@ def check_app_structure() -> list[Finding]:
     return findings
 
 
+def load_literal_assignment(path: Path, name: str) -> tuple[Any, int]:
+    """모듈의 단순 리터럴 대입 값을 정적 분석용으로 읽습니다."""
+
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(isinstance(target, ast.Name) and target.id == name for target in node.targets):
+            continue
+        return ast.literal_eval(node.value), node.lineno
+    raise ValueError(f"{path}: missing literal assignment: {name}")
+
+
+def list_root_api_routes() -> dict[str, int]:
+    """전역 URL registry의 `/api/v1/<route>/` 루트와 줄 번호를 반환합니다."""
+
+    tree = ast.parse(API_URLS.read_text(encoding="utf-8"), filename=str(API_URLS))
+    routes: dict[str, int] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not node.args:
+            continue
+        if not isinstance(node.func, ast.Name) or node.func.id != "path":
+            continue
+        route_arg = node.args[0]
+        if not isinstance(route_arg, ast.Constant) or not isinstance(route_arg.value, str):
+            continue
+        route_path = route_arg.value
+        if not route_path.startswith("api/v1/"):
+            continue
+        route = route_path.removeprefix("api/v1/").strip("/").split("/", maxsplit=1)[0]
+        if route:
+            routes[route] = node.lineno
+    return routes
+
+
+def check_api_route_access_classification() -> list[Finding]:
+    """모든 루트 API 경로와 앱 scope 참조가 유효한지 확인합니다."""
+
+    findings: list[Finding] = []
+    try:
+        policies, policy_line = load_literal_assignment(COMMON_PERMISSIONS, "API_ROUTE_ACCESS_POLICIES")
+        app_rules, app_rules_line = load_literal_assignment(COMMON_PERMISSIONS, "APP_ACCESS_API_RULES")
+        app_scope_keys, app_scope_keys_line = load_literal_assignment(ACCOUNT_MODELS, "SYSTEM_APP_SCOPE_KEYS")
+    except (SyntaxError, ValueError) as exc:
+        return [Finding("API route access classification", COMMON_PERMISSIONS, 0, str(exc))]
+
+    if not isinstance(policies, dict):
+        return [
+            Finding(
+                "API route access classification",
+                COMMON_PERMISSIONS,
+                policy_line,
+                "API_ROUTE_ACCESS_POLICIES must be a literal dict",
+            )
+        ]
+    if not isinstance(app_rules, tuple):
+        return [
+            Finding(
+                "API route access classification",
+                COMMON_PERMISSIONS,
+                app_rules_line,
+                "APP_ACCESS_API_RULES must be a literal tuple",
+            )
+        ]
+    if not isinstance(app_scope_keys, tuple) or not all(isinstance(value, str) for value in app_scope_keys):
+        return [
+            Finding(
+                "API route access classification",
+                ACCOUNT_MODELS,
+                app_scope_keys_line,
+                "SYSTEM_APP_SCOPE_KEYS must be a literal string tuple",
+            )
+        ]
+    known_app_scopes = set(app_scope_keys)
+
+    routes = list_root_api_routes()
+    policy_routes = set(policies)
+    for route in sorted(set(routes) - policy_routes):
+        findings.append(
+            Finding(
+                "API route access classification",
+                API_URLS,
+                routes[route],
+                f"/api/v1/{route}/ must declare public, token, portal, or app:<scope> access",
+            )
+        )
+    for route in sorted(policy_routes - set(routes)):
+        findings.append(
+            Finding(
+                "API route access classification",
+                COMMON_PERMISSIONS,
+                policy_line,
+                f"access policy references an unknown root route: {route}",
+            )
+        )
+
+    for rule in app_rules:
+        if (
+            not isinstance(rule, tuple)
+            or len(rule) != 2
+            or not all(isinstance(value, str) for value in rule)
+        ):
+            findings.append(
+                Finding(
+                    "API route access classification",
+                    COMMON_PERMISSIONS,
+                    app_rules_line,
+                    "each APP_ACCESS_API_RULES entry must be a (prefix, scope) string tuple",
+                )
+            )
+            continue
+        prefix, scope = rule
+        if scope not in known_app_scopes:
+            findings.append(
+                Finding(
+                    "API route access classification",
+                    COMMON_PERMISSIONS,
+                    app_rules_line,
+                    f"app access rule references an unknown system scope: {scope}",
+                )
+            )
+        if not prefix.startswith("/api/v1/"):
+            findings.append(
+                Finding(
+                    "API route access classification",
+                    COMMON_PERMISSIONS,
+                    app_rules_line,
+                    f"app access prefix must start with /api/v1/: {prefix}",
+                )
+            )
+            continue
+        route = prefix.removeprefix("/api/v1/").split("/", maxsplit=1)[0]
+        if route not in routes:
+            findings.append(
+                Finding(
+                    "API route access classification",
+                    COMMON_PERMISSIONS,
+                    app_rules_line,
+                    f"app access rule references an unknown root route: {prefix}",
+                )
+            )
+        elif policies.get(route) != "portal":
+            findings.append(
+                Finding(
+                    "API route access classification",
+                    COMMON_PERMISSIONS,
+                    app_rules_line,
+                    f"{prefix} override requires a portal root route, got {policies.get(route)!r}",
+                )
+            )
+
+    for route, policy in sorted(policies.items()):
+        if policy in {"public", "token", "portal"}:
+            continue
+        if not isinstance(policy, str) or not policy.startswith("app:") or not policy.removeprefix("app:"):
+            findings.append(
+                Finding(
+                    "API route access classification",
+                    COMMON_PERMISSIONS,
+                    policy_line,
+                    f"invalid access policy for {route}: {policy!r}",
+                )
+            )
+            continue
+        scope = policy.removeprefix("app:")
+        if scope not in known_app_scopes:
+            findings.append(
+                Finding(
+                    "API route access classification",
+                    ACCOUNT_MODELS,
+                    app_scope_keys_line,
+                    f"app route {route} references an unknown system scope: {scope}",
+                )
+            )
+    return findings
+
+
 def load_allowlist() -> list[re.Pattern[str]]:
     if not ALLOWLIST.exists():
         return []
@@ -364,6 +545,10 @@ def main() -> int:
         ("Cross-domain internal imports in tests", filter_allowlisted(check_test_import_boundaries(), allowlist_patterns)),
         ("Direct ORM usage in views", filter_allowlisted(check_view_orm_usage(), allowlist_patterns)),
         ("Write ORM usage in selectors", filter_allowlisted(check_selector_writes(), allowlist_patterns)),
+        (
+            "API route access classification",
+            filter_allowlisted(check_api_route_access_classification(), allowlist_patterns),
+        ),
         ("Backend app structure", filter_allowlisted(check_app_structure(), allowlist_patterns)),
     ]
     for title, findings in checks:

@@ -2,7 +2,8 @@
 import { createBrowserRouter, Outlet, useLocation } from "react-router-dom"
 
 import { PortalGlobalShell } from "@/components/layout"
-import { AuthAutoLoginGate, PortalAccessGate, useAuth } from "@/lib/auth"
+import { AppAccessGate, AuthAutoLoginGate, PortalAccessGate, useAuth } from "@/lib/auth"
+import { hasAppAccess } from "@/lib/access/appAccess"
 
 import { accessStatsRoutes } from "@/features/access-stats"
 import { appstoreRoutes } from "@/features/appstore"
@@ -31,28 +32,44 @@ const esopDashboardRoutes = lineDashboardRoutes.map((route) => {
       {
         path: "tip-status",
         caseSensitive: false,
-        element: <TkinPreventDashboardRoute />,
+        element: (
+          <AppAccessGate scopeKey="observer" appName="Observer">
+            <TkinPreventDashboardRoute />
+          </AppAccessGate>
+        ),
       },
       {
         path: "tip-status/:lineId",
         caseSensitive: false,
-        element: <TkinPreventDashboardRoute />,
+        element: (
+          <AppAccessGate scopeKey="observer" appName="Observer">
+            <TkinPreventDashboardRoute />
+          </AppAccessGate>
+        ),
       },
     ],
   }
 })
 
+function createAppRouteGroup(scopeKey, appName, routes) {
+  return {
+    element: <AppAccessGate scopeKey={scopeKey} appName={appName}><Outlet /></AppAccessGate>,
+    children: routes,
+  }
+}
+
 const protectedFeatureRoutes = [
-  ...teamstaffRoutes,
-  ...esopDashboardRoutes,
-  ...fdcTrendRoutes,
-  ...l3SpiderRoutes,
-  ...pmSpiderRoutes,
-  ...tttmSpiderRoutes,
-  ...appstoreRoutes,
-  ...accessStatsRoutes,
-  ...emailsRoutes,
-  ...vocRoutes,
+  createAppRouteGroup("teamstaff", "Team", teamstaffRoutes),
+  createAppRouteGroup("line-dashboard", "ESOP Dashboard", esopDashboardRoutes),
+  createAppRouteGroup("fdc-trend", "FDC Trend", fdcTrendRoutes),
+  createAppRouteGroup("l3-spider", "L3 Spider", l3SpiderRoutes),
+  createAppRouteGroup("pm-spider", "PM Spider", pmSpiderRoutes),
+  createAppRouteGroup("tttm-spider", "TTTM Spider", tttmSpiderRoutes),
+  createAppRouteGroup("appstore", "Appstore", appstoreRoutes),
+  createAppRouteGroup("access-stats", "접속 현황", accessStatsRoutes),
+  createAppRouteGroup("emails", "메일함", emailsRoutes),
+  createAppRouteGroup("voc", "VoE", vocRoutes),
+  createAppRouteGroup("observer", "Observer", observerRoutes),
   ...accountRoutes,
 ]
 
@@ -61,7 +78,9 @@ function AssistantWidgetOutlet() {
   const location = useLocation()
   const normalizedPath = location.pathname.replace(/\/+$/, "").toLowerCase()
   const hasPortalAccess = Boolean(user?.portal_access?.allowed)
-  const { data: mailboxesData } = useEmailMailboxes({ enabled: hasPortalAccess })
+  const hasAssistantAccess = hasAppAccess(user, "assistant")
+  const hasEmailsAccess = hasAppAccess(user, "emails")
+  const { data: mailboxesData } = useEmailMailboxes({ enabled: hasPortalAccess && hasEmailsAccess })
   const availableMailboxes = Array.isArray(mailboxesData?.results)
     ? mailboxesData.results
     : []
@@ -75,7 +94,9 @@ function AssistantWidgetOutlet() {
   return (
     <PortalAccessGate allowUnapprovedPaths={["/settings", "/settings/account"]}>
       <Outlet context={{ availableMailboxes }} />
-      {hasPortalAccess && !hideChatWidget ? <ChatWidget availableMailboxes={availableMailboxes} /> : null}
+      {hasPortalAccess && hasAssistantAccess && !hideChatWidget ? (
+        <ChatWidget availableMailboxes={availableMailboxes} />
+      ) : null}
     </PortalAccessGate>
   )
 }
@@ -83,14 +104,17 @@ function AssistantWidgetOutlet() {
 function AssistantMailboxOutlet() {
   const { user } = useAuth()
   const hasPortalAccess = Boolean(user?.portal_access?.allowed)
-  const { data: mailboxesData } = useEmailMailboxes({ enabled: hasPortalAccess })
+  const hasEmailsAccess = hasAppAccess(user, "emails")
+  const { data: mailboxesData } = useEmailMailboxes({ enabled: hasPortalAccess && hasEmailsAccess })
   const availableMailboxes = Array.isArray(mailboxesData?.results)
     ? mailboxesData.results
     : []
 
   return (
     <PortalAccessGate>
-      <Outlet context={{ availableMailboxes }} />
+      <AppAccessGate scopeKey="assistant" appName="Assistant">
+        <Outlet context={{ availableMailboxes }} />
+      </AppAccessGate>
     </PortalAccessGate>
   )
 }
@@ -103,7 +127,6 @@ const assistantWidgetRoutes = {
       children: [
         ...homeRoutes,
         ...protectedFeatureRoutes,
-        ...observerRoutes,
       ],
     },
   ],

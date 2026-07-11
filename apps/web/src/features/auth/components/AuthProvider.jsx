@@ -32,6 +32,7 @@ import { UserSdwtProdReconfirmDialog } from "./UserSdwtProdReconfirmDialog"
  * @property {string | null} [user_sdwt_prod]
  * @property {string | null} [pending_user_sdwt_prod]
  * @property {boolean} [has_pending_affiliation]
+ * @property {Record<string, {allowed: boolean, reason?: string}>} [app_access]
  */
 
 /**

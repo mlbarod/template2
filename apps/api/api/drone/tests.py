@@ -68,6 +68,18 @@ def tearDownModule() -> None:
         logging.disable(_PREVIOUS_LOGGING_DISABLE)
 
 
+def _allow_test_scope_access(test_case: TestCase) -> None:
+    """도메인 endpoint 테스트에서 공통 portal/app 권한 경계를 격리합니다."""
+
+    for service_name in ("get_portal_access_payload", "get_access_payload"):
+        patcher = patch(
+            f"api.account.services.{service_name}",
+            return_value={"allowed": True},
+        )
+        patcher.start()
+        test_case.addCleanup(patcher.stop)
+
+
 def _ensure_target_mapping(
     *,
     sdwt_prod: str | None,
@@ -2078,6 +2090,7 @@ class DroneEndpointTests(TestCase):
 
     def setUp(self) -> None:
         """테스트용 사용자/클라이언트를 준비합니다."""
+        _allow_test_scope_access(self)
         User = get_user_model()
         self.user = User.objects.create_user(
             sabun="S60000",
@@ -2430,6 +2443,7 @@ class DroneSopTargetRecipientTests(TestCase):
     def setUp(self) -> None:
         """테스트용 사용자와 소속 옵션을 준비합니다."""
 
+        _allow_test_scope_access(self)
         User = get_user_model()
         self.actor = User.objects.create_superuser(
             sabun="S71000",
@@ -4512,6 +4526,7 @@ class DroneJiraKeyEndpointTests(TestCase):
 
     def setUp(self) -> None:
         """테스트용 사용자/소속 데이터를 준비합니다."""
+        _allow_test_scope_access(self)
         User = get_user_model()
         self.user = User.objects.create_user(
             sabun="S70000",
@@ -8228,6 +8243,7 @@ class DroneTablesEndpointTests(TestCase):
     def setUp(self) -> None:
         """테스트용 사용자/클라이언트를 준비합니다."""
 
+        _allow_test_scope_access(self)
         User = get_user_model()
         self.user = User.objects.create_user(
             sabun="S41000",

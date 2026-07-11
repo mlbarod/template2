@@ -95,7 +95,7 @@ class AccessUserDecisionSerializer(serializers.Serializer):
 
 
 class AccessPolicyRuleMutationSerializer(serializers.Serializer):
-    """관리자 접근 정책 규칙 변경 입력 스키마."""
+    """관리자 부서 접근 정책 규칙 변경 입력 스키마."""
 
     scope = serializers.CharField(max_length=64, required=False, allow_blank=True)
     ruleType = serializers.ChoiceField(choices=AccessPolicyRule.RuleTypes.values, required=False)

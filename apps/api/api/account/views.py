@@ -283,11 +283,11 @@ class AccountPortalAccessView(APIView):
 
 
 # =============================================================================
-# 4) 관리자: 포털 접근 승인 목록/결정
+# 4) 권한 관리자: 포털 접근 승인 목록/결정
 # =============================================================================
 @method_decorator(csrf_exempt, name="dispatch")
 class AccountPortalAccessApprovalView(APIView):
-    """관리자가 사용자별 portal scope 접근 상태를 조회하고 결정합니다."""
+    """권한 관리자가 사용자별 portal scope 접근 상태를 조회하고 결정합니다."""
 
     def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
         """포털 접근 승인 요청 목록을 반환합니다.
@@ -304,7 +304,7 @@ class AccountPortalAccessApprovalView(APIView):
 
         오류:
         - 401: 미인증
-        - 403: 관리자 권한 없음
+        - 403: 접근 권한 관리 capability 없음
         """
         user = request.user
         if not user or not user.is_authenticated:
@@ -345,7 +345,7 @@ class AccountPortalAccessApprovalView(APIView):
         오류:
         - 400: 입력 오류
         - 401: 미인증
-        - 403: 관리자 권한 없음
+        - 403: 접근 권한 관리 capability 없음
         """
         user = request.user
         if not user or not user.is_authenticated:
@@ -380,11 +380,11 @@ class AccountPortalAccessApprovalView(APIView):
 
 
 # =============================================================================
-# 5) 관리자: 포털 접근 권한 운영 관리
+# 5) 권한 관리자: 포털 접근 권한 운영 관리
 # =============================================================================
 @method_decorator(csrf_exempt, name="dispatch")
 class AccountAccessUserView(APIView):
-    """관리자가 전체 사용자별 portal scope 최종 접근 상태를 조회합니다."""
+    """권한 관리자가 전체 사용자별 portal scope 최종 접근 상태를 조회합니다."""
 
     def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
         """사용자별 최종 접근 상태 목록을 반환합니다."""
@@ -412,8 +412,34 @@ class AccountAccessUserView(APIView):
 
 
 @method_decorator(csrf_exempt, name="dispatch")
+class AccountAppAccessMatrixView(APIView):
+    """권한 관리자가 사용자별 앱 접근 권한 매트릭스를 조회합니다."""
+
+    def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """활성 앱 scope와 사용자별 최종 접근 상태를 반환합니다."""
+
+        user = request.user
+        if not user or not user.is_authenticated:
+            return JsonResponse({"error": "unauthorized"}, status=401)
+
+        page = _parse_int(request.GET.get("page"), 1)
+        page_size = min(
+            _parse_int(request.GET.get("page_size") or request.GET.get("pageSize"), DEFAULT_PAGE_SIZE),
+            MAX_PAGE_SIZE,
+        )
+        payload, status_code = services.get_app_access_matrix(
+            actor=user,
+            search=(request.GET.get("q") or request.GET.get("search") or "").strip() or None,
+            department=(request.GET.get("department") or "").strip() or None,
+            page=page,
+            page_size=page_size,
+        )
+        return JsonResponse(payload, status=status_code)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
 class AccountAccessUserDecisionView(APIView):
-    """관리자가 특정 사용자의 portal scope 접근 상태를 변경합니다."""
+    """권한 관리자가 특정 사용자의 portal scope 접근 상태를 변경합니다."""
 
     def post(self, request: HttpRequest, user_id: int, *args: object, **kwargs: object) -> JsonResponse:
         """사용자 접근 상태 변경 요청을 처리합니다."""
@@ -451,7 +477,7 @@ class AccountAccessUserDecisionView(APIView):
 
 @method_decorator(csrf_exempt, name="dispatch")
 class AccountAccessPolicyRuleView(APIView):
-    """관리자가 portal scope 접근 정책 규칙을 조회하고 변경합니다."""
+    """권한 관리자가 portal scope 접근 정책 규칙을 조회하고 변경합니다."""
 
     def get(self, request: HttpRequest, rule_id: int | None = None, *args: object, **kwargs: object) -> JsonResponse:
         """접근 정책 규칙 목록을 반환합니다."""
@@ -544,7 +570,7 @@ class AccountAccessPolicyRuleView(APIView):
 
 @method_decorator(csrf_exempt, name="dispatch")
 class AccountAccessAuditLogView(APIView):
-    """관리자가 portal scope 접근 권한 감사 로그를 조회합니다."""
+    """권한 관리자가 전체 또는 선택한 scope의 접근 권한 감사 로그를 조회합니다."""
 
     def get(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
         """접근 권한 변경 이력 목록을 반환합니다."""

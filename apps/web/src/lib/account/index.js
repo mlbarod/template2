@@ -18,6 +18,7 @@ export {
 } from "./accountOverview"
 export {
   ACCESS_AUDIT_LOGS_QUERY_KEY,
+  ACCESS_MATRIX_QUERY_KEY,
   ACCESS_POLICY_RULES_QUERY_KEY,
   ACCESS_USERS_QUERY_KEY,
   AFFILIATION_MEMBERS_QUERY_KEY,
@@ -26,6 +27,7 @@ export {
   MANAGEABLE_QUERY_KEY,
   OVERVIEW_QUERY_KEY,
   useAccessAuditLogs,
+  useAccessMatrix,
   useAccessPolicyRules,
   useAccessUserDecision,
   useAccessUsers,

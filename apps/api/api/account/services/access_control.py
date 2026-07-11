@@ -18,10 +18,12 @@ from django.utils import timezone
 from .. import selectors
 from ..models import (
     ACCESS_SCOPE_PORTAL,
+    MANAGE_ACCESS_PERMISSION,
     AccessAuditLog,
     AccessPolicyRule,
     AccessRole,
     AccessScope,
+    AccessSource,
     UserAccess,
     UserProfile,
 )
@@ -34,14 +36,24 @@ _REVOKE_ACTIONS = {"reject", "revoke", "deny"}
 _ACCESS_STATUSES = {"allowed", "pending", "denied", "not_requested", "inactive"}
 
 
-def is_access_admin(*, user: Any) -> bool:
-    """접근 권한 관리자인지 확인합니다."""
+def can_manage_access(*, user: Any) -> bool:
+    """사용자가 portal/app 접근 권한을 관리할 수 있는지 확인합니다."""
 
     if not user or not getattr(user, "is_authenticated", False):
         return False
     if getattr(user, "is_superuser", False):
         return True
-    return _get_user_profile_role(user=user) == UserProfile.Roles.ADMIN
+    return bool(user.has_perm(MANAGE_ACCESS_PERMISSION))
+
+
+def has_access_bypass(*, user: Any) -> bool:
+    """사용자가 portal/app 접근 제한을 우회할 수 있는지 확인합니다."""
+
+    return bool(
+        user
+        and getattr(user, "is_authenticated", False)
+        and getattr(user, "is_superuser", False)
+    )
 
 
 def get_access_payload(*, user: Any, scope_key: str = ACCESS_SCOPE_PORTAL) -> dict[str, object]:
@@ -49,27 +61,27 @@ def get_access_payload(*, user: Any, scope_key: str = ACCESS_SCOPE_PORTAL) -> di
 
     scope = selectors.get_access_scope_by_key(scope_key=scope_key)
     department = _get_user_department(user=user)
-    is_admin = is_access_admin(user=user)
-    is_superuser = bool(getattr(user, "is_superuser", False))
+    can_manage = can_manage_access(user=user)
+    can_bypass = has_access_bypass(user=user)
 
     if scope is None:
         return {
-            "allowed": is_superuser,
+            "allowed": can_bypass,
             "scope": scope_key,
-            "reason": "admin" if is_superuser else "scope_not_found",
+            "reason": AccessSource.SUPERUSER_BYPASS if can_bypass else AccessSource.SCOPE_NOT_FOUND,
             "department": department,
             "departmentAllowed": False,
             "status": None,
-            "role": AccessRole.ADMIN if is_superuser else None,
+            "role": AccessRole.ADMIN if can_bypass else None,
             "requestId": None,
             "requestedAt": None,
             "decidedAt": None,
             "rejectionReason": None,
             "canRequest": False,
-            "canManage": is_admin,
-            "effectiveStatus": "allowed" if is_superuser else "inactive",
+            "canManage": can_manage,
+            "effectiveStatus": "allowed" if can_bypass else "inactive",
             "explicitStatus": None,
-            "source": "admin" if is_superuser else "scope_not_found",
+            "source": AccessSource.SUPERUSER_BYPASS if can_bypass else AccessSource.SCOPE_NOT_FOUND,
             "policyMatched": False,
             "policy": None,
         }
@@ -90,11 +102,14 @@ def _build_access_payload(
     scope: AccessScope,
     user_access: UserAccess | None,
     policy_rules: list[AccessPolicyRule],
+    include_management_capability: bool = True,
 ) -> dict[str, object]:
     """사용자 접근 row와 정책 규칙을 합쳐 최종 접근 상태를 계산합니다."""
 
+    is_app_scope = scope.scope_type == AccessScope.ScopeTypes.APP
     department = _get_user_department(user=user)
-    is_admin = is_access_admin(user=user)
+    can_manage = can_manage_access(user=user) if include_management_capability else False
+    can_bypass = has_access_bypass(user=user)
     policy_result = _evaluate_policy_rules(user=user, scope=scope, rules=policy_rules)
     policy_allowed = policy_result["allowed"]
     status = user_access.status if user_access else None
@@ -104,31 +119,31 @@ def _build_access_payload(
         else policy_result["role"]
     )
 
-    if is_admin:
+    if can_bypass:
         allowed = True
-        reason = "admin"
+        reason = AccessSource.SUPERUSER_BYPASS
         role = AccessRole.ADMIN
-        source = "admin"
+        source = AccessSource.SUPERUSER_BYPASS
         effective_status = "allowed"
     elif not scope.is_active:
         allowed = False
         reason = "scope_inactive"
-        source = "scope_inactive"
+        source = AccessSource.SCOPE_INACTIVE
         effective_status = "inactive"
     elif status == UserAccess.Status.DENIED:
         allowed = False
         reason = "denied"
-        source = "explicit_denied"
+        source = AccessSource.EXPLICIT_DENIED
         effective_status = "denied"
     elif status == UserAccess.Status.ALLOWED:
         allowed = True
         reason = "allowed"
-        source = "explicit_allowed"
+        source = AccessSource.EXPLICIT_ALLOWED
         effective_status = "allowed"
     elif status == UserAccess.Status.PENDING:
         allowed = False
         reason = "pending"
-        source = "explicit_pending"
+        source = AccessSource.EXPLICIT_PENDING
         effective_status = "pending"
     elif policy_allowed:
         allowed = True
@@ -138,17 +153,16 @@ def _build_access_payload(
     else:
         allowed = False
         reason = "not_requested"
-        source = "none"
+        source = AccessSource.NONE
         effective_status = "not_requested"
 
-    return {
+    payload = {
         "allowed": allowed,
         "scope": scope.key,
         "reason": reason,
         "department": department,
         "departmentAllowed": policy_result["departmentAllowed"],
         "status": status,
-        "role": role,
         "requestId": user_access.id if user_access else None,
         "requestedAt": user_access.requested_at.isoformat() if user_access else None,
         "decidedAt": user_access.decided_at.isoformat() if user_access and user_access.decided_at else None,
@@ -157,7 +171,7 @@ def _build_access_payload(
         "explicitStatus": status,
         "source": source,
         "policyMatched": bool(policy_allowed),
-        "policy": _serialize_policy_match(policy_result),
+        "policy": _serialize_policy_match(policy_result, include_role=not is_app_scope),
         "canRequest": bool(
             getattr(user, "is_authenticated", False)
             and scope.is_active
@@ -165,14 +179,44 @@ def _build_access_payload(
             and not allowed
             and status != UserAccess.Status.PENDING
         ),
-        "canManage": is_admin,
     }
+    if include_management_capability:
+        payload["canManage"] = can_manage
+    if not is_app_scope:
+        payload["role"] = role
+    return payload
 
 
 def get_portal_access_payload(*, user: Any) -> dict[str, object]:
     """기존 auth 응답 계약용 portal 접근 상태를 반환합니다."""
 
     return get_access_payload(user=user, scope_key=ACCESS_SCOPE_PORTAL)
+
+
+def get_app_access_payloads(*, user: Any) -> dict[str, dict[str, object]]:
+    """현재 사용자의 활성 앱 scope별 최종 접근 상태를 반환합니다."""
+
+    scopes = selectors.list_active_app_access_scopes()
+    policy_rules = selectors.list_active_access_policy_rules_for_scopes(scopes=scopes)
+    policy_rules_by_scope: dict[int, list[AccessPolicyRule]] = {scope.id: [] for scope in scopes}
+    for rule in policy_rules:
+        policy_rules_by_scope.setdefault(rule.scope_id, []).append(rule)
+
+    access_rows = selectors.list_user_access_rows_for_scopes_and_users(
+        scopes=scopes,
+        user_ids=[getattr(user, "id", 0)],
+    )
+    access_by_scope_id = {access.scope_id: access for access in access_rows}
+    return {
+        scope.key: _build_access_payload(
+            user=user,
+            scope=scope,
+            user_access=access_by_scope_id.get(scope.id),
+            policy_rules=policy_rules_by_scope.get(scope.id, []),
+            include_management_capability=False,
+        )
+        for scope in scopes
+    }
 
 
 def request_access(*, user: Any, scope_key: str = ACCESS_SCOPE_PORTAL) -> tuple[dict[str, object], int]:
@@ -275,7 +319,7 @@ def decide_access(
 ) -> tuple[dict[str, object], int]:
     """사용자 접근 요청을 allowed/denied 상태로 결정합니다."""
 
-    if not is_access_admin(user=actor):
+    if not can_manage_access(user=actor):
         return {"error": "forbidden"}, 403
 
     normalized_decision = (decision or "").strip().lower()
@@ -300,7 +344,15 @@ def decide_access(
                 "currentStatus": user_access.status,
             }, 409
 
-        normalized_role = _normalize_access_role(role or user_access.role or user_access.scope.default_role)
+        is_app_scope = user_access.scope.scope_type == AccessScope.ScopeTypes.APP
+        if is_app_scope and (role or "").strip():
+            return {"error": "app_role_not_supported"}, 400
+
+        normalized_role = (
+            AccessRole.VIEWER
+            if is_app_scope
+            else _normalize_access_role(role or user_access.role or user_access.scope.default_role)
+        )
         if normalized_role is None:
             return {"error": "invalid_role"}, 400
 
@@ -355,9 +407,9 @@ def get_access_requests(
     page: int,
     page_size: int,
 ) -> tuple[dict[str, object], int]:
-    """관리자용 사용자 접근 상태 목록을 반환합니다."""
+    """권한 관리자용 사용자 접근 상태 목록을 반환합니다."""
 
-    if not is_access_admin(user=actor):
+    if not can_manage_access(user=actor):
         return {"error": "forbidden"}, 403
 
     queryset = selectors.list_user_access_rows(scope_key=scope_key, status=status, search=search)
@@ -409,9 +461,9 @@ def get_access_users(
     page: int,
     page_size: int,
 ) -> tuple[dict[str, object], int]:
-    """관리자용 전체 사용자 접근 상태 목록을 반환합니다."""
+    """권한 관리자용 전체 사용자 접근 상태 목록을 반환합니다."""
 
-    if not is_access_admin(user=actor):
+    if not can_manage_access(user=actor):
         return {"error": "forbidden"}, 403
 
     scope = selectors.get_access_scope_by_key(scope_key=scope_key or ACCESS_SCOPE_PORTAL)
@@ -424,6 +476,9 @@ def get_access_users(
     normalized_source = (source or "").strip().lower()
     if normalized_source in {"all", ""}:
         normalized_source = ""
+    elif normalized_source == "admin":
+        # 이전 API 필터 값은 새 superuser 우회 source로 정규화합니다.
+        normalized_source = AccessSource.SUPERUSER_BYPASS
 
     user_queryset = selectors.list_access_management_users(search=search, department=department)
     user_queryset, is_fast_filtered = selectors.filter_access_management_users_for_fast_access_filter(
@@ -484,6 +539,68 @@ def get_access_users(
     }, 200
 
 
+def get_app_access_matrix(
+    *,
+    actor: Any,
+    search: str | None,
+    department: str | None,
+    page: int,
+    page_size: int,
+) -> tuple[dict[str, object], int]:
+    """권한 관리자용 사용자별 앱 접근 권한 매트릭스를 반환합니다."""
+
+    if not can_manage_access(user=actor):
+        return {"error": "forbidden"}, 403
+
+    scopes = selectors.list_active_app_access_scopes()
+    user_queryset = selectors.list_access_management_users(search=search, department=department)
+    paginator = Paginator(user_queryset, page_size)
+    try:
+        page_obj = paginator.page(page)
+    except EmptyPage:
+        page_obj = paginator.page(paginator.num_pages or 1)
+
+    users = list(page_obj.object_list)
+    policy_rules = selectors.list_active_access_policy_rules_for_scopes(scopes=scopes)
+    policy_rules_by_scope: dict[int, list[AccessPolicyRule]] = {scope.id: [] for scope in scopes}
+    for rule in policy_rules:
+        policy_rules_by_scope.setdefault(rule.scope_id, []).append(rule)
+
+    access_rows = selectors.list_user_access_rows_for_scopes_and_users(
+        scopes=scopes,
+        user_ids=[user.id for user in users],
+    )
+    access_by_scope_and_user = {
+        (access.scope_id, access.user_id): access
+        for access in access_rows
+    }
+
+    results = []
+    for target_user in users:
+        accesses = {
+            scope.key: _build_access_payload(
+                user=target_user,
+                scope=scope,
+                user_access=access_by_scope_and_user.get((scope.id, target_user.id)),
+                policy_rules=policy_rules_by_scope.get(scope.id, []),
+                include_management_capability=False,
+            )
+            for scope in scopes
+        }
+        results.append({"user": _serialize_access_user(target_user), "accesses": accesses})
+
+    return {
+        "scopes": [_serialize_scope(scope) for scope in scopes],
+        "results": results,
+        "pagination": {
+            "page": page_obj.number,
+            "pageSize": page_size,
+            "total": paginator.count,
+            "totalPages": paginator.num_pages,
+        },
+    }, 200
+
+
 def decide_user_access(
     *,
     actor: Any,
@@ -493,9 +610,9 @@ def decide_user_access(
     reason: str | None,
     role: str | None = None,
 ) -> tuple[dict[str, object], int]:
-    """관리자가 특정 사용자의 scope 접근 상태를 변경합니다."""
+    """권한 관리자가 특정 사용자의 scope 접근 상태를 변경합니다."""
 
-    if not is_access_admin(user=actor):
+    if not can_manage_access(user=actor):
         return {"error": "forbidden"}, 403
 
     scope = selectors.get_access_scope_by_key(scope_key=scope_key or ACCESS_SCOPE_PORTAL)
@@ -508,6 +625,12 @@ def decide_user_access(
 
     normalized_action = (action or "").strip().lower()
     normalized_reason = (reason or "").strip()
+    is_app_scope = scope.scope_type == AccessScope.ScopeTypes.APP
+    if is_app_scope and (
+        normalized_action == AccessAuditLog.Actions.CHANGE_ROLE
+        or (role or "").strip()
+    ):
+        return {"error": "app_role_not_supported"}, 400
     if normalized_action == AccessAuditLog.Actions.RESET_TO_POLICY:
         return _reset_user_access_to_policy(
             actor=actor,
@@ -556,7 +679,10 @@ def decide_user_access(
                 user_access=user_access,
                 policy_rules=policy_rules,
             )
-            if not current_access["allowed"] or current_access["source"] == "admin":
+            if (
+                not current_access["allowed"]
+                or current_access["source"] == AccessSource.SUPERUSER_BYPASS
+            ):
                 return {
                     "error": "invalid_status_transition",
                     "currentStatus": current_access["effectiveStatus"],
@@ -570,7 +696,11 @@ def decide_user_access(
                 department=_get_user_department(user=target_user),
             )
 
-        normalized_role = explicit_role or _normalize_access_role(role or user_access.role or scope.default_role)
+        normalized_role = (
+            AccessRole.VIEWER
+            if is_app_scope
+            else explicit_role or _normalize_access_role(role or user_access.role or scope.default_role)
+        )
         if normalized_role is None:
             return {"error": "invalid_role"}, 400
 
@@ -609,9 +739,9 @@ def get_access_policy_rules(
     actor: Any,
     scope_key: str | None,
 ) -> tuple[dict[str, object], int]:
-    """관리자용 접근 정책 규칙 목록을 반환합니다."""
+    """권한 관리자용 접근 정책 규칙 목록을 반환합니다."""
 
-    if not is_access_admin(user=actor):
+    if not can_manage_access(user=actor):
         return {"error": "forbidden"}, 403
 
     return {
@@ -633,7 +763,7 @@ def create_access_policy_rule(
 ) -> tuple[dict[str, object], int]:
     """접근 정책 규칙을 생성합니다."""
 
-    if not is_access_admin(user=actor):
+    if not can_manage_access(user=actor):
         return {"error": "forbidden"}, 403
 
     with transaction.atomic():
@@ -643,7 +773,14 @@ def create_access_policy_rule(
 
         if rule_type not in AccessPolicyRule.RuleTypes.values:
             return {"error": "invalid_rule_type"}, 400
-        normalized_role = _normalize_access_role(role or scope.default_role)
+        is_app_scope = scope.scope_type == AccessScope.ScopeTypes.APP
+        if is_app_scope and (role or "").strip():
+            return {"error": "app_role_not_supported"}, 400
+        normalized_role = (
+            AccessRole.VIEWER
+            if is_app_scope
+            else _normalize_access_role(role or scope.default_role)
+        )
         if normalized_role is None:
             return {"error": "invalid_role"}, 400
 
@@ -692,7 +829,7 @@ def update_access_policy_rule(
 ) -> tuple[dict[str, object], int]:
     """접근 정책 규칙을 수정합니다."""
 
-    if not is_access_admin(user=actor):
+    if not can_manage_access(user=actor):
         return {"error": "forbidden"}, 403
 
     with transaction.atomic():
@@ -706,6 +843,7 @@ def update_access_policy_rule(
             if scope is None:
                 return {"error": "scope_not_found"}, 404
             rule.scope = scope
+        is_app_scope = rule.scope.scope_type == AccessScope.ScopeTypes.APP
         if rule_type is not None:
             if rule_type not in AccessPolicyRule.RuleTypes.values:
                 return {"error": "invalid_rule_type"}, 400
@@ -713,10 +851,14 @@ def update_access_policy_rule(
         if value is not None:
             rule.value = value.strip()
         if role is not None:
+            if is_app_scope and role.strip():
+                return {"error": "app_role_not_supported"}, 400
             normalized_role = _normalize_access_role(role)
             if normalized_role is None:
                 return {"error": "invalid_role"}, 400
             rule.role = normalized_role
+        if is_app_scope:
+            rule.role = AccessRole.VIEWER
         if is_active is not None:
             rule.is_active = bool(is_active)
 
@@ -752,7 +894,7 @@ def delete_access_policy_rule(
 ) -> tuple[dict[str, object], int]:
     """접근 정책 규칙을 삭제합니다."""
 
-    if not is_access_admin(user=actor):
+    if not can_manage_access(user=actor):
         return {"error": "forbidden"}, 403
 
     with transaction.atomic():
@@ -786,13 +928,17 @@ def get_access_audit_logs(
     page: int,
     page_size: int,
 ) -> tuple[dict[str, object], int]:
-    """관리자용 접근 권한 감사 로그 목록을 반환합니다."""
+    """권한 관리자용 접근 권한 감사 로그 목록을 반환합니다."""
 
-    if not is_access_admin(user=actor):
+    if not can_manage_access(user=actor):
         return {"error": "forbidden"}, 403
 
+    normalized_scope = (scope_key or "").strip()
+    if normalized_scope.casefold() == "all":
+        normalized_scope = ""
+
     queryset = selectors.list_access_audit_logs(
-        scope_key=scope_key or ACCESS_SCOPE_PORTAL,
+        scope_key=normalized_scope or None,
         user_id=user_id,
         action=action,
     )
@@ -819,51 +965,27 @@ def _evaluate_policy_rules(
     scope: AccessScope,
     rules: list[AccessPolicyRule] | None = None,
 ) -> dict[str, object]:
-    """기존 account 테이블을 근거로 scope 정책 규칙을 평가합니다."""
+    """사용자 부서와 scope의 활성 부서 규칙을 비교합니다."""
 
-    department_allowed = False
+    department = _get_user_department(user=user)
     policy_rules = rules if rules is not None else selectors.list_active_access_policy_rules(scope=scope)
     for rule in policy_rules:
-        if rule.rule_type == AccessPolicyRule.RuleTypes.AUTHENTICATED:
+        if rule.rule_type != AccessPolicyRule.RuleTypes.DEPARTMENT:
+            continue
+        if department and department.casefold() == rule.value.strip().casefold():
             return _build_policy_result(
                 rule=rule,
-                reason="policy_authenticated",
-                source="policy_authenticated",
-                department_allowed=department_allowed,
+                reason="department_allowed",
+                source=AccessSource.POLICY_DEPARTMENT,
+                department_allowed=True,
             )
-        if rule.rule_type == AccessPolicyRule.RuleTypes.DEPARTMENT:
-            department = _get_user_department(user=user)
-            if department and department.casefold() == rule.value.strip().casefold():
-                department_allowed = True
-                return _build_policy_result(
-                    rule=rule,
-                    reason="department_allowed",
-                    source="policy_department",
-                    department_allowed=True,
-                )
-        if rule.rule_type == AccessPolicyRule.RuleTypes.PROFILE_ROLE:
-            if _get_user_profile_role(user=user) == rule.value.strip().lower():
-                return _build_policy_result(
-                    rule=rule,
-                    reason="policy_profile_role",
-                    source="policy_profile_role",
-                    department_allowed=department_allowed,
-                )
-        if rule.rule_type == AccessPolicyRule.RuleTypes.USER_SDWT_PROD_ROLE:
-            if _matches_user_sdwt_prod_role(user=user, rule_value=rule.value):
-                return _build_policy_result(
-                    rule=rule,
-                    reason="policy_user_sdwt_prod_role",
-                    source="policy_user_sdwt_prod_role",
-                    department_allowed=department_allowed,
-                )
 
     return {
         "allowed": False,
         "reason": "not_requested",
-        "source": "none",
+        "source": AccessSource.NONE,
         "role": scope.default_role,
-        "departmentAllowed": department_allowed,
+        "departmentAllowed": False,
         "rule": None,
     }
 
@@ -938,32 +1060,40 @@ def _build_policy_result(
     }
 
 
-def _serialize_policy_match(policy_result: dict[str, object]) -> dict[str, object]:
+def _serialize_policy_match(
+    policy_result: dict[str, object],
+    *,
+    include_role: bool = True,
+) -> dict[str, object]:
     """정책 매칭 결과를 API 응답 형태로 직렬화합니다."""
 
     rule = policy_result.get("rule")
-    return {
+    payload = {
         "matched": bool(policy_result.get("allowed")),
         "reason": policy_result.get("reason"),
         "source": policy_result.get("source"),
         "ruleId": rule.id if isinstance(rule, AccessPolicyRule) else None,
         "ruleType": rule.rule_type if isinstance(rule, AccessPolicyRule) else None,
         "value": rule.value if isinstance(rule, AccessPolicyRule) else None,
-        "role": rule.role if isinstance(rule, AccessPolicyRule) else policy_result.get("role"),
     }
+    if include_role:
+        payload["role"] = rule.role if isinstance(rule, AccessPolicyRule) else policy_result.get("role")
+    return payload
 
 
 def _serialize_scope(scope: AccessScope) -> dict[str, object]:
     """접근 scope를 API 응답 형태로 직렬화합니다."""
 
-    return {
+    payload = {
         "key": scope.key,
         "name": scope.name,
         "scopeType": scope.scope_type,
         "isActive": scope.is_active,
         "requestable": scope.requestable,
-        "defaultRole": scope.default_role,
     }
+    if scope.scope_type != AccessScope.ScopeTypes.APP:
+        payload["defaultRole"] = scope.default_role
+    return payload
 
 
 def _serialize_effective_access_user(
@@ -982,6 +1112,7 @@ def _serialize_effective_access_user(
             scope=scope,
             user_access=user_access,
             policy_rules=policy_rules,
+            include_management_capability=False,
         ),
     }
 
@@ -1081,9 +1212,9 @@ def _summarize_access_rows(rows: list[dict[str, object]]) -> dict[str, int]:
         source = access.get("source")
         if isinstance(source, str) and source.startswith("policy_"):
             summary["policyAllowed"] += 1
-        if source == "explicit_allowed":
+        if source == AccessSource.EXPLICIT_ALLOWED:
             summary["explicitAllowed"] += 1
-        if source == "explicit_denied":
+        if source == AccessSource.EXPLICIT_DENIED:
             summary["explicitDenied"] += 1
     return summary
 
@@ -1102,17 +1233,19 @@ def _clean_policy_rule(rule: AccessPolicyRule) -> dict[str, object] | None:
 def _serialize_access_policy_rule(rule: AccessPolicyRule) -> dict[str, object]:
     """접근 정책 규칙을 API 응답 형태로 직렬화합니다."""
 
-    return {
+    payload = {
         "id": rule.id,
         "scope": rule.scope.key,
         "scopeName": rule.scope.name,
         "ruleType": rule.rule_type,
         "value": rule.value,
-        "role": rule.role,
         "isActive": rule.is_active,
         "createdAt": rule.created_at.isoformat() if rule.created_at else None,
         "updatedAt": rule.updated_at.isoformat() if rule.updated_at else None,
     }
+    if rule.scope.scope_type != AccessScope.ScopeTypes.APP:
+        payload["role"] = rule.role
+    return payload
 
 
 def _create_access_audit_log(
@@ -1219,19 +1352,6 @@ def _get_user_profile_role(*, user: Any) -> str:
     return profile.role or UserProfile.Roles.VIEWER
 
 
-def _matches_user_sdwt_prod_role(*, user: Any, rule_value: str) -> bool:
-    """user_sdwt_prod:role 형태의 정책 값을 사용자 접근 권한과 비교합니다."""
-
-    parts = [part.strip() for part in (rule_value or "").split(":", 1)]
-    if len(parts) != 2 or not parts[0] or not parts[1]:
-        return False
-    access = selectors.get_access_row_for_user_and_prod(user=user, user_sdwt_prod=parts[0])
-    if access is None:
-        return False
-    order = {"viewer": 0, "member": 1, "manager": 2}
-    return order.get(access.role, 0) >= order.get(parts[1].lower(), 0)
-
-
 def _normalize_access_role(role: str | None) -> str | None:
     """접근 role 값을 정규화합니다."""
 
@@ -1246,12 +1366,11 @@ def _serialize_user_access(user_access: UserAccess) -> dict[str, object]:
 
     user = user_access.user
     decided_by = user_access.decided_by
-    return {
+    payload = {
         "id": user_access.id,
         "scope": user_access.scope.key,
         "scopeName": user_access.scope.name,
         "status": user_access.status,
-        "role": user_access.role,
         "department": user_access.department,
         "requestedAt": user_access.requested_at.isoformat(),
         "decidedAt": user_access.decided_at.isoformat() if user_access.decided_at else None,
@@ -1268,3 +1387,6 @@ def _serialize_user_access(user_access: UserAccess) -> dict[str, object]:
             "knoxId": getattr(decided_by, "knox_id", None),
         } if decided_by else None,
     }
+    if user_access.scope.scope_type != AccessScope.ScopeTypes.APP:
+        payload["role"] = user_access.role
+    return payload

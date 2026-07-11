@@ -9,7 +9,7 @@
 | 모듈 | Prefix | 실제 라우팅 파일 | 주요 endpoint |
 | --- | --- | --- | --- |
 | Auth | `/api/v1/auth/` | `apps/api/api/auth/urls.py` | `login`, `logout`, `me`, `config`, empty redirect |
-| Account | `/api/v1/account/` | `apps/api/api/account/urls.py` | `overview`, `affiliation`, `affiliation/approve`, `affiliation/requests`, `affiliation/members`, `affiliation/reconfirm`, `portal-access`, `portal-access/approvals`, `access/users`, `access/users/<user_id>/decision`, `access/policy-rules`, `access/policy-rules/<rule_id>`, `access/audit-logs`, `external-affiliations/sync`, `access/grants`, `access/manageable`, `users`, `line-sdwt-options` |
+| Account | `/api/v1/account/` | `apps/api/api/account/urls.py` | `overview`, `affiliation`, `affiliation/approve`, `affiliation/requests`, `affiliation/members`, `affiliation/reconfirm`, `portal-access`, `portal-access/approvals`, `access/users`, `access/matrix`, `access/users/<user_id>/decision`, `access/policy-rules`, `access/policy-rules/<rule_id>`, `access/audit-logs`, `external-affiliations/sync`, `access/grants`, `access/manageable`, `users`, `line-sdwt-options` |
 | Emails | `/api/v1/emails/` | `apps/api/api/emails/urls.py` | `inbox/`, `sent/`, `mailboxes/`, `mailboxes/summary/`, `mailboxes/members/`, `unassigned/`, `unassigned/claim/`, `ingest/`, `outbox/process/`, `assets/ocr/claim/`, `assets/ocr/update/`, `bulk-delete/`, `move/`, `<email_id>/`, `<email_id>/assets/<sequence>/`, `<email_id>/html/` |
 | Data Movement | `/api/v1/data-movement/` | `apps/api/api/data_movement/urls.py` | `<table_name>/load/` |
 | Assistant | `/api/v1/assistant/` | `apps/api/api/assistant/urls.py` | `chat`, `rag-indexes` |
@@ -47,7 +47,7 @@
 
 | Django app | 모델 |
 | --- | --- |
-| `api.account` | `User`, `UserProfile`, `Affiliation`, `UserCurrentAffiliation`, `UserSdwtProdAccess`, `AccessRole`, `AccessScope`, `AccessPolicyRule`, `UserAccess`, `AccessAuditLog`, `UserSdwtProdChange`, `ExternalAffiliationSnapshot` |
+| `api.account` | `User`, `UserProfile`, `Affiliation`, `UserCurrentAffiliation`, `UserSdwtProdAccess`, `AccessRole`, `AccessSource`, `AccessScope`, `AccessPolicyRule`, `UserAccess`, `AccessAuditLog`, `UserSdwtProdChange`, `ExternalAffiliationSnapshot` |
 | `api.activity` | `ActivityLog`, `ExternalAppAccessDailyStat`, `ExternalAppUsageSyncState` |
 | `api.appstore` | `AppStoreApp`, `AppStoreLike`, `AppStoreComment`, `AppStoreCommentLike` |
 | `api.drone` | `DroneSOP`, `DroneSopTarget`, `DroneSopTargetChannelConfig`, `DroneSopNeedToSendRule`, `DroneSopTargetMapping`, `DroneSopTargetRecipient`, `DroneSopTargetDispatch`, `DroneSopDelivery`, `DroneEarlyInform` |
@@ -68,6 +68,7 @@
 
 | Command | 위치 | 목적 |
 | --- | --- | --- |
+| `check_access_permission_integrity` | `apps/api/api/account/management/commands/check_access_permission_integrity.py` | 배포 전 접근 권한 scope, 정책, 사용자 권한, 관리자 그룹 정합성 점검 |
 | `ensure_dev_database` | `apps/api/api/management/commands/ensure_dev_database.py` | dev 환경에서 Django 기본 DB와 필수 PostgreSQL extension 보장 |
 | `process_email_outbox` | `apps/api/api/emails/management/commands/process_email_outbox.py` | pending `EmailOutbox`를 RAG insert/delete 호출로 처리 |
 | `seed_dummy_emails` | `apps/api/api/emails/management/commands/seed_dummy_emails.py` | 로컬 개발용 더미 Email 데이터를 생성 |

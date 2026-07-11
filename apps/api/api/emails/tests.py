@@ -51,6 +51,18 @@ def _set_current_affiliation(user, *, user_sdwt_prod: str) -> None:
     )
 
 
+def _allow_test_scope_access(test_case: TestCase) -> None:
+    """도메인 endpoint 테스트에서 공통 portal/app 권한 경계를 격리합니다."""
+
+    for service_name in ("get_portal_access_payload", "get_access_payload"):
+        patcher = patch(
+            f"api.account.services.{service_name}",
+            return_value={"allowed": True},
+        )
+        patcher.start()
+        test_case.addCleanup(patcher.stop)
+
+
 @override_settings(TIME_ZONE="Asia/Seoul")
 class EmailQueryFilterTests(SimpleTestCase):
     """emails.services.query_filters의 날짜 파싱을 검증합니다."""
@@ -564,6 +576,11 @@ class EmailOutboxTests(TestCase):
 
 class EmailMailboxAccessViewTests(TestCase):
     """emails 뷰에서 user_sdwt_prod 기반 접근 제어를 검증합니다."""
+
+    def setUp(self) -> None:
+        """메일함 계약과 무관한 공통 scope 권한 경계를 격리합니다."""
+
+        _allow_test_scope_access(self)
 
     def test_user_only_sees_own_mailbox_by_default(self) -> None:
         """일반 사용자가 기본적으로 자신의 메일함만 보는지 확인합니다.
@@ -1504,6 +1521,7 @@ class EmailEndpointTests(TestCase):
             없음.
         """
 
+        _allow_test_scope_access(self)
         User = get_user_model()
         self.user = User.objects.create_user(sabun="S11111", password="test-password")
         self.user.knox_id = "knox-11111"

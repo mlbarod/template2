@@ -91,4 +91,5 @@ def get_current_user_payload(*, user: Any) -> Dict[str, Any]:
         "pending_user_sdwt_prod": pending_user_sdwt_prod,
         "has_pending_affiliation": has_pending_affiliation,
         "portal_access": account_services.get_portal_access_payload(user=user),
+        "app_access": account_services.get_app_access_payloads(user=user),
     }

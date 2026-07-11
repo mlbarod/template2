@@ -21,8 +21,10 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.utils.deprecation import MiddlewareMixin  # Django 미들웨어 호환성 클래스
 
 from api.common.permissions import (
+    get_request_app_access_payload,
     get_request_portal_access_payload,
     is_portal_access_protected_path,
+    resolve_app_access_scope_for_path,
 )
 
 from .request_helpers import _load_json_bytes
@@ -528,10 +530,10 @@ class KnoxIdRequiredMiddleware(MiddlewareMixin):
 
 
 class AccessRequiredMiddleware(MiddlewareMixin):
-    """인증 사용자의 portal scope 접근 상태를 API 레벨에서 검사합니다."""
+    """인증 사용자의 portal/app scope 접근 상태를 API 레벨에서 검사합니다."""
 
     def process_request(self, request: HttpRequest) -> HttpResponse | None:
-        """포털 접근 승인 상태를 검사하고 차단 시 403을 반환합니다.
+        """포털과 앱 접근 승인 상태를 검사하고 차단 시 403을 반환합니다.
 
         입력:
         - 요청: Django HttpRequest
@@ -555,13 +557,32 @@ class AccessRequiredMiddleware(MiddlewareMixin):
             return None
 
         portal_access = get_request_portal_access_payload(request=request, user=user)
-        if portal_access.get("allowed"):
+        if not portal_access.get("allowed"):
+            return JsonResponse(
+                {
+                    "error": "portal_access_required",
+                    "portalAccess": portal_access,
+                },
+                status=403,
+            )
+
+        scope_key = resolve_app_access_scope_for_path(path)
+        if scope_key is None:
+            return None
+
+        app_access = get_request_app_access_payload(
+            request=request,
+            user=user,
+            scope_key=scope_key,
+        )
+        if app_access.get("allowed"):
             return None
 
         return JsonResponse(
             {
-                "error": "portal_access_required",
-                "portalAccess": portal_access,
+                "error": "app_access_required",
+                "scope": scope_key,
+                "appAccess": app_access,
             },
             status=403,
         )
