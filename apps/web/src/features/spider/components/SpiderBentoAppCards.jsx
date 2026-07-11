@@ -345,7 +345,14 @@ function SpiderLinkStack({ links = [], itemRefs = [] }) {
         )
 
         return item.allowed ? (
-          <Link key={item.title} ref={itemRefs[index]} to={item.href} className={className}>
+          <Link
+            key={item.title}
+            ref={itemRefs[index]}
+            to={item.href}
+            target={item.external ? "_blank" : undefined}
+            rel={item.external ? "noopener noreferrer" : undefined}
+            className={className}
+          >
             {content}
           </Link>
         ) : (

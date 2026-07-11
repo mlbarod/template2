@@ -13,6 +13,7 @@ const spiderLinks = [
     href: "/spider/l0",
     badge: "L0",
     appScope: "l0-spider",
+    external: true,
   },
   {
     icon: Radar,
@@ -21,6 +22,7 @@ const spiderLinks = [
     href: "/spider/l1",
     badge: "L1",
     appScope: "l1-spider",
+    external: true,
   },
   {
     icon: Network,
