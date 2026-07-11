@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { useLocation } from "react-router-dom"
 import { SearchIcon } from "lucide-react"
 
-import { ThemeColorSelector, ThemeToggle } from "@/components/common"
+import { GaNEtchLogo, ThemeColorSelector, ThemeToggle } from "@/components/common"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/navigation-menu"
 import { useAuth } from "@/lib/auth"
 import { hasAnyAppAccess, hasEveryAppAccess } from "@/lib/access/appAccess"
-import { resolvePortalBrand } from "@/lib/config/portalBranding"
+import { PORTAL_BRAND_KEY, resolvePortalBrand } from "@/lib/config/portalBranding"
 import { buildProfileImageUrl, resolveProfileAvatarId } from "@/lib/profileImage"
 import { useTheme } from "@/lib/theme"
 import { cn } from "@/lib/utils"
@@ -129,6 +129,7 @@ export function PortalNavbar({ navigationItems }) {
     brandMark?.type === "image" && resolvedTheme === "dark" && brandMark.darkSrc
       ? brandMark.darkSrc
       : brandMark?.src
+  const shouldUsePortalLogo = brand.key === PORTAL_BRAND_KEY
 
   return (
     <div
@@ -140,15 +141,18 @@ export function PortalNavbar({ navigationItems }) {
     >
       <div className="flex flex-1 items-center gap-4">
         <PortalNavLink href="/" className="flex items-center gap-3">
-          <span className="flex size-8 shrink-0 items-center justify-center text-foreground">
-            {brandMark?.type === "image" ? (
+          <span className="flex size-8 shrink-0 items-center justify-center">
+            {shouldUsePortalLogo ? (
+              <GaNEtchLogo className="react-logo-circles--navbar" compact decorative />
+            ) : null}
+            {!shouldUsePortalLogo && brandMark?.type === "image" ? (
               <img
                 src={brandImageSrc}
                 alt={brandMark.alt ?? brand.name}
                 className="size-8 object-contain"
               />
             ) : null}
-            {BrandIcon ? <BrandIcon className="size-4" aria-hidden="true" /> : null}
+            {!shouldUsePortalLogo && BrandIcon ? <BrandIcon className="size-4" aria-hidden="true" /> : null}
           </span>
           <span className="hidden text-xl font-semibold sm:block">{brand.name}</span>
         </PortalNavLink>

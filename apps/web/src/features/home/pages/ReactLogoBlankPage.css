@@ -1,0 +1,11 @@
+.react-logo-blank-page {
+  display: flex;
+  width: 100%;
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at center, rgb(255 130 115 / 10%) 0%, transparent 55%),
+    rgb(42 44 46);
+}
