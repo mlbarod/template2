@@ -9,7 +9,12 @@ export function AccountSettingsShell() {
   const { user } = useAuth()
   const { pathname } = useLocation()
   const normalizedPath = pathname.replace(/\/+$/, "").toLowerCase()
-  const isFixedTablePage = ["/settings/members", "/settings/permissions"].includes(normalizedPath)
+  const isAccountPage = normalizedPath === "/settings/account"
+  const isFixedHeightPage = [
+    "/settings/account",
+    "/settings/members",
+    "/settings/permissions",
+  ].includes(normalizedPath)
   const navigation = buildNavigationConfig({
     canManageAccess: Boolean(user?.portal_access?.canManage),
   })
@@ -19,7 +24,18 @@ export function AccountSettingsShell() {
       <AppShellLayout
         navItems={navigation.navMain}
         sidebarHeader={<TeamSwitcher disabled />}
-        scrollAreaClassName={isFixedTablePage ? "overflow-hidden" : "overflow-y-auto"}
+        scrollAreaClassName={
+          isFixedHeightPage
+            ? "h-full min-h-0 overflow-hidden"
+            : "overflow-y-auto"
+        }
+        innerClassName={
+          isAccountPage
+            ? "mx-auto flex h-full min-h-0 w-full flex-col overflow-hidden"
+            : undefined
+        }
+        insetClassName={isAccountPage ? "h-full min-h-0 overflow-hidden" : undefined}
+        paddingClassName={isAccountPage ? "px-4" : undefined}
       >
         <Outlet />
       </AppShellLayout>

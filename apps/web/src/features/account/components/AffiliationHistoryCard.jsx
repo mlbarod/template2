@@ -14,13 +14,12 @@ import { formatAccountDateValue, getRequestStatus } from "../utils/accountOvervi
 export function AffiliationHistoryCard({ history }) {
   if (!history?.length) {
     return (
-      <Card className="max-h-96 overflow-hidden py-0">
+      <Card className="h-full min-h-0 gap-0 overflow-hidden py-0">
         <CardHeader className="shrink-0 border-b px-5 py-4">
-          <p className="text-xs font-medium text-muted-foreground">감사 이력</p>
           <CardTitle>승인/변경 히스토리</CardTitle>
           <CardDescription>소속 변경 신청과 승인 결과를 시간순으로 추적합니다.</CardDescription>
         </CardHeader>
-        <CardContent className="min-h-0 overflow-y-auto p-5">
+        <CardContent className="min-h-0 flex-1 overflow-y-auto p-5">
           <p className="text-sm text-muted-foreground">변경 히스토리가 없습니다.</p>
         </CardContent>
       </Card>
@@ -28,18 +27,17 @@ export function AffiliationHistoryCard({ history }) {
   }
 
   return (
-    <Card className="max-h-96 overflow-hidden py-0">
+    <Card className="h-full min-h-0 gap-0 overflow-hidden py-0">
       <CardHeader className="shrink-0 border-b px-5 py-4">
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground">감사 이력</p>
             <CardTitle>승인/변경 히스토리</CardTitle>
             <CardDescription>소속 변경 신청과 승인 결과를 시간순으로 추적합니다.</CardDescription>
           </div>
           <Badge variant="outline">{history.length.toLocaleString("ko-KR")}건</Badge>
         </div>
       </CardHeader>
-      <CardContent className="min-h-0 overflow-y-auto p-5">
+      <CardContent className="min-h-0 flex-1 overflow-y-auto p-5">
         <div className="rounded-lg border">
           <Table stickyHeader>
             <TableHeader>

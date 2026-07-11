@@ -113,15 +113,14 @@ export function MembersDataTable({
   onActiveTabChange,
   memberTotal,
   requestTotal,
+  requestLoadedCount,
   roleFilter,
   onRoleFilterChange,
-  page,
-  pageSize,
-  totalPages,
-  onPageChange,
-  onPageSizeChange,
   isLoading,
   isFetching,
+  isLoadingMore,
+  hasMoreRequests,
+  onLoadMore,
   error,
   emptyMessage,
   onRetry,
@@ -135,14 +134,18 @@ export function MembersDataTable({
     ? safeRows
     : safeRows.filter((row) => row.type === "request" || row.memberRole === roleFilter)
   const displayedMemberCount = filteredRows.filter((row) => row.type === "member").length
-  const requestStart = requestTotal > 0 ? (page - 1) * pageSize + 1 : 0
-  const requestEnd = requestTotal > 0 ? Math.min(page * pageSize, requestTotal) : 0
+  const displayedRequestCount = Number(requestLoadedCount) || 0
   const requestPagination = activeTab !== "members"
   const paginationSummary = activeTab === "all"
-    ? `멤버 ${displayedMemberCount.toLocaleString("ko-KR")}명 · 요청 ${requestStart.toLocaleString("ko-KR")}-${requestEnd.toLocaleString("ko-KR")} / 총 ${requestTotal.toLocaleString("ko-KR")}건`
+    ? `멤버 ${displayedMemberCount.toLocaleString("ko-KR")}명 · 요청 ${displayedRequestCount.toLocaleString("ko-KR")} / 총 ${requestTotal.toLocaleString("ko-KR")}건`
     : activeTab === "requests"
-      ? `요청 ${requestStart.toLocaleString("ko-KR")}-${requestEnd.toLocaleString("ko-KR")} / 총 ${requestTotal.toLocaleString("ko-KR")}건`
+      ? `요청 ${displayedRequestCount.toLocaleString("ko-KR")} / 총 ${requestTotal.toLocaleString("ko-KR")}건`
       : `총 ${filteredRows.length.toLocaleString("ko-KR")}명`
+  const paginationStatus = isLoadingMore
+    ? `${paginationSummary} · 더 불러오는 중...`
+    : hasMoreRequests && requestPagination
+      ? `${paginationSummary} · 아래로 스크롤하면 더 불러옵니다.`
+      : paginationSummary
 
   const columns = [
     {
@@ -157,7 +160,7 @@ export function MembersDataTable({
                 {getInitials(item)}
               </AvatarFallback>
             </Avatar>
-            <div className="flex min-w-0 flex-col">
+            <div className="flex min-w-0 items-baseline gap-2">
               <span className="truncate text-sm font-medium text-foreground">{item.name}</span>
               <span className="truncate text-xs text-muted-foreground">
                 {item.knoxId || item.email || "-"}
@@ -250,7 +253,7 @@ export function MembersDataTable({
         {isFetching && !isLoading ? <span className="text-xs text-muted-foreground">새로고침 중...</span> : null}
       </div>
 
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-2">
         <div className="grid gap-1.5">
           <Label htmlFor="members-list-filter">목록 구분</Label>
           <Select value={activeTab} onValueChange={onActiveTabChange}>
@@ -284,26 +287,6 @@ export function MembersDataTable({
             </SelectContent>
           </Select>
         </div>
-
-        <div className="grid gap-1.5">
-          <Label htmlFor="members-page-size">페이지 크기</Label>
-          <Select
-            value={String(pageSize)}
-            onValueChange={(value) => onPageSizeChange(Number(value))}
-            disabled={activeTab === "members"}
-          >
-            <SelectTrigger id="members-page-size" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {[10, 20, 50].map((value) => (
-                <SelectItem key={value} value={String(value)}>
-                  {value}개씩
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
       </div>
 
       {showApprovalNotice ? (
@@ -324,16 +307,16 @@ export function MembersDataTable({
       emptyMessage={emptyMessage}
       onRetry={onRetry}
       pagination={{
-        page: requestPagination ? page : 1,
-        pageSize: requestPagination ? pageSize : Math.max(filteredRows.length, 1),
+        page: 1,
+        pageSize: Math.max(filteredRows.length, 1),
         total: requestPagination ? requestTotal : filteredRows.length,
-        totalPages: requestPagination ? totalPages : 1,
-        summary: paginationSummary,
-        showControls: requestPagination && totalPages > 1,
-        onPageChange,
+        totalPages: 1,
+        summary: paginationStatus,
+        showControls: false,
       }}
       className="h-full"
       tableClassName="min-w-[1080px]"
+      onScrollEnd={requestPagination ? onLoadMore : undefined}
       ariaLabel="소속 사용자 목록"
     />
   )

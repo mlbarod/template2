@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -17,15 +17,15 @@ import { MembersDataTable } from "../components/MembersDataTable"
 import {
   useAffiliationMembers,
   useAffiliationDecision,
-  useAffiliationRequests,
+  useInfiniteAffiliationRequests,
 } from "../hooks/useAccountData"
+
+const REQUEST_PAGE_SIZE = 20
 
 export default function MembersPage() {
   const { user } = useAuth()
   const [activeTab, setActiveTab] = useState("all")
   const [roleFilter, setRoleFilter] = useState("all")
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(20)
   const [rejectTarget, setRejectTarget] = useState(null)
   const [rejectReason, setRejectReason] = useState("")
   const userSdwtProd = (user?.user_sdwt_prod || "").trim()
@@ -42,32 +42,24 @@ export default function MembersPage() {
     isPending: requestsPending,
     error: requestsError,
     isFetching: requestsFetching,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
     refetch: refetchRequests,
-  } = useAffiliationRequests({
-    page,
-    pageSize,
+  } = useInfiniteAffiliationRequests({
+    pageSize: REQUEST_PAGE_SIZE,
     status: "pending",
     search: "",
     userSdwtProd,
-    enabled: Boolean(userSdwtProd),
   })
 
   const decisionMutation = useAffiliationDecision()
 
-  useEffect(() => {
-    setPage(1)
-  }, [pageSize, userSdwtProd])
-
-  useEffect(() => {
-    if (requestsData?.page && requestsData.page !== page) {
-      setPage(requestsData.page)
-    }
-  }, [requestsData?.page, page])
-
   const members = membersData?.members || []
-  const requests = requestsData?.results || []
-  const requestTotal = requestsData?.total || 0
-  const totalPages = requestsData?.totalPages || 1
+  const requestPages = requestsData?.pages || []
+  const requests = requestPages.flatMap((pageData) => pageData?.results || [])
+  const latestRequestPage = requestPages[requestPages.length - 1]
+  const requestTotal = latestRequestPage?.total || 0
 
   const handleDecision = async (changeId, decision, rejectionReason) => {
     try {
@@ -197,6 +189,11 @@ export default function MembersPage() {
     if (activeTab !== "members") refetchRequests()
   }
 
+  const handleLoadMoreRequests = () => {
+    if (activeTab === "members" || !hasNextPage || isFetchingNextPage) return
+    fetchNextPage()
+  }
+
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col gap-4 overflow-hidden">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -217,15 +214,14 @@ export default function MembersPage() {
           onActiveTabChange={setActiveTab}
           memberTotal={members.length}
           requestTotal={requestTotal}
+          requestLoadedCount={requests.length}
           roleFilter={roleFilter}
           onRoleFilterChange={setRoleFilter}
-          page={page}
-          pageSize={pageSize}
-          totalPages={totalPages}
-          onPageChange={setPage}
-          onPageSizeChange={setPageSize}
           isLoading={isActiveLoading}
           isFetching={requestsFetching}
+          isLoadingMore={isFetchingNextPage}
+          hasMoreRequests={Boolean(hasNextPage)}
+          onLoadMore={handleLoadMoreRequests}
           error={activeErrorMessage}
           emptyMessage={activeEmptyMessage}
           onRetry={handleRetry}

@@ -24,13 +24,12 @@ export function ManageableGroupsCard({ groups }) {
 
   if (!groups?.length) {
     return (
-      <Card className="max-h-96 overflow-hidden py-0">
+      <Card className="h-full min-h-0 gap-0 overflow-hidden py-0">
         <CardHeader className="shrink-0 border-b px-5 py-4">
-          <p className="text-xs font-medium text-muted-foreground">권한 관리</p>
           <CardTitle>관리 가능한 그룹</CardTitle>
           <CardDescription>현재 사용자가 관리 가능한 user_sdwt_prod 목록입니다.</CardDescription>
         </CardHeader>
-        <CardContent className="min-h-0 overflow-y-auto p-5">
+        <CardContent className="min-h-0 flex-1 overflow-y-auto p-5">
           <p className="text-sm text-muted-foreground">관리 가능한 그룹이 없습니다.</p>
         </CardContent>
       </Card>
@@ -38,19 +37,18 @@ export function ManageableGroupsCard({ groups }) {
   }
 
   return (
-    <Card className="max-h-96 overflow-hidden py-0">
+    <Card className="h-full min-h-0 gap-0 overflow-hidden py-0">
       <CardHeader className="shrink-0 border-b px-5 py-4">
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground">권한 관리</p>
             <CardTitle>관리 가능한 그룹</CardTitle>
             <CardDescription>그룹별 멤버와 권한 상태를 확인합니다.</CardDescription>
           </div>
           <Badge variant="secondary">{groups.length}개 그룹</Badge>
         </div>
       </CardHeader>
-      <CardContent className="grid min-h-0 gap-4 overflow-y-auto p-5">
-        <div className="grid gap-3 sm:grid-cols-2">
+      <CardContent className="grid min-h-0 flex-1 grid-rows-[70px_minmax(0,1fr)] gap-4 overflow-y-auto p-5">
+        <div className="grid self-start gap-3 sm:grid-cols-2">
           <div className="rounded-lg border bg-muted/30 p-3">
             <p className="text-xs text-muted-foreground">관리 그룹</p>
             <p className="mt-1 text-lg font-semibold">{groups.length.toLocaleString("ko-KR")}</p>

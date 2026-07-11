@@ -28,6 +28,7 @@ export function AppShellLayout({
   scrollAreaClassName = "overflow-y-auto",
   paddingClassName,
   innerClassName,
+  insetClassName,
   providerKey,
   defaultOpen,
 }) {
@@ -49,6 +50,7 @@ export function AppShellLayout({
       scrollAreaClassName={scrollAreaClassName}
       paddingClassName={paddingClassName}
       innerClassName={innerClassName}
+      insetClassName={insetClassName}
       providerKey={providerKey}
       defaultOpen={defaultOpen}
     >

@@ -157,6 +157,7 @@ export function AccountDataTable({
   pagination,
   className,
   tableClassName,
+  onScrollEnd,
   ariaLabel = "사용자 목록",
 }) {
   const safeData = Array.isArray(data) ? data : []
@@ -168,6 +169,13 @@ export function AccountDataTable({
     getCoreRowModel: getCoreRowModel(),
   })
   const hasFooter = Boolean(pagination)
+  const handleScroll = (event) => {
+    if (!onScrollEnd) return
+    const { scrollTop, scrollHeight, clientHeight } = event.currentTarget
+    if (scrollHeight - scrollTop - clientHeight <= 96) {
+      onScrollEnd()
+    }
+  }
 
   return (
     <div
@@ -183,7 +191,7 @@ export function AccountDataTable({
     >
       {toolbar ? <div className="min-w-0 border-b">{toolbar}</div> : null}
 
-      <div className="min-h-0 min-w-0 overflow-auto">
+      <div className="min-h-0 min-w-0 overflow-auto" onScroll={handleScroll}>
         {isLoading ? (
           <div className="grid gap-3 p-4">
             {Array.from({ length: 6 }).map((_, index) => (
