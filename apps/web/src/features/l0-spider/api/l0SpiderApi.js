@@ -1,6 +1,6 @@
 import { buildBackendUrl, safeParseJson } from "@/lib/api"
 
-const BASE_PATH = "/api/v1/fdc-trend"
+const BASE_PATH = "/api/v1/l0_spider"
 
 async function request(path, searchParams) {
   const response = await fetch(buildBackendUrl(`${BASE_PATH}${path}`, searchParams), {
@@ -14,7 +14,7 @@ async function request(path, searchParams) {
         ? payload.error
         : typeof payload?.detail === "string"
           ? payload.detail
-          : `FDC Trend 요청 실패 (${response.status})`
+          : `L0 Spider 요청 실패 (${response.status})`
     const error = new Error(message)
     error.status = response.status
     throw error

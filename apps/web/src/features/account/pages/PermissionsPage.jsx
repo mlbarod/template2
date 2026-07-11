@@ -127,6 +127,22 @@ const ROLE_OPTIONS = [
   { value: "admin", label: "관리자 권한" },
 ]
 
+const APP_SCOPE_LABELS = {
+  "access-stats": "접속 현황",
+  appstore: "Appstore",
+  assistant: "Assistant",
+  emails: "메일함",
+  "l0-spider": "L0 Spider",
+  "l1-spider": "L1 Spider",
+  "l3-spider": "L3 Spider",
+  "line-dashboard": "ESOP Dashboard",
+  observer: "Observer",
+  "pm-spider": "PM Spider",
+  teamstaff: "Team",
+  "tttm-spider": "TTTM Spider",
+  voc: "VoE",
+}
+
 const ACTION_LABELS = {
   request: "승인 요청",
   approve: "승인",
@@ -247,6 +263,13 @@ function getAuditChanges(row) {
 
 function formatCount(value) {
   return Number(value || 0).toLocaleString("ko-KR")
+}
+
+function buildAccessScopeOptions(appAccess) {
+  const appScopeOptions = Object.keys(appAccess || {})
+    .sort((left, right) => (APP_SCOPE_LABELS[left] || left).localeCompare(APP_SCOPE_LABELS[right] || right, "ko"))
+    .map((scopeKey) => ({ value: scopeKey, label: APP_SCOPE_LABELS[scopeKey] || scopeKey }))
+  return [{ value: "portal", label: "Portal" }, ...appScopeOptions]
 }
 
 function getStatusVariant(status) {
@@ -1075,7 +1098,7 @@ function PendingPanel({ query, onDecision, onPageChange, isMutating }) {
   )
 }
 
-function PolicyPanel({ query }) {
+function PolicyPanel({ query, scope, scopeOptions, onScopeChange }) {
   const createMutation = useCreateAccessPolicyRule()
   const updateMutation = useUpdateAccessPolicyRule()
   const deleteMutation = useDeleteAccessPolicyRule()
@@ -1084,6 +1107,8 @@ function PolicyPanel({ query }) {
   const [form, setForm] = useState(INITIAL_POLICY_FORM)
   const rules = query.data?.results || []
   const isMutating = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending
+  const isAppScope = scope !== "portal"
+  const scopeLabel = scopeOptions.find((option) => option.value === scope)?.label || scope
 
   const resetForm = () => {
     setForm({ ...INITIAL_POLICY_FORM })
@@ -1133,10 +1158,10 @@ function PolicyPanel({ query }) {
     }
 
     const payload = {
-      scope: "portal",
+      scope,
       ruleType: "department",
       value,
-      role: form.role,
+      ...(isAppScope ? {} : { role: form.role }),
       isActive: form.isActive,
     }
     await createPolicy(payload)
@@ -1164,11 +1189,25 @@ function PolicyPanel({ query }) {
   return (
     <Card className="grid min-w-0 grid-rows-[auto_auto] overflow-hidden py-0 xl:h-full xl:min-h-0 xl:grid-rows-[min-content_minmax(0,1fr)] xl:gap-0">
       <CardHeader className="border-b px-4 py-3 xl:grid-rows-[auto] xl:content-start xl:pb-3!">
-        <CardTitle className="text-base">
-          <span className="xl:hidden">자동 규칙</span>
-          <span className="hidden xl:inline">자동 접근 규칙</span>
-        </CardTitle>
-        <CardDescription>{formatCount(rules.length)}개 규칙</CardDescription>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle className="text-base">
+              <span className="xl:hidden">자동 규칙</span>
+              <span className="hidden xl:inline">자동 접근 규칙</span>
+            </CardTitle>
+            <CardDescription>{scopeLabel} · {formatCount(rules.length)}개 규칙</CardDescription>
+          </div>
+          <Select value={scope} onValueChange={onScopeChange} disabled={isMutating}>
+            <SelectTrigger className="w-52" aria-label="자동 접근 규칙 권한 범위">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {scopeOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </CardHeader>
       <CardContent className="grid min-w-0 grid-rows-[auto_auto] gap-4 p-4 xl:min-h-0 xl:grid-rows-[min-content_minmax(0,1fr)]">
         <form
@@ -1187,25 +1226,34 @@ function PolicyPanel({ query }) {
               disabled={isMutating}
             />
           </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="access-policy-role">부여 권한</Label>
-            <Select
-              value={form.role}
-              onValueChange={(value) => setForm((current) => ({ ...current, role: value }))}
-              disabled={isMutating}
-            >
-              <SelectTrigger id="access-policy-role" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ROLE_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {isAppScope ? (
+            <div className="grid gap-1.5">
+              <Label>적용 결과</Label>
+              <div className="flex h-9 items-center rounded-md border bg-muted/40 px-3 text-sm">
+                앱 접근 허용
+              </div>
+            </div>
+          ) : (
+            <div className="grid gap-1.5">
+              <Label htmlFor="access-policy-role">부여 권한</Label>
+              <Select
+                value={form.role}
+                onValueChange={(value) => setForm((current) => ({ ...current, role: value }))}
+                disabled={isMutating}
+              >
+                <SelectTrigger id="access-policy-role" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ROLE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="grid gap-1.5">
             <Label htmlFor="access-policy-active">사용 여부</Label>
             <div className="flex h-9 items-center gap-2">
@@ -1248,7 +1296,7 @@ function PolicyPanel({ query }) {
               <TableHeader>
                 <TableRow>
                   <TableHead>대상 부서</TableHead>
-                  <TableHead>부여 권한</TableHead>
+                  <TableHead>{isAppScope ? "적용 결과" : "부여 권한"}</TableHead>
                   <TableHead>사용 여부</TableHead>
                   <TableHead className="text-right">작업</TableHead>
                 </TableRow>
@@ -1259,7 +1307,7 @@ function PolicyPanel({ query }) {
                   return (
                     <TableRow key={rule.id}>
                       <TableCell className="max-w-lg truncate">{rule.value || "-"}</TableCell>
-                      <TableCell>{ROLE_LABELS[rule.role] || rule.role}</TableCell>
+                      <TableCell>{isAppScope ? "앱 접근 허용" : ROLE_LABELS[rule.role] || rule.role}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Switch
@@ -1411,6 +1459,7 @@ export default function PermissionsPage() {
   const [pendingPage, setPendingPage] = useState(1)
   const [auditPage, setAuditPage] = useState(1)
   const [auditScope, setAuditScope] = useState("all")
+  const [policyScope, setPolicyScope] = useState("portal")
   const [decision, setDecision] = useState(null)
   const [decisionError, setDecisionError] = useState("")
   const [matrixFilters, setMatrixFilters] = useState(INITIAL_MATRIX_FILTERS)
@@ -1432,7 +1481,7 @@ export default function PermissionsPage() {
     status: "pending",
     enabled: canManage,
   })
-  const policyQuery = useAccessPolicyRules({ enabled: canManage })
+  const policyQuery = useAccessPolicyRules({ scope: policyScope, enabled: canManage })
   const auditQuery = useAccessAuditLogs({
     page: auditPage,
     pageSize: PAGE_SIZE,
@@ -1452,11 +1501,9 @@ export default function PermissionsPage() {
   const usersPageTotal = usersSummary.pageTotal ?? usersQuery.data?.results?.length ?? 0
   const pendingTotal = pendingQuery.data?.pagination?.total ?? 0
   const policyTotal = policyQuery.data?.results?.length ?? 0
-  const auditScopeOptions = [
-    { value: "all", label: "전체 권한 범위" },
-    { value: "portal", label: "Portal" },
-    ...Object.keys(user?.app_access || {}).sort().map((scopeKey) => ({ value: scopeKey, label: scopeKey })),
-  ]
+  const accessScopeOptions = buildAccessScopeOptions(user?.app_access)
+  const auditScopeOptions = [{ value: "all", label: "전체 권한 범위" }, ...accessScopeOptions]
+  const policyScopeLabel = accessScopeOptions.find((option) => option.value === policyScope)?.label || policyScope
   const hasAppliedFilters = Boolean(
     filters.status !== "all" || filters.source !== "all" || filters.search || filters.department,
   )
@@ -1614,7 +1661,7 @@ export default function PermissionsPage() {
                 icon={SlidersHorizontal}
                 label="자동 규칙"
                 value={policyTotal}
-                detail="사용/미사용 포함"
+                detail={`${policyScopeLabel} · 사용/미사용`}
                 isLoading={policyQuery.isFetching}
               />
             </section>
@@ -1648,7 +1695,7 @@ export default function PermissionsPage() {
                 icon={SlidersHorizontal}
                 label="자동 접근 규칙"
                 value={policyTotal}
-                detail="전체 규칙 · 사용/미사용"
+                detail={`${policyScopeLabel} · 사용/미사용`}
                 isLoading={policyQuery.isFetching}
               />
             </section>
@@ -1742,7 +1789,13 @@ export default function PermissionsPage() {
                 />
               </TabsContent>
               <TabsContent value="policies" className="min-w-0 xl:min-h-0 xl:overflow-hidden">
-                <PolicyPanel query={policyQuery} />
+                <PolicyPanel
+                  key={policyScope}
+                  query={policyQuery}
+                  scope={policyScope}
+                  scopeOptions={accessScopeOptions}
+                  onScopeChange={setPolicyScope}
+                />
               </TabsContent>
               <TabsContent value="audit" className="min-w-0 xl:min-h-0 xl:overflow-hidden">
                 <AuditPanel

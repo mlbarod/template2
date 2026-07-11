@@ -12,3 +12,8 @@ export function hasEveryAppAccess(user, scopeKeys) {
   const keys = Array.isArray(scopeKeys) ? scopeKeys.filter(Boolean) : []
   return keys.every((scopeKey) => hasAppAccess(user, scopeKey))
 }
+
+export function hasAnyAppAccess(user, scopeKeys) {
+  const keys = Array.isArray(scopeKeys) ? scopeKeys.filter(Boolean) : []
+  return keys.some((scopeKey) => hasAppAccess(user, scopeKey))
+}

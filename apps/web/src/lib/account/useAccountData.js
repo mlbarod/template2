@@ -232,11 +232,14 @@ export function useAccessPolicyRules({ scope = "portal", enabled = true } = {}) 
 
 export function useCreateAccessPolicyRule() {
   const queryClient = useQueryClient()
+  const { refresh: refreshAuth } = useAuth()
   return useMutation({
     mutationFn: accountApi.createAccessPolicyRule,
     onSuccess: async () => {
       await Promise.all([
+        refreshAuth(),
         queryClient.invalidateQueries({ queryKey: ACCESS_POLICY_RULES_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: ACCESS_MATRIX_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: ACCESS_USERS_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: ACCESS_AUDIT_LOGS_QUERY_KEY }),
       ])
@@ -246,11 +249,14 @@ export function useCreateAccessPolicyRule() {
 
 export function useUpdateAccessPolicyRule() {
   const queryClient = useQueryClient()
+  const { refresh: refreshAuth } = useAuth()
   return useMutation({
     mutationFn: accountApi.updateAccessPolicyRule,
     onSuccess: async () => {
       await Promise.all([
+        refreshAuth(),
         queryClient.invalidateQueries({ queryKey: ACCESS_POLICY_RULES_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: ACCESS_MATRIX_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: ACCESS_USERS_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: ACCESS_AUDIT_LOGS_QUERY_KEY }),
       ])
@@ -260,11 +266,14 @@ export function useUpdateAccessPolicyRule() {
 
 export function useDeleteAccessPolicyRule() {
   const queryClient = useQueryClient()
+  const { refresh: refreshAuth } = useAuth()
   return useMutation({
     mutationFn: accountApi.deleteAccessPolicyRule,
     onSuccess: async () => {
       await Promise.all([
+        refreshAuth(),
         queryClient.invalidateQueries({ queryKey: ACCESS_POLICY_RULES_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: ACCESS_MATRIX_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: ACCESS_USERS_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: ACCESS_AUDIT_LOGS_QUERY_KEY }),
       ])

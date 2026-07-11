@@ -19,7 +19,7 @@ export function SpiderComingSoonPage({ title, category }) {
             </p>
           </div>
           <Button type="button" variant="outline" size="sm" asChild>
-            <Link to="/fdc_trend">
+            <Link to="/l0_spider">
               <ArrowLeft className="size-4" aria-hidden="true" />
               SPIDER 메인
             </Link>

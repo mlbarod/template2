@@ -7,14 +7,14 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from api.fdc_trend import selectors
+from api.l0_spider import selectors
 
 HARD_SPEC_LINE_IDS = ["PFBP", "PFBB", "PFB3", "PFB4", "KFBC", "KFBE", "KFBG", "KFBH", "KFBJ", "KFE3", "KFE5"]
 NUMERIC_COLUMNS = ["추천Spec(Lower)", "추천Spec(Upper)", "기존Spec(Lower)", "기존Spec(Upper)"]
 
 
-class FdcTrendServiceError(Exception):
-    """FDC Trend 서비스 오류를 HTTP 상태와 함께 표현합니다."""
+class L0SpiderServiceError(Exception):
+    """L0 Spider 서비스 오류를 HTTP 상태와 함께 표현합니다."""
 
     def __init__(self, message: str, *, status_code: int = 400) -> None:
         super().__init__(message)

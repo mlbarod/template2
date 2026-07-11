@@ -8,10 +8,10 @@ from django.test import SimpleTestCase, override_settings
 
 import pandas as pd
 
-from api.fdc_trend import services
+from api.l0_spider import services
 
 
-class FdcTrendHardSpecServiceTests(SimpleTestCase):
+class L0SpiderHardSpecServiceTests(SimpleTestCase):
     def test_meta_uses_hardspec_directory_shape(self) -> None:
         """line/model/step/ppid/recipe 디렉터리 구조에서 선택 옵션을 생성합니다."""
 
@@ -20,7 +20,7 @@ class FdcTrendHardSpecServiceTests(SimpleTestCase):
             (root / "PFBP" / "MODEL_A" / "C1380250" / "PPID_1" / "RCP_1").mkdir(parents=True)
 
             with override_settings(FDC_HARD_SPEC_DATA_ROOT=root):
-                with patch("api.fdc_trend.selectors.fetch_fdc_models", return_value=["FDC_A"]):
+                with patch("api.l0_spider.selectors.fetch_fdc_models", return_value=["FDC_A"]):
                     payload = services.get_hard_spec_meta({"lineId": "PFBP"})
 
             self.assertEqual(payload["lineId"], "PFBP")
@@ -69,7 +69,7 @@ class FdcTrendHardSpecServiceTests(SimpleTestCase):
                 FDC_HARD_SPEC_UNIT_MODEL_PATH=unit_model_path,
                 FDC_HARD_SPEC_HARD_LIMIT_PATH=hard_limit_path,
             ):
-                with patch("api.fdc_trend.selectors.fetch_fdc_models", return_value=["FDC_A"]):
+                with patch("api.l0_spider.selectors.fetch_fdc_models", return_value=["FDC_A"]):
                     payload = services.get_hard_spec_recommendations(
                         {"lineId": "PFBP", "stepSeq": "C%380250", "recipeId": "RCP_1", "fdcModel": "FDC_A"}
                     )

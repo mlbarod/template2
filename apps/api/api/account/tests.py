@@ -223,7 +223,8 @@ class AccountEndpointTests(TestCase):
             "appstore": "Appstore",
             "assistant": "Assistant",
             "emails": "Emails",
-            "fdc-trend": "FDC Trend",
+            "l0-spider": "L0 Spider",
+            "l1-spider": "L1 Spider",
             "l3-spider": "L3 Spider",
             "line-dashboard": "ESOP Dashboard",
             "observer": "Observer",
@@ -1673,7 +1674,7 @@ class AccountEndpointTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(len(payload["scopes"]), 12)
+        self.assertEqual(len(payload["scopes"]), 13)
         self.assertEqual(payload["pagination"]["total"], 1)
         self.assertNotIn("defaultRole", payload["scopes"][0])
         row = payload["results"][0]

@@ -21,13 +21,13 @@ class HardSpecMetaView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs) -> Response:
-        """예시: GET /api/v1/fdc-trend/hard-spec/meta?lineId=PFBP"""
+        """예시: GET /api/v1/l0_spider/hard-spec/meta?lineId=PFBP"""
 
         serializer = HardSpecMetaQuerySerializer(data=request.GET)
         serializer.is_valid(raise_exception=True)
         try:
             return Response(services.get_hard_spec_meta(serializer.validated_data))
-        except services.FdcTrendServiceError as error:
+        except services.L0SpiderServiceError as error:
             return _error_response(error)
 
 
@@ -37,11 +37,11 @@ class HardSpecRecommendationsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs) -> Response:
-        """예시: GET /api/v1/fdc-trend/hard-spec/recommendations?lineId=PFBP&stepSeq=C%25123&recipeId=RCP&fdcModel=MODEL"""
+        """예시: GET /api/v1/l0_spider/hard-spec/recommendations?lineId=PFBP&stepSeq=C%25123&recipeId=RCP&fdcModel=MODEL"""
 
         serializer = HardSpecQuerySerializer(data=request.GET)
         serializer.is_valid(raise_exception=True)
         try:
             return Response(services.get_hard_spec_recommendations(serializer.validated_data))
-        except services.FdcTrendServiceError as error:
+        except services.L0SpiderServiceError as error:
             return _error_response(error)

@@ -9,11 +9,13 @@ import { accessStatsRoutes } from "@/features/access-stats"
 import { appstoreRoutes } from "@/features/appstore"
 import { authRoutes } from "@/features/auth"
 import { RouteErrorPage, errorRoutes } from "@/features/errors"
-import { fdcTrendRoutes } from "@/features/fdc-trend"
 import { homeRoutes } from "@/features/home"
+import { l0SpiderRoutes } from "@/features/l0-spider"
+import { l1SpiderRoutes } from "@/features/l1-spider"
 import { lineDashboardRoutes } from "@/features/line-dashboard"
 import { l3SpiderRoutes } from "@/features/l3-spider"
 import { pmSpiderRoutes } from "@/features/pm-spider"
+import { spiderRoutes } from "@/features/spider"
 import { teamstaffRoutes } from "@/features/teamstaff"
 import { tttmSpiderRoutes } from "@/features/tttm-spider"
 import { TkinPreventDashboardRoute, observerRoutes } from "@/features/observer"
@@ -59,9 +61,11 @@ function createAppRouteGroup(scopeKey, appName, routes) {
 }
 
 const protectedFeatureRoutes = [
+  ...spiderRoutes,
+  createAppRouteGroup("l0-spider", "L0 Spider", l0SpiderRoutes),
+  createAppRouteGroup("l1-spider", "L1 Spider", l1SpiderRoutes),
   createAppRouteGroup("teamstaff", "Team", teamstaffRoutes),
   createAppRouteGroup("line-dashboard", "ESOP Dashboard", esopDashboardRoutes),
-  createAppRouteGroup("fdc-trend", "FDC Trend", fdcTrendRoutes),
   createAppRouteGroup("l3-spider", "L3 Spider", l3SpiderRoutes),
   createAppRouteGroup("pm-spider", "PM Spider", pmSpiderRoutes),
   createAppRouteGroup("tttm-spider", "TTTM Spider", tttmSpiderRoutes),
@@ -86,7 +90,9 @@ function AssistantWidgetOutlet() {
     : []
   const hideChatWidget = [
     "/l3_spider",
+    "/spider/l3",
     "/tttm_spider",
+    "/spider/tttm",
     "/settings/members",
     "/settings/permissions",
   ].includes(normalizedPath)

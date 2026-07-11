@@ -4,7 +4,7 @@ import { AppLayout } from "./AppLayout"
 import { AppSidebar } from "./AppSidebar"
 import { NavMain } from "./NavMain"
 
-const APP_PREFIXES = ["/esop_dashboard", "/fdc_trend", "/emails", "/settings"]
+const APP_PREFIXES = ["/esop_dashboard", "/l0_spider", "/fdc_trend", "/emails", "/settings"]
 
 function getNormalizedPath(value) {
   if (typeof value !== "string") return ""

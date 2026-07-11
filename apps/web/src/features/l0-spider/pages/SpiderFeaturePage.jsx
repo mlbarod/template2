@@ -46,8 +46,8 @@ import {
   getSpiderSummaryRows,
   getTeamsByLine,
   getYieldSpecRows,
-} from "../utils/fdcTrendMockData"
-import { fetchHardSpecMeta, fetchHardSpecRecommendations } from "../api/fdcTrendApi"
+} from "../utils/l0SpiderMockData"
+import { fetchHardSpecMeta, fetchHardSpecRecommendations } from "../api/l0SpiderApi"
 
 const PAGE_META = {
   matching: {
@@ -126,7 +126,7 @@ function PageShell({ children, description, title, category }) {
             <p className="text-sm text-muted-foreground">{description}</p>
           </div>
           <Button type="button" variant="outline" size="sm" asChild>
-            <Link to="/fdc_trend">
+            <Link to="/l0_spider">
               <ArrowLeft className="size-4" aria-hidden="true" />
               SPIDER 메인
             </Link>

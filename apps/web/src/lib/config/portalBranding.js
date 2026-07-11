@@ -69,10 +69,10 @@ export const PORTAL_BRAND_REGISTRY = Object.freeze({
       icon: MailIcon,
     },
   },
-  "fdc-trend": {
-    key: "fdc-trend",
+  "l0-spider": {
+    key: "l0-spider",
     name: "L0 Spider",
-    pathPrefixes: ["/fdc_trend"],
+    pathPrefixes: ["/spider/l0", "/l0_spider", "/fdc_trend"],
     mark: {
       type: "image",
       src: spiderLogoLightPng,
@@ -80,10 +80,21 @@ export const PORTAL_BRAND_REGISTRY = Object.freeze({
       alt: "L0 Spider",
     },
   },
+  "l1-spider": {
+    key: "l1-spider",
+    name: "L1 Spider",
+    pathPrefixes: ["/spider/l1"],
+    mark: {
+      type: "image",
+      src: spiderLogoLightPng,
+      darkSrc: spiderLogoDarkPng,
+      alt: "L1 Spider",
+    },
+  },
   "l3-spider": {
     key: "l3-spider",
     name: "L3 Spider",
-    pathPrefixes: ["/l3_spider"],
+    pathPrefixes: ["/spider/l3", "/l3_spider"],
     mark: {
       type: "image",
       src: spiderLogoLightPng,
@@ -94,7 +105,7 @@ export const PORTAL_BRAND_REGISTRY = Object.freeze({
   "pm-spider": {
     key: "pm-spider",
     name: "PM Spider",
-    pathPrefixes: ["/pm_spider"],
+    pathPrefixes: ["/spider/pm", "/pm_spider"],
     mark: {
       type: "image",
       src: spiderLogoLightPng,
@@ -105,7 +116,7 @@ export const PORTAL_BRAND_REGISTRY = Object.freeze({
   "tttm-spider": {
     key: "tttm-spider",
     name: "TTTM Spider",
-    pathPrefixes: ["/tttm_spider"],
+    pathPrefixes: ["/spider/tttm", "/tttm_spider"],
     mark: {
       type: "image",
       src: spiderLogoLightPng,
@@ -172,17 +183,16 @@ function matchesPathPrefix(pathname, pathPrefix) {
 
 export function resolvePortalBrand(pathname) {
   const normalizedPathname = normalizePathname(pathname)
-  const brands = Object.values(PORTAL_BRAND_REGISTRY)
+  const matches = Object.values(PORTAL_BRAND_REGISTRY)
     .filter((brand) => brand.key !== PORTAL_BRAND_KEY)
+    .flatMap((brand) =>
+      brand.pathPrefixes
+        .filter((pathPrefix) => matchesPathPrefix(normalizedPathname, pathPrefix))
+        .map((pathPrefix) => ({ brand, pathPrefix })),
+    )
     .sort((left, right) => {
-      const leftLength = Math.max(...left.pathPrefixes.map((pathPrefix) => pathPrefix.length))
-      const rightLength = Math.max(...right.pathPrefixes.map((pathPrefix) => pathPrefix.length))
-      return rightLength - leftLength
+      return right.pathPrefix.length - left.pathPrefix.length
     })
 
-  return (
-    brands.find((brand) =>
-      brand.pathPrefixes.some((pathPrefix) => matchesPathPrefix(normalizedPathname, pathPrefix)),
-    ) ?? PORTAL_BRAND_REGISTRY[PORTAL_BRAND_KEY]
-  )
+  return matches[0]?.brand ?? PORTAL_BRAND_REGISTRY[PORTAL_BRAND_KEY]
 }

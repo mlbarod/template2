@@ -4,6 +4,10 @@ import { TttmSpiderPage } from "./pages/TttmSpiderPage"
 
 export const tttmSpiderRoutes = [
   {
+    path: "spider/tttm",
+    element: <TttmSpiderPage />,
+  },
+  {
     path: "tttm_spider",
     element: <TttmSpiderPage />,
   },

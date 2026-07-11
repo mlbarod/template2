@@ -121,7 +121,7 @@ INSTALLED_APPS = [
     "api.data_movement.station_master",
     "api.drone",
     "api.emails",
-    "api.fdc_trend",
+    "api.l0_spider",
     "api.health",
     "api.l3_spider",
     "api.management",

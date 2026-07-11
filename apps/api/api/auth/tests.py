@@ -127,7 +127,7 @@ class AuthMeTests(TestCase):
         self.assertFalse(payload["has_pending_affiliation"])
         self.assertIn("portal_access", payload)
         self.assertIn("app_access", payload)
-        self.assertEqual(len(payload["app_access"]), 12)
+        self.assertEqual(len(payload["app_access"]), 13)
         self.assertFalse(payload["app_access"]["appstore"]["allowed"])
         self.assertFalse(payload["portal_access"]["allowed"])
         self.assertEqual(payload["portal_access"]["department"], "Engineering")
@@ -509,7 +509,8 @@ class PortalAccessEnforcementTests(TestCase):
             "/api/v1/assistant/chat": "assistant",
             "/api/v1/observer/lines": "observer",
             "/api/v1/emails/inbox/": "emails",
-            "/api/v1/fdc-trend/hard-spec/meta": "fdc-trend",
+            "/api/v1/l0_spider/hard-spec/meta": "l0-spider",
+            "/api/v1/fdc-trend/hard-spec/meta": "l0-spider",
             "/api/v1/voc/posts": "voc",
             "/api/v1/activity/app-access-stats": "access-stats",
         }
@@ -565,7 +566,7 @@ class PortalAccessEnforcementTests(TestCase):
         user = self._create_user(sabun="BASIC-EXPLICIT", department="Blocked Department")
 
         response = self.client.get(
-            reverse("fdc-trend-hard-spec-meta"),
+            reverse("l0-spider-hard-spec-meta"),
             **self._basic_credentials(user=user),
         )
 

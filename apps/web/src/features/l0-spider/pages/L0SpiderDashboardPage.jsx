@@ -35,7 +35,7 @@ import {
   SENSOR_GRADES,
   getTeamsByLine,
   getTrendSteps,
-} from "../utils/fdcTrendMockData"
+} from "../utils/l0SpiderMockData"
 
 const TREND_TYPE_LABELS = {
   "upper-shift": "상한 이동",
@@ -425,7 +425,7 @@ function FdcScatterGrid({ selectedStep, equipmentGroups, selectedSensorName }) {
   )
 }
 
-export function FdcTrendPage() {
+export function L0SpiderDashboardPage() {
   const pageRef = useRef(null)
   const [selectedLine, setSelectedLine] = useState(FDC_LINES[0])
   const teams = useMemo(() => getTeamsByLine(selectedLine), [selectedLine])
@@ -561,7 +561,7 @@ export function FdcTrendPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" variant="outline" size="sm" asChild>
-              <Link to="/fdc_trend">
+              <Link to="/l0_spider">
                 <ArrowLeft className="size-4" aria-hidden="true" />
                 SPIDER 메인
               </Link>

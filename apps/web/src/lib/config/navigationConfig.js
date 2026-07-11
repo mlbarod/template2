@@ -95,17 +95,17 @@ const EMAILS_GROUP_BASE = Object.freeze({
   items: EMAIL_NAV_ITEMS,
 })
 
-const FDC_TREND_GROUP = Object.freeze({
-  key: "fdc-trend",
-  title: "L0 Spider",
-  url: "/fdc_trend",
+const L0_SPIDER_GROUP = Object.freeze({
+  key: "l0-spider",
+  title: "Spider",
+  url: "/spider",
   icon: Activity,
   isActive: true,
   scope: "global",
   items: [
     {
-      title: "이상 FDC Trend",
-      url: "/fdc_trend",
+      title: "Spider",
+      url: "/spider",
       scope: "global",
     },
   ],
@@ -162,7 +162,7 @@ export const NAVIGATION_CONFIG = Object.freeze({
     email: "m@example.com",
     avatar: "/avatars/shadcn.jpg",
   },
-  navMain: [LINE_DASHBOARD_GROUP, FDC_TREND_GROUP, EMAILS_GROUP_BASE, SETTINGS_GROUP],
+  navMain: [LINE_DASHBOARD_GROUP, L0_SPIDER_GROUP, EMAILS_GROUP_BASE, SETTINGS_GROUP],
   projects: [
     // 예시: 프로젝트 그룹
     // {
