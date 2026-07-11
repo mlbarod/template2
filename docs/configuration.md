@@ -93,6 +93,7 @@
 | MinIO | `MINIO_*` | 메일 asset storage |
 | `VITE_*` / Web | `VITE_BACKEND_URL`, `BACKEND_API_URL`, `VITE_ASSISTANT_API_URL`, `VITE_AIRFLOW_BASE_URL`, `VITE_SITE_URL` | 브라우저와 container 내부 API URL |
 | `VITE_PORTAL_*` / Web | `VITE_PORTAL_PMX_URL`, `VITE_PORTAL_MOSAIC_URL`, `VITE_PORTAL_CONFLUENCE_URL` | Portal 전역 네비게이션 외부 링크. 비어 있으면 메뉴 또는 화면에서 숨김/안내 |
+| Account UI fixture / Web | `VITE_ACCOUNT_DEV_FIXTURES` | 로컬 계정 화면 예시 데이터. 명시적으로 `1`일 때만 활성화 |
 | Monitoring | `PROMETHEUS_RETENTION_TIME`, `GF_SECURITY_ADMIN_USER`, `GF_SECURITY_ADMIN_PASSWORD`, `GF_SERVER_ROOT_URL`, `GF_SERVER_SERVE_FROM_SUB_PATH` | Prometheus 보관 기간, Grafana 관리자 계정, nginx subpath 프록시 설정 |
 | TTTM Spider | `TTTM_SPIDER_UPSTREAM` | nginx `/tttm-spider/` HTTPS 프록시가 전달할 내부 TTTM Spider host:port |
 
@@ -158,6 +159,7 @@ PM SPIDER는 단일 `/data/pm_spider` mount 아래에서 `/data/pm_spider/data`�
 3. Web은 `env/web.dev.env`를 사용합니다.
 4. ADFS/RAG/LLM/Mail/Jira 호출은 `apps/adfs_dummy`의 `http://adfs:9000` 또는 host 기준 `http://localhost:9102`로 연결됩니다.
 5. `DEV_AUTO_AFFILIATION_ALLOWED=1`이면 소속 없는 로그인 사용자에게 `DEV_AUTO_AFFILIATION_PREFIX` 기반 기본 소속을 부여해 소속 선택 없이 다른 앱을 테스트할 수 있습니다.
+6. 계정/권한 화면의 예시 데이터가 필요할 때만 Web에 `VITE_ACCOUNT_DEV_FIXTURES=1`을 주입합니다. 기본값은 실제 API의 빈 상태를 그대로 표시합니다.
 
 ## 운영/실제 연동 흐름
 

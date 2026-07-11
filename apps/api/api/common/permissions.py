@@ -226,7 +226,12 @@ def get_request_app_access_payload(
     # account 도메인 import는 Django 초기화 순환을 피하기 위해 요청 시점에 수행합니다.
     from api.account import services as account_services
 
-    payload = account_services.get_access_payload(user=user, scope_key=scope_key)
+    portal_access = get_request_portal_access_payload(request=request, user=user)
+    payload = account_services.get_access_payload(
+        user=user,
+        scope_key=scope_key,
+        portal_access=portal_access,
+    )
     cached[cache_key] = payload
     return payload
 

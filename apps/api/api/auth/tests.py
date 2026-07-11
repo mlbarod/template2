@@ -129,6 +129,9 @@ class AuthMeTests(TestCase):
         self.assertIn("app_access", payload)
         self.assertEqual(len(payload["app_access"]), 13)
         self.assertFalse(payload["app_access"]["appstore"]["allowed"])
+        self.assertTrue(payload["app_access"]["appstore"]["blockedByPortal"])
+        self.assertEqual(payload["app_access"]["appstore"]["source"], "portal_access_required")
+        self.assertEqual(payload["app_access"]["appstore"]["underlyingAccess"]["source"], "none")
         self.assertFalse(payload["portal_access"]["allowed"])
         self.assertEqual(payload["portal_access"]["department"], "Engineering")
 
@@ -143,7 +146,10 @@ class AuthMeTests(TestCase):
             is_active=True,
         )
         response = self.client.get(reverse("auth-me"))
-        self.assertTrue(response.json()["portal_access"]["allowed"])
+        allowed_payload = response.json()
+        self.assertTrue(allowed_payload["portal_access"]["allowed"])
+        self.assertFalse(allowed_payload["app_access"]["appstore"]["blockedByPortal"])
+        self.assertEqual(allowed_payload["app_access"]["appstore"]["source"], "none")
 
         appstore_scope = AccessScope.objects.get(key="appstore")
         UserAccess.objects.create(
@@ -157,6 +163,44 @@ class AuthMeTests(TestCase):
         self.assertTrue(appstore_access["allowed"])
         self.assertNotIn("role", appstore_access)
         self.assertNotIn("role", appstore_access["policy"])
+
+    def test_auth_me_portal_denial_overrides_explicit_app_allow(self) -> None:
+        """Portal이 차단되면 auth 응답의 앱 명시 허용도 최종 차단되어야 합니다."""
+
+        User = get_user_model()
+        user = User.objects.create_user(
+            sabun="S-PORTAL-BLOCKED-APP",
+            password="test-password",
+            knox_id="KNOX-PORTAL-BLOCKED-APP",
+            department="Blocked Department",
+        )
+        UserAccess.objects.create(
+            scope=AccessScope.objects.get(key="appstore"),
+            user=user,
+            status=UserAccess.Status.ALLOWED,
+            role="viewer",
+        )
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("auth-me"))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertFalse(payload["portal_access"]["allowed"])
+        self.assertEqual(len(payload["app_access"]), 13)
+        self.assertTrue(
+            all(
+                not access["allowed"] and access["blockedByPortal"]
+                for access in payload["app_access"].values()
+            )
+        )
+        app_access = payload["app_access"]["appstore"]
+        self.assertFalse(app_access["allowed"])
+        self.assertTrue(app_access["blockedByPortal"])
+        self.assertEqual(app_access["source"], "portal_access_required")
+        self.assertEqual(app_access["explicitStatus"], "allowed")
+        self.assertTrue(app_access["underlyingAccess"]["allowed"])
+        self.assertEqual(app_access["underlyingAccess"]["source"], "explicit_allowed")
 
     def test_auth_me_department_matches_user_department_for_access_policy(self) -> None:
         """현재 앱 소속 department가 달라도 auth 응답 department는 사용자 기준이어야 합니다."""

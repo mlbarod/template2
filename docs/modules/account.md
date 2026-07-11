@@ -8,6 +8,7 @@ Account는 이 앱의 권한 기준이 되는 소속과 접근 권한을 관리�
 - 소속 변경 요청/승인/거절
 - 외부 예측 소속 동기화와 재확인
 - `user_sdwt_prod` 접근 권한 부여/회수
+- Portal·앱 접근 권한 통합 매트릭스 관리
 - 소속별 멤버 조회
 - 사용자 검색 pool 제공
 
@@ -28,8 +29,10 @@ Account는 이 앱의 권한 기준이 되는 소속과 접근 권한을 관리�
 | `UserSdwtProdAccess` | 소속 접근 권한 |
 | `UserSdwtProdChange` | 소속 변경 요청 이력 |
 | `ExternalAffiliationSnapshot` | 외부 시스템이 예측한 소속 |
+| `AccessScope` | Portal·앱·기능별 접근 권한 범위 |
+| `UserAccess` | 사용자별 scope 승인 상태와 Portal 역할 |
 
-## 접근 role
+## 소속 접근 role
 
 | Role | 의미 |
 | --- | --- |
@@ -38,6 +41,15 @@ Account는 이 앱의 권한 기준이 되는 소속과 접근 권한을 관리�
 | `manager` | 조회 + 승인 + 권한 관리 가능 |
 
 staff/superuser는 대부분의 소속 제한을 우회합니다.
+
+## Portal·앱 접근 계층
+
+- Portal 접근이 허용되어야 앱 접근 판정도 최종 허용될 수 있습니다.
+- Portal이 차단되면 개별 앱이 수동 또는 자동 허용 상태여도 최종 앱 접근은 차단됩니다.
+- 차단 전 앱 판정은 API의 `underlyingAccess`에 보존되므로 Portal 복구 후 기존 앱 설정이 다시 적용됩니다.
+- Portal의 `viewer`, `member`, `manager`, `admin` 역할은 접근 분류값이며 권한 관리 기능을 부여하지 않습니다.
+- 권한 관리 기능은 별도 Django permission인 `account.manage_access`와 `Access Managers` 그룹으로만 부여합니다.
+- superuser 우회 외에는 Portal 역할과 권한 관리 capability 모두 Portal 차단 자체를 우회하지 않습니다.
 
 ## 소속 변경 흐름
 
@@ -70,7 +82,7 @@ staff/superuser는 대부분의 소속 제한을 우회합니다.
 
 | 구간 | 위치 |
 | --- | --- |
-| 화면 | `/settings/account`, `/settings/members` |
+| 화면 | `/settings/account`, `/settings/members`, `/settings/permissions` |
 | Frontend | `apps/web/src/features/account`, `apps/web/src/features/auth` |
 | Backend API | `/api/v1/account/**`, `/api/v1/auth/me` |
 | 데이터 | `User`, `Affiliation`, `UserCurrentAffiliation`, `UserSdwtProdAccess`, `UserSdwtProdChange`, `ExternalAffiliationSnapshot` |
@@ -79,7 +91,8 @@ staff/superuser는 대부분의 소속 제한을 우회합니다.
 ## 운영 포인트
 
 - 소속이 예상과 다르면 `ExternalAffiliationSnapshot`과 `UserCurrentAffiliation`을 함께 확인합니다.
-- 권한 문제가 있으면 `UserSdwtProdAccess`의 role과 staff/superuser 여부를 확인합니다.
+- 소속 권한 문제는 `UserSdwtProdAccess` role을, Portal·앱 권한 문제는 `UserAccess`, `AccessPolicyRule`, Portal 최종 판정을 함께 확인합니다.
+- 권한 관리 화면 접근 문제는 Portal 역할이 아니라 `account.manage_access` permission과 `Access Managers` 그룹을 확인합니다.
 - 외부 동기화 실패는 Airflow Bearer token과 `docs/configuration.md`의 auth/env 설정을 확인합니다.
 
 ## 관련 API

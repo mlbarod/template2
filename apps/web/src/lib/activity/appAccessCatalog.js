@@ -2,12 +2,19 @@ const APP_ACCESS_RULES = [
   {
     appId: "home",
     appName: "Portal Home",
+    requiresAppAccess: false,
     matches: (pathname) => pathname === "/",
   },
   {
     appId: "appstore",
     appName: "Appstore",
     prefixes: ["/appstore"],
+  },
+  {
+    appId: "line-dashboard",
+    appName: "ESOP Dashboard",
+    prefixes: ["/ESOP_Dashboard/tip-status"],
+    requiredAppScopes: ["line-dashboard", "observer"],
   },
   {
     appId: "line-dashboard",
@@ -64,6 +71,7 @@ const APP_ACCESS_RULES = [
   {
     appId: "settings",
     appName: "Settings",
+    requiresAppAccess: false,
     prefixes: ["/settings"],
   },
   {
@@ -79,15 +87,22 @@ const APP_ACCESS_RULES = [
 ]
 
 function normalizePathname(pathname) {
-  return typeof pathname === "string" && pathname ? pathname : "/"
+  const normalizedPathname = typeof pathname === "string" && pathname ? pathname : "/"
+  if (normalizedPathname === "/") return normalizedPathname
+  return normalizedPathname.replace(/\/+$/, "").toLowerCase()
+}
+
+function matchesPathPrefix(pathname, prefix) {
+  const normalizedPathname = pathname.toLowerCase()
+  const normalizedPrefix = prefix.toLowerCase().replace(/\/+$/, "")
+  if (!normalizedPrefix) return normalizedPathname === "/"
+  return normalizedPathname === normalizedPrefix || normalizedPathname.startsWith(`${normalizedPrefix}/`)
 }
 
 export function resolveAppAccessTarget(pathname) {
   const normalizedPathname = normalizePathname(pathname)
   return APP_ACCESS_RULES.find((rule) => {
     if (rule.matches?.(normalizedPathname)) return true
-    return rule.prefixes?.some((prefix) =>
-      normalizedPathname.toLowerCase().startsWith(prefix.toLowerCase()),
-    )
+    return rule.prefixes?.some((prefix) => matchesPathPrefix(normalizedPathname, prefix))
   }) ?? null
 }

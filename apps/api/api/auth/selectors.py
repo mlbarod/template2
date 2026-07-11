@@ -76,6 +76,7 @@ def get_current_user_payload(*, user: Any) -> Dict[str, Any]:
     if not department:
         department = current_values.get("department")
 
+    portal_access = account_services.get_portal_access_payload(user=user)
     return {
         "id": user.pk,
         "usr_id": getattr(user, "knox_id", None),
@@ -90,6 +91,9 @@ def get_current_user_payload(*, user: Any) -> Dict[str, Any]:
         "user_sdwt_prod": current_values.get("user_sdwt_prod"),
         "pending_user_sdwt_prod": pending_user_sdwt_prod,
         "has_pending_affiliation": has_pending_affiliation,
-        "portal_access": account_services.get_portal_access_payload(user=user),
-        "app_access": account_services.get_app_access_payloads(user=user),
+        "portal_access": portal_access,
+        "app_access": account_services.get_app_access_payloads(
+            user=user,
+            portal_access=portal_access,
+        ),
     }

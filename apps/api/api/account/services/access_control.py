@@ -56,44 +56,99 @@ def has_access_bypass(*, user: Any) -> bool:
     )
 
 
-def get_access_payload(*, user: Any, scope_key: str = ACCESS_SCOPE_PORTAL) -> dict[str, object]:
-    """현재 사용자의 scope 접근 상태를 반환합니다."""
+def get_access_payload(
+    *,
+    user: Any,
+    scope_key: str = ACCESS_SCOPE_PORTAL,
+    portal_access: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """현재 사용자의 scope 접근 상태를 Portal 우선순위와 함께 반환합니다."""
 
     scope = selectors.get_access_scope_by_key(scope_key=scope_key)
-    department = _get_user_department(user=user)
-    can_manage = can_manage_access(user=user)
-    can_bypass = has_access_bypass(user=user)
-
     if scope is None:
-        return {
-            "allowed": can_bypass,
-            "scope": scope_key,
-            "reason": AccessSource.SUPERUSER_BYPASS if can_bypass else AccessSource.SCOPE_NOT_FOUND,
-            "department": department,
-            "departmentAllowed": False,
-            "status": None,
-            "role": AccessRole.ADMIN if can_bypass else None,
-            "requestId": None,
-            "requestedAt": None,
-            "decidedAt": None,
-            "rejectionReason": None,
-            "canRequest": False,
-            "canManage": can_manage,
-            "effectiveStatus": "allowed" if can_bypass else "inactive",
-            "explicitStatus": None,
-            "source": AccessSource.SUPERUSER_BYPASS if can_bypass else AccessSource.SCOPE_NOT_FOUND,
-            "policyMatched": False,
-            "policy": None,
-        }
+        return _build_missing_scope_payload(user=user, scope_key=scope_key)
 
     user_access = selectors.get_user_access_for_scope(user=user, scope=scope)
     policy_rules = selectors.list_active_access_policy_rules(scope=scope)
-    return _build_access_payload(
+    payload = _build_access_payload(
         user=user,
         scope=scope,
         user_access=user_access,
         policy_rules=policy_rules,
     )
+    if scope.scope_type != AccessScope.ScopeTypes.APP:
+        return payload
+
+    resolved_portal_access = portal_access or get_portal_access_payload(user=user)
+    return _apply_portal_access_requirement(
+        app_access=payload,
+        portal_access=resolved_portal_access,
+    )
+
+
+def _build_missing_scope_payload(
+    *,
+    user: Any,
+    scope_key: str,
+    include_management_capability: bool = True,
+) -> dict[str, object]:
+    """존재하지 않는 scope의 fail-closed 접근 payload를 생성합니다."""
+
+    department = _get_user_department(user=user)
+    can_bypass = has_access_bypass(user=user)
+    payload = {
+        "allowed": can_bypass,
+        "scope": scope_key,
+        "reason": AccessSource.SUPERUSER_BYPASS if can_bypass else AccessSource.SCOPE_NOT_FOUND,
+        "department": department,
+        "departmentAllowed": False,
+        "status": None,
+        "role": AccessRole.ADMIN if can_bypass else None,
+        "requestId": None,
+        "requestedAt": None,
+        "decidedAt": None,
+        "rejectionReason": None,
+        "canRequest": False,
+        "effectiveStatus": "allowed" if can_bypass else "inactive",
+        "explicitStatus": None,
+        "source": AccessSource.SUPERUSER_BYPASS if can_bypass else AccessSource.SCOPE_NOT_FOUND,
+        "policyMatched": False,
+        "policy": None,
+    }
+    if include_management_capability:
+        payload["canManage"] = can_manage_access(user=user)
+    return payload
+
+
+def _apply_portal_access_requirement(
+    *,
+    app_access: dict[str, object],
+    portal_access: dict[str, object],
+) -> dict[str, object]:
+    """Portal 차단을 앱 최종 판정보다 우선하고 원래 앱 판정을 보존합니다."""
+
+    if portal_access.get("allowed"):
+        return {
+            **app_access,
+            "blockedByPortal": False,
+            "underlyingAccess": None,
+        }
+
+    underlying_access = {
+        "allowed": bool(app_access.get("allowed")),
+        "reason": app_access.get("reason"),
+        "effectiveStatus": app_access.get("effectiveStatus"),
+        "source": app_access.get("source"),
+    }
+    return {
+        **app_access,
+        "allowed": False,
+        "reason": AccessSource.PORTAL_ACCESS_REQUIRED,
+        "effectiveStatus": "denied",
+        "source": AccessSource.PORTAL_ACCESS_REQUIRED,
+        "blockedByPortal": True,
+        "underlyingAccess": underlying_access,
+    }
 
 
 def _build_access_payload(
@@ -193,8 +248,12 @@ def get_portal_access_payload(*, user: Any) -> dict[str, object]:
     return get_access_payload(user=user, scope_key=ACCESS_SCOPE_PORTAL)
 
 
-def get_app_access_payloads(*, user: Any) -> dict[str, dict[str, object]]:
-    """현재 사용자의 활성 앱 scope별 최종 접근 상태를 반환합니다."""
+def get_app_access_payloads(
+    *,
+    user: Any,
+    portal_access: dict[str, object] | None = None,
+) -> dict[str, dict[str, object]]:
+    """활성 앱 scope별 접근 상태에 Portal 우선 차단을 적용해 반환합니다."""
 
     scopes = selectors.list_active_app_access_scopes()
     policy_rules = selectors.list_active_access_policy_rules_for_scopes(scopes=scopes)
@@ -207,15 +266,54 @@ def get_app_access_payloads(*, user: Any) -> dict[str, dict[str, object]]:
         user_ids=[getattr(user, "id", 0)],
     )
     access_by_scope_id = {access.scope_id: access for access in access_rows}
+    resolved_portal_access = portal_access or get_portal_access_payload(user=user)
     return {
-        scope.key: _build_access_payload(
-            user=user,
-            scope=scope,
-            user_access=access_by_scope_id.get(scope.id),
-            policy_rules=policy_rules_by_scope.get(scope.id, []),
-            include_management_capability=False,
+        scope.key: _apply_portal_access_requirement(
+            app_access=_build_access_payload(
+                user=user,
+                scope=scope,
+                user_access=access_by_scope_id.get(scope.id),
+                policy_rules=policy_rules_by_scope.get(scope.id, []),
+                include_management_capability=False,
+            ),
+            portal_access=resolved_portal_access,
         )
         for scope in scopes
+    }
+
+
+def _build_portal_access_payloads_by_user(*, users: list[Any]) -> dict[int, dict[str, object]]:
+    """여러 사용자의 Portal 판정을 일괄 조회해 사용자 ID별로 반환합니다."""
+
+    if not users:
+        return {}
+
+    portal_scope = selectors.get_access_scope_by_key(scope_key=ACCESS_SCOPE_PORTAL)
+    if portal_scope is None:
+        return {
+            user.id: _build_missing_scope_payload(
+                user=user,
+                scope_key=ACCESS_SCOPE_PORTAL,
+                include_management_capability=False,
+            )
+            for user in users
+        }
+
+    policy_rules = selectors.list_active_access_policy_rules(scope=portal_scope)
+    access_rows = selectors.list_user_access_rows_for_scopes_and_users(
+        scopes=[portal_scope],
+        user_ids=[user.id for user in users],
+    )
+    access_by_user_id = {access.user_id: access for access in access_rows}
+    return {
+        user.id: _build_access_payload(
+            user=user,
+            scope=portal_scope,
+            user_access=access_by_user_id.get(user.id),
+            policy_rules=policy_rules,
+            include_management_capability=False,
+        )
+        for user in users
     }
 
 
@@ -481,12 +579,16 @@ def get_access_users(
         normalized_source = AccessSource.SUPERUSER_BYPASS
 
     user_queryset = selectors.list_access_management_users(search=search, department=department)
-    user_queryset, is_fast_filtered = selectors.filter_access_management_users_for_fast_access_filter(
-        queryset=user_queryset,
-        scope=scope,
-        status=normalized_status,
-        source=normalized_source,
-    )
+    if scope.scope_type == AccessScope.ScopeTypes.APP and (normalized_status or normalized_source):
+        # 앱의 최종 판정은 Portal 상태까지 필요하므로 단일 scope DB 필터를 사용하지 않습니다.
+        is_fast_filtered = False
+    else:
+        user_queryset, is_fast_filtered = selectors.filter_access_management_users_for_fast_access_filter(
+            queryset=user_queryset,
+            scope=scope,
+            status=normalized_status,
+            source=normalized_source,
+        )
     needs_computed_filter = bool(normalized_status or normalized_source) and not is_fast_filtered
     policy_rules = selectors.list_active_access_policy_rules(scope=scope)
 
@@ -547,12 +649,15 @@ def get_app_access_matrix(
     page: int,
     page_size: int,
 ) -> tuple[dict[str, object], int]:
-    """권한 관리자용 사용자별 앱 접근 권한 매트릭스를 반환합니다."""
+    """권한 관리자용 사용자별 Portal·앱 접근 권한 매트릭스를 반환합니다."""
 
     if not can_manage_access(user=actor):
         return {"error": "forbidden"}, 403
 
-    scopes = selectors.list_active_app_access_scopes()
+    portal_scope = selectors.get_access_scope_by_key(scope_key=ACCESS_SCOPE_PORTAL)
+    if portal_scope is None:
+        return {"error": "scope_not_found"}, 404
+    scopes = [portal_scope, *selectors.list_active_app_access_scopes()]
     user_queryset = selectors.list_access_management_users(search=search, department=department)
     paginator = Paginator(user_queryset, page_size)
     try:
@@ -577,16 +682,26 @@ def get_app_access_matrix(
 
     results = []
     for target_user in users:
-        accesses = {
-            scope.key: _build_access_payload(
+        portal_access = _build_access_payload(
+            user=target_user,
+            scope=portal_scope,
+            user_access=access_by_scope_and_user.get((portal_scope.id, target_user.id)),
+            policy_rules=policy_rules_by_scope.get(portal_scope.id, []),
+            include_management_capability=False,
+        )
+        accesses = {portal_scope.key: portal_access}
+        for scope in scopes[1:]:
+            raw_app_access = _build_access_payload(
                 user=target_user,
                 scope=scope,
                 user_access=access_by_scope_and_user.get((scope.id, target_user.id)),
                 policy_rules=policy_rules_by_scope.get(scope.id, []),
                 include_management_capability=False,
             )
-            for scope in scopes
-        }
+            accesses[scope.key] = _apply_portal_access_requirement(
+                app_access=raw_app_access,
+                portal_access=portal_access,
+            )
         results.append({"user": _serialize_access_user(target_user), "accesses": accesses})
 
     return {
@@ -1102,18 +1217,25 @@ def _serialize_effective_access_user(
     scope: AccessScope,
     user_access: UserAccess | None,
     policy_rules: list[AccessPolicyRule],
+    portal_access: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """사용자와 최종 접근 상태를 한 행으로 직렬화합니다."""
 
+    access = _build_access_payload(
+        user=user,
+        scope=scope,
+        user_access=user_access,
+        policy_rules=policy_rules,
+        include_management_capability=False,
+    )
+    if scope.scope_type == AccessScope.ScopeTypes.APP:
+        access = _apply_portal_access_requirement(
+            app_access=access,
+            portal_access=portal_access or get_portal_access_payload(user=user),
+        )
     return {
         "user": _serialize_access_user(user),
-        "access": _build_access_payload(
-            user=user,
-            scope=scope,
-            user_access=user_access,
-            policy_rules=policy_rules,
-            include_management_capability=False,
-        ),
+        "access": access,
     }
 
 
@@ -1132,6 +1254,11 @@ def _build_effective_access_rows(
         user_ids=[user.id for user in users],
     )
     access_by_user_id = {row.user_id: row for row in access_rows}
+    portal_access_by_user_id = (
+        _build_portal_access_payloads_by_user(users=users)
+        if scope.scope_type == AccessScope.ScopeTypes.APP
+        else {}
+    )
 
     rows: list[dict[str, object]] = []
     for target_user in users:
@@ -1140,6 +1267,7 @@ def _build_effective_access_rows(
             scope=scope,
             user_access=access_by_user_id.get(target_user.id),
             policy_rules=policy_rules,
+            portal_access=portal_access_by_user_id.get(target_user.id),
         )
         access = row["access"]
         if status and access["effectiveStatus"] != status:

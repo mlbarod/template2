@@ -260,7 +260,9 @@ class AccountEndpointTests(TestCase):
         )
         payload = get_access_payload(user=new_user, scope_key="appstore")
         self.assertFalse(payload["allowed"])
-        self.assertEqual(payload["source"], AccessSource.NONE)
+        self.assertEqual(payload["source"], AccessSource.PORTAL_ACCESS_REQUIRED)
+        self.assertTrue(payload["blockedByPortal"])
+        self.assertEqual(payload["underlyingAccess"]["source"], AccessSource.NONE)
 
     def test_access_permissions_migration_preserves_decisions_and_backfills_existing_users(self) -> None:
         """순방향 권한 migration은 기존 결정을 보존하고 기존 사용자의 누락 앱을 허용해야 합니다."""
@@ -385,6 +387,7 @@ class AccountEndpointTests(TestCase):
             set(AccessSource.values),
             {
                 "superuser_bypass",
+                "portal_access_required",
                 "scope_inactive",
                 "explicit_denied",
                 "explicit_allowed",
@@ -1581,6 +1584,29 @@ class AccountEndpointTests(TestCase):
         self.assertFalse(payload["canManage"])
         self.assertEqual(payload["source"], "explicit_denied")
 
+    def test_portal_admin_role_without_capability_cannot_manage_access(self) -> None:
+        """Portal admin 역할은 별도 manage_access capability를 부여하지 않아야 합니다."""
+
+        UserAccess.objects.create(
+            user=self.user,
+            scope=AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL),
+            status=UserAccess.Status.ALLOWED,
+            role="admin",
+        )
+
+        payload = get_portal_access_payload(user=self.user)
+
+        self.assertTrue(payload["allowed"])
+        self.assertEqual(payload["role"], "admin")
+        self.assertFalse(payload["canManage"])
+        self.assertFalse(can_manage_access(user=self.user))
+
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("account-access-users"))
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["error"], "forbidden")
+
     def test_manage_access_capability_does_not_bypass_explicit_denial(self) -> None:
         """권한 관리 capability 보유자도 자신의 명시적 차단을 우회하지 못해야 합니다."""
 
@@ -1694,8 +1720,8 @@ class AccountEndpointTests(TestCase):
         self.assertEqual(payload["pagination"]["total"], payload["summary"]["total"])
         self.assertEqual(payload["summary"]["pageTotal"], 5)
 
-    def test_app_access_matrix_returns_allowed_denied_contract_without_roles(self) -> None:
-        """앱 권한 매트릭스는 role 없이 명시 권한과 자동 정책 결과를 반환해야 합니다."""
+    def test_access_matrix_returns_portal_role_and_app_boolean_contracts(self) -> None:
+        """통합 권한 매트릭스는 Portal 역할과 앱 boolean 판정을 함께 반환해야 합니다."""
 
         admin_user = self.manager
         _grant_manage_access(admin_user)
@@ -1723,11 +1749,17 @@ class AccountEndpointTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(len(payload["scopes"]), 13)
+        self.assertEqual(len(payload["scopes"]), 14)
         self.assertEqual(payload["pagination"]["total"], 1)
-        self.assertNotIn("defaultRole", payload["scopes"][0])
+        self.assertEqual(payload["scopes"][0]["key"], ACCESS_SCOPE_PORTAL)
+        self.assertEqual(payload["scopes"][0]["scopeType"], AccessScope.ScopeTypes.PORTAL)
+        self.assertEqual(payload["scopes"][0]["defaultRole"], "viewer")
+        self.assertNotIn("defaultRole", payload["scopes"][1])
         row = payload["results"][0]
         self.assertEqual(row["user"]["id"], self.user.id)
+        self.assertEqual(row["accesses"][ACCESS_SCOPE_PORTAL]["source"], "policy_department")
+        self.assertEqual(row["accesses"][ACCESS_SCOPE_PORTAL]["role"], "viewer")
+        self.assertEqual(row["accesses"][ACCESS_SCOPE_PORTAL]["policy"]["role"], "viewer")
         self.assertEqual(row["accesses"]["appstore"]["source"], "explicit_allowed")
         self.assertNotIn("role", row["accesses"]["appstore"])
         self.assertNotIn("role", row["accesses"]["appstore"]["policy"])
@@ -1735,6 +1767,80 @@ class AccountEndpointTests(TestCase):
         self.assertTrue(row["accesses"]["line-dashboard"]["allowed"])
         self.assertNotIn("role", row["accesses"]["line-dashboard"])
         self.assertEqual(row["accesses"]["observer"]["effectiveStatus"], "not_requested")
+
+    def test_access_matrix_blocks_apps_when_portal_access_is_denied(self) -> None:
+        """Portal 차단 사용자의 앱 명시 허용은 보존하되 최종 접근은 차단해야 합니다."""
+
+        admin_user = self.manager
+        _grant_manage_access(admin_user)
+        portal_scope = AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL)
+        appstore_scope = AccessScope.objects.get(key="appstore")
+        UserAccess.objects.create(
+            user=self.user,
+            scope=portal_scope,
+            department="Dept",
+            status=UserAccess.Status.DENIED,
+            role="viewer",
+            reason="Portal 운영 차단",
+        )
+        UserAccess.objects.create(
+            user=self.user,
+            scope=appstore_scope,
+            department="Dept",
+            status=UserAccess.Status.ALLOWED,
+            role="viewer",
+        )
+
+        self.client.force_login(admin_user)
+        response = self.client.get(
+            reverse("account-access-matrix"),
+            {"search": self.user.knox_id, "page_size": 5},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        row = response.json()["results"][0]
+        portal_access = row["accesses"][ACCESS_SCOPE_PORTAL]
+        app_access = row["accesses"]["appstore"]
+        self.assertFalse(portal_access["allowed"])
+        self.assertFalse(app_access["allowed"])
+        self.assertTrue(app_access["blockedByPortal"])
+        self.assertEqual(app_access["source"], AccessSource.PORTAL_ACCESS_REQUIRED)
+        self.assertEqual(app_access["explicitStatus"], UserAccess.Status.ALLOWED)
+        self.assertEqual(app_access["underlyingAccess"]["source"], AccessSource.EXPLICIT_ALLOWED)
+        self.assertTrue(app_access["underlyingAccess"]["allowed"])
+
+    def test_access_users_filters_portal_blocked_apps_by_final_source(self) -> None:
+        """앱 권한 목록 필터는 Portal 우선 차단 source를 최종 판정으로 사용해야 합니다."""
+
+        admin_user = self.manager
+        _grant_manage_access(admin_user)
+        UserAccess.objects.create(
+            user=self.user,
+            scope=AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL),
+            status=UserAccess.Status.DENIED,
+            role="viewer",
+        )
+        UserAccess.objects.create(
+            user=self.user,
+            scope=AccessScope.objects.get(key="appstore"),
+            status=UserAccess.Status.ALLOWED,
+            role="viewer",
+        )
+
+        self.client.force_login(admin_user)
+        response = self.client.get(
+            reverse("account-access-users"),
+            {
+                "scope": "appstore",
+                "status": "denied",
+                "source": AccessSource.PORTAL_ACCESS_REQUIRED,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        rows_by_user_id = {row["user"]["id"]: row for row in response.json()["results"]}
+        self.assertIn(self.user.id, rows_by_user_id)
+        self.assertTrue(rows_by_user_id[self.user.id]["access"]["blockedByPortal"])
 
     def test_app_access_matrix_requires_access_admin(self) -> None:
         """일반 사용자는 앱 권한 매트릭스를 조회할 수 없어야 합니다."""

@@ -1,4 +1,4 @@
-const DEV_FIXTURE_ENABLED = import.meta.env.DEV && import.meta.env.VITE_ACCOUNT_DEV_FIXTURES !== "0"
+const DEV_FIXTURE_ENABLED = import.meta.env.DEV && import.meta.env.VITE_ACCOUNT_DEV_FIXTURES === "1"
 
 const DUMMY_MANAGEABLE_GROUPS = [
   {

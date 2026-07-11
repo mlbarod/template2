@@ -12,7 +12,6 @@ import {
   RefreshCw,
   RotateCcw,
   Save,
-  Search,
   ShieldCheck,
   SlidersHorizontal,
   Trash2,
@@ -72,21 +71,7 @@ import { formatAccountDateValue } from "../utils/accountOverview"
 
 const PAGE_SIZE = 20
 
-const INITIAL_FILTERS = {
-  page: 1,
-  status: "all",
-  source: "all",
-  search: "",
-  department: "",
-}
-
-const INITIAL_FILTER_DRAFT = {
-  search: "",
-  department: "",
-}
-
 const INITIAL_MATRIX_FILTERS = {
-  page: 1,
   search: "",
   department: "",
 }
@@ -102,29 +87,11 @@ const INITIAL_POLICY_FORM = {
   isActive: true,
 }
 
-const STATUS_OPTIONS = [
-  { value: "all", label: "전체" },
-  { value: "allowed", label: "허용" },
-  { value: "pending", label: "대기" },
-  { value: "denied", label: "차단" },
-  { value: "not_requested", label: "미요청" },
-]
-
-const SOURCE_OPTIONS = [
-  { value: "all", label: "전체 결정 기준" },
-  { value: "explicit_allowed", label: "개별 허용" },
-  { value: "explicit_denied", label: "개별 차단" },
-  { value: "explicit_pending", label: "개별 승인 대기" },
-  { value: "policy_department", label: "부서 자동 규칙" },
-  { value: "superuser_bypass", label: "슈퍼유저 우회" },
-  { value: "none", label: "결정 기준 없음" },
-]
-
 const ROLE_OPTIONS = [
-  { value: "viewer", label: "조회 권한" },
-  { value: "member", label: "일반 권한" },
-  { value: "manager", label: "운영 권한" },
-  { value: "admin", label: "관리자 권한" },
+  { value: "viewer", label: "Portal 조회 역할" },
+  { value: "member", label: "Portal 일반 역할" },
+  { value: "manager", label: "Portal 운영 역할" },
+  { value: "admin", label: "Portal 관리자 역할" },
 ]
 
 const APP_SCOPE_LABELS = {
@@ -150,7 +117,7 @@ const ACTION_LABELS = {
   grant: "직접 부여",
   revoke: "회수",
   reset_to_policy: "수동 설정 해제",
-  change_role: "권한 변경",
+  change_role: "Portal 역할 변경",
   user_access_update: "접근 상태 변경",
   policy_create: "자동 규칙 추가",
   policy_update: "자동 규칙 수정",
@@ -171,7 +138,15 @@ const STATUS_LABELS = {
 }
 
 const SOURCE_LABELS = {
-  ...Object.fromEntries(SOURCE_OPTIONS.map((option) => [option.value, option.label])),
+  portal_access_required: "Portal 차단 우선",
+  explicit_allowed: "개별 허용",
+  explicit_denied: "개별 차단",
+  explicit_pending: "개별 승인 대기",
+  policy_department: "부서 자동 규칙",
+  superuser_bypass: "슈퍼유저 우회",
+  none: "결정 기준 없음",
+  scope_inactive: "권한 범위 비활성",
+  scope_not_found: "권한 범위 없음",
   admin: "슈퍼유저 우회",
 }
 const ROLE_LABELS = Object.fromEntries(ROLE_OPTIONS.map((option) => [option.value, option.label]))
@@ -245,7 +220,7 @@ function getAuditChanges(row) {
     if (before === after) return []
     const label = {
       status: "상태",
-      role: "부여 권한",
+      role: "Portal 접근 역할",
       isActive: "사용 여부",
       ruleType: "적용 기준",
       value: "적용 조건",
@@ -254,7 +229,7 @@ function getAuditChanges(row) {
       name: "이름",
       scopeType: "권한 범위 유형",
       requestable: "요청 가능",
-      defaultRole: "기본 권한",
+      defaultRole: "기본 Portal 역할",
       canManageAccess: "권한 관리",
     }[field]
     return [`${label}: ${formatAuditValue(field, before)} -> ${formatAuditValue(field, after)}`]
@@ -488,6 +463,7 @@ function DecisionDialog({ decision, onOpenChange, onSubmit, isSubmitting, errorM
     if (isSubmitting) return
     await onSubmit({
       userId: decision.row.user.id,
+      scope: decision.scope?.key,
       action: decision.action,
       role: requiresRole ? role : undefined,
       reason: requiresReason || reason.trim() ? reason.trim() : undefined,
@@ -506,6 +482,9 @@ function DecisionDialog({ decision, onOpenChange, onSubmit, isSubmitting, errorM
           <DialogTitle>{actionLabel}</DialogTitle>
           <DialogDescription>
             <span>{decision.row.user.displayName || decision.row.user.knoxId}</span>
+            {decision.scope ? (
+              <span className="mt-1 block">권한 범위: {decision.scope.name}</span>
+            ) : null}
             {decision.action === "reset_to_policy" ? (
               <span className="mt-1 hidden xl:block">
                 직접 지정한 상태를 제거하고 자동 접근 규칙의 판정으로 전환합니다.
@@ -516,7 +495,7 @@ function DecisionDialog({ decision, onOpenChange, onSubmit, isSubmitting, errorM
         <div className="grid gap-4">
           {requiresRole ? (
             <div className="grid gap-2">
-              <Label htmlFor="access-role">부여 권한</Label>
+              <Label htmlFor="access-role">Portal 접근 역할</Label>
               <Select value={role} onValueChange={setRole}>
                 <SelectTrigger id="access-role" className="w-full">
                   <SelectValue />
@@ -646,7 +625,7 @@ function UserActions({ row, onDecision, disabled = false }) {
   const primaryAction = status === "pending"
     ? { action: "approve", label: "승인", icon: Check, variant: "default" }
     : status === "allowed"
-      ? { action: "change_role", label: "권한 변경", icon: SlidersHorizontal, variant: "outline" }
+      ? { action: "change_role", label: "Portal 역할 변경", icon: SlidersHorizontal, variant: "outline" }
       : ["denied", "not_requested"].includes(status)
         ? { action: "grant", label: "직접 부여", icon: UserPlus, variant: "default" }
         : null
@@ -844,7 +823,7 @@ function AccessUsersTable({
     },
     {
       id: "accessRole",
-      header: "접근 권한",
+      header: "Portal 접근 역할",
       cell: ({ row }) => <RoleIndicator role={row.original.access?.role} />,
       meta: {
         headerClassName: "min-w-36",
@@ -868,7 +847,7 @@ function AccessUsersTable({
       id: "actions",
       header: "작업",
       cell: ({ row }) => (
-        <UserActions row={row.original} onDecision={onDecision} disabled={isMutating} />
+        <UserActions row={row.original} onDecision={onDecision} disabled={isMutating || isFetching} />
       ),
       meta: {
         headerClassName: "sticky right-0 z-20 min-w-44 bg-muted/30 text-right",
@@ -910,167 +889,6 @@ function AccessUsersTable({
       tableClassName="min-w-[1100px]"
       ariaLabel="포털 접근 사용자 목록"
     />
-  )
-}
-
-function UsersPanel({
-  query,
-  filters,
-  setFilters,
-  filterDraft,
-  setFilterDraft,
-  onApplyFilters,
-  onResetFilters,
-  hasAppliedFilters,
-  onDecision,
-  onPageChange,
-  onShowPending,
-  onShowPolicies,
-  isMutating,
-}) {
-  const rows = query.data?.results || []
-  const summary = query.data?.summary || {}
-  const total = query.data?.pagination?.total ?? summary.total ?? 0
-  const pageTotal = summary.pageTotal ?? rows.length
-
-  return (
-    <Card className="grid min-w-0 grid-rows-[auto_auto] overflow-hidden py-0 xl:h-full xl:min-h-0 xl:grid-rows-[min-content_minmax(0,1fr)] xl:gap-0">
-      <CardHeader className="border-b px-4 py-3 xl:grid-rows-[auto] xl:content-start xl:pb-3!">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <CardTitle className="text-base">인원별 권한 상태</CardTitle>
-            <CardDescription>
-              {hasAppliedFilters ? "필터 결과" : "전체"} {formatCount(total)}명 / 현재 페이지 {formatCount(pageTotal)}명
-            </CardDescription>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-muted-foreground">현재 페이지</span>
-            <Badge variant="secondary">허용 {formatCount(summary.allowed)}</Badge>
-            <Badge variant="secondary">대기 {formatCount(summary.pending)}</Badge>
-            <Badge variant="destructive">차단 {formatCount(summary.denied)}</Badge>
-            <Badge variant="outline">
-              <span>자동 허용</span>
-              {" "}{formatCount(summary.policyAllowed)}
-            </Badge>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="grid min-w-0 grid-rows-[auto_auto_auto] p-0 xl:min-h-0 xl:grid-rows-[auto_minmax(0,1fr)]">
-        <form
-          className="grid gap-3 border-b p-4 xl:grid-cols-[150px_180px_minmax(180px,1fr)_minmax(220px,1.3fr)_auto] xl:px-4 xl:py-3"
-          onSubmit={(event) => {
-            event.preventDefault()
-            onApplyFilters()
-          }}
-        >
-          <div className="grid gap-1.5">
-            <Label htmlFor="access-status-filter">접근 상태</Label>
-            <Select
-              value={filters.status}
-              onValueChange={(value) => setFilters((current) => ({ ...current, status: value, page: 1 }))}
-            >
-              <SelectTrigger id="access-status-filter" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {STATUS_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="access-source-filter">
-              결정 기준
-            </Label>
-            <Select
-              value={filters.source}
-              onValueChange={(value) => setFilters((current) => ({ ...current, source: value, page: 1 }))}
-            >
-              <SelectTrigger id="access-source-filter" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {SOURCE_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="access-department-filter">부서</Label>
-            <Input
-              id="access-department-filter"
-              value={filterDraft.department}
-              onChange={(event) =>
-                setFilterDraft((current) => ({ ...current, department: event.target.value }))
-              }
-              placeholder="부서명"
-              maxLength={128}
-            />
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="access-user-search">검색</Label>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                id="access-user-search"
-                value={filterDraft.search}
-                onChange={(event) =>
-                  setFilterDraft((current) => ({ ...current, search: event.target.value }))
-                }
-                className="pl-9"
-                placeholder="사용자, Knox ID, 부서"
-                maxLength={150}
-              />
-            </div>
-          </div>
-          <div className="flex items-end gap-2">
-            <Button type="submit" disabled={query.isFetching}>
-              {query.isFetching ? <RefreshCw className="size-4 animate-spin" /> : <Search className="size-4" />}
-              <span className="xl:hidden">적용</span>
-              <span className="hidden xl:inline">검색</span>
-            </Button>
-            <Button type="button" variant="outline" onClick={onResetFilters} disabled={query.isFetching}>
-              <RotateCcw className="size-4" />
-              초기화
-            </Button>
-          </div>
-        </form>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4 xl:hidden">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">{formatCount(PAGE_SIZE)}개씩</Badge>
-            {hasAppliedFilters ? <Badge variant="secondary">필터 적용됨</Badge> : null}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="outline" onClick={onShowPending}>
-              <Clock3 className="size-4" />
-              승인 대기
-            </Button>
-            <Button type="button" variant="outline" onClick={onShowPolicies}>
-              <SlidersHorizontal className="size-4" />
-              자동 규칙
-            </Button>
-          </div>
-        </div>
-        <AccessUsersTable
-          rows={rows}
-          isLoading={query.isPending}
-          isFetching={query.isFetching}
-          error={query.error}
-          onDecision={onDecision}
-          isMutating={isMutating}
-          onRetry={query.refetch}
-          onEmptyReset={hasAppliedFilters ? onResetFilters : undefined}
-          pagination={query.data?.pagination}
-          onPageChange={onPageChange}
-        />
-      </CardContent>
-    </Card>
   )
 }
 
@@ -1211,7 +1029,7 @@ function PolicyPanel({ query, scope, scopeOptions, onScopeChange }) {
       </CardHeader>
       <CardContent className="grid min-w-0 grid-rows-[auto_auto] gap-4 p-4 xl:min-h-0 xl:grid-rows-[min-content_minmax(0,1fr)]">
         <form
-          className="grid gap-3 border-b pb-4 xl:grid-cols-[minmax(240px,1fr)_150px_120px_auto]"
+          className="grid gap-3 border-b pb-4 xl:grid-cols-[11rem_9rem_8rem_auto] xl:items-end xl:justify-start"
           onSubmit={handleSubmit}
         >
           <div className="grid gap-1.5">
@@ -1235,7 +1053,7 @@ function PolicyPanel({ query, scope, scopeOptions, onScopeChange }) {
             </div>
           ) : (
             <div className="grid gap-1.5">
-              <Label htmlFor="access-policy-role">부여 권한</Label>
+              <Label htmlFor="access-policy-role">Portal 접근 역할</Label>
               <Select
                 value={form.role}
                 onValueChange={(value) => setForm((current) => ({ ...current, role: value }))}
@@ -1269,7 +1087,7 @@ function PolicyPanel({ query, scope, scopeOptions, onScopeChange }) {
           </div>
           <Button
             type="submit"
-            className="self-end"
+            className="self-end justify-self-start whitespace-nowrap"
             disabled={isMutating || query.isPending || query.isError}
           >
             {createMutation.isPending ? <RefreshCw className="size-4 animate-spin" /> : <Plus className="size-4" />}
@@ -1296,7 +1114,7 @@ function PolicyPanel({ query, scope, scopeOptions, onScopeChange }) {
               <TableHeader>
                 <TableRow>
                   <TableHead>대상 부서</TableHead>
-                  <TableHead>{isAppScope ? "적용 결과" : "부여 권한"}</TableHead>
+                  <TableHead>{isAppScope ? "적용 결과" : "Portal 접근 역할"}</TableHead>
                   <TableHead>사용 여부</TableHead>
                   <TableHead className="text-right">작업</TableHead>
                 </TableRow>
@@ -1454,8 +1272,6 @@ export default function PermissionsPage() {
   const { user, isLoading } = useAuth()
   const canManage = Boolean(user?.portal_access?.canManage)
   const [activeTab, setActiveTab] = useState("matrix")
-  const [filters, setFilters] = useState(INITIAL_FILTERS)
-  const [filterDraft, setFilterDraft] = useState(INITIAL_FILTER_DRAFT)
   const [pendingPage, setPendingPage] = useState(1)
   const [auditPage, setAuditPage] = useState(1)
   const [auditScope, setAuditScope] = useState("all")
@@ -1466,15 +1282,6 @@ export default function PermissionsPage() {
   const [matrixFilterDraft, setMatrixFilterDraft] = useState(INITIAL_MATRIX_FILTER_DRAFT)
   const [pendingMatrixCell, setPendingMatrixCell] = useState("")
 
-  const usersQuery = useAccessUsers({
-    page: filters.page,
-    pageSize: PAGE_SIZE,
-    status: filters.status === "all" ? "" : filters.status,
-    source: filters.source === "all" ? "" : filters.source,
-    search: filters.search,
-    department: filters.department,
-    enabled: canManage,
-  })
   const pendingQuery = useAccessUsers({
     page: pendingPage,
     pageSize: PAGE_SIZE,
@@ -1489,28 +1296,29 @@ export default function PermissionsPage() {
     enabled: canManage && activeTab === "audit",
   })
   const matrixQuery = useAccessMatrix({
-    page: matrixFilters.page,
     pageSize: PAGE_SIZE,
     search: matrixFilters.search,
     department: matrixFilters.department,
-    enabled: canManage && activeTab === "matrix",
+    enabled: canManage,
   })
   const decisionMutation = useAccessUserDecision()
-  const usersSummary = usersQuery.data?.summary || {}
-  const usersTotal = usersQuery.data?.pagination?.total ?? usersSummary.total ?? 0
-  const usersPageTotal = usersSummary.pageTotal ?? usersQuery.data?.results?.length ?? 0
+  const matrixRows = matrixQuery.data?.results || []
+  const matrixTotal = matrixQuery.data?.pagination?.total ?? 0
+  const matrixLoadedTotal = matrixRows.length
+  const portalPolicyAllowed = matrixRows.filter(
+    (row) => row.accesses?.portal?.source === "policy_department",
+  ).length
   const pendingTotal = pendingQuery.data?.pagination?.total ?? 0
   const policyTotal = policyQuery.data?.results?.length ?? 0
   const accessScopeOptions = buildAccessScopeOptions(user?.app_access)
   const auditScopeOptions = [{ value: "all", label: "전체 권한 범위" }, ...accessScopeOptions]
   const policyScopeLabel = accessScopeOptions.find((option) => option.value === policyScope)?.label || policyScope
-  const hasAppliedFilters = Boolean(
-    filters.status !== "all" || filters.source !== "all" || filters.search || filters.department,
-  )
+  const hasAppliedMatrixFilters = Boolean(matrixFilters.search || matrixFilters.department)
+  const isMatrixReplacing = matrixQuery.isFetching && !matrixQuery.isFetchingNextPage
   const isRefreshing =
-    usersQuery.isFetching || pendingQuery.isFetching || policyQuery.isFetching || auditQuery.isFetching || matrixQuery.isFetching
+    pendingQuery.isFetching || policyQuery.isFetching || auditQuery.isFetching || matrixQuery.isFetching
 
-  const handleDecisionOpen = (row, action, label) => {
+  const handleDecisionOpen = (row, action, label, scope = null) => {
     if (decisionMutation.isPending) return
     setDecisionError("")
     setDecision({
@@ -1518,6 +1326,7 @@ export default function PermissionsPage() {
       action,
       label,
       role: row.access?.role || "viewer",
+      scope,
     })
   }
 
@@ -1535,23 +1344,8 @@ export default function PermissionsPage() {
     }
   }
 
-  const handleApplyFilters = () => {
-    setFilters((current) => ({
-      ...current,
-      page: 1,
-      search: filterDraft.search.trim(),
-      department: filterDraft.department.trim(),
-    }))
-  }
-
-  const handleResetFilters = () => {
-    setFilterDraft({ ...INITIAL_FILTER_DRAFT })
-    setFilters({ ...INITIAL_FILTERS })
-  }
-
   const handleApplyMatrixFilters = () => {
     setMatrixFilters({
-      page: 1,
       search: matrixFilterDraft.search.trim(),
       department: matrixFilterDraft.department.trim(),
     })
@@ -1564,6 +1358,27 @@ export default function PermissionsPage() {
 
   const handleMatrixAccessChange = async ({ user: targetUser, scope, access, nextValue }) => {
     if (decisionMutation.isPending || isSuperuserBypass(access)) return
+
+    if (scope.scopeType === "portal") {
+      let action = ""
+      if (nextValue === "inherit") {
+        if (!access?.explicitStatus) return
+        action = "reset_to_policy"
+      } else if (nextValue === "denied") {
+        action = access?.explicitStatus === "pending" ? "reject" : "revoke"
+      } else if (nextValue === "allowed") {
+        action = access?.explicitStatus === "pending" ? "approve" : "grant"
+      } else {
+        return
+      }
+      handleDecisionOpen(
+        { user: targetUser, access },
+        action,
+        ACTION_LABELS[action],
+        scope,
+      )
+      return
+    }
 
     let action = ""
     if (nextValue === "inherit") {
@@ -1586,7 +1401,7 @@ export default function PermissionsPage() {
         userId: targetUser.id,
         scope: scope.key,
         action,
-        reason: "앱 권한 매트릭스에서 수동 변경",
+        reason: "권한 매트릭스에서 수동 변경",
       })
       toast.success(`${scope.name} 권한을 변경했습니다.`)
     } catch (error) {
@@ -1596,12 +1411,21 @@ export default function PermissionsPage() {
     }
   }
 
+  const handleMatrixRoleChange = ({ user: targetUser, scope, access }) => {
+    if (decisionMutation.isPending || isSuperuserBypass(access)) return
+    handleDecisionOpen(
+      { user: targetUser, access },
+      "change_role",
+      ACTION_LABELS.change_role,
+      scope,
+    )
+  }
+
   const handleRefresh = () => {
-    usersQuery.refetch()
+    matrixQuery.refetch()
     pendingQuery.refetch()
     policyQuery.refetch()
     if (activeTab === "audit") auditQuery.refetch()
-    if (activeTab === "matrix") matrixQuery.refetch()
   }
 
   return (
@@ -1612,7 +1436,9 @@ export default function PermissionsPage() {
             <h2 className="text-2xl font-semibold tracking-tight text-foreground">권한 관리</h2>
             <Badge variant="outline">Portal + Apps</Badge>
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">포털 및 앱별 접근 권한</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Portal 접근 역할과 앱별 허용 여부 · 권한 관리 기능은 별도 부여
+          </p>
         </div>
         <Button variant="outline" onClick={handleRefresh} disabled={!canManage || isRefreshing}>
           <RefreshCw className={isRefreshing ? "size-4 animate-spin" : "size-4"} />
@@ -1635,11 +1461,11 @@ export default function PermissionsPage() {
             <section className="grid shrink-0 grid-cols-2 gap-3 xl:hidden">
               <SummaryTile
                 icon={Users}
-                label={hasAppliedFilters ? "필터 결과" : "전체 인원"}
-                value={usersTotal}
-                detail={`현재 페이지 ${formatCount(usersPageTotal)}명`}
+                label={hasAppliedMatrixFilters ? "필터 결과" : "전체 인원"}
+                value={matrixTotal}
+                detail={`불러온 사용자 ${formatCount(matrixLoadedTotal)}명`}
                 tone="secondary"
-                isLoading={usersQuery.isFetching}
+                isLoading={isMatrixReplacing}
               />
               <SummaryTile
                 icon={Clock3}
@@ -1652,10 +1478,10 @@ export default function PermissionsPage() {
               <SummaryTile
                 icon={ShieldCheck}
                 label="자동 허용"
-                value={usersSummary.policyAllowed}
-                detail="현재 페이지 기준"
+                value={portalPolicyAllowed}
+                detail="불러온 사용자 기준"
                 tone="primary"
-                isLoading={usersQuery.isFetching}
+                isLoading={isMatrixReplacing}
               />
               <SummaryTile
                 icon={SlidersHorizontal}
@@ -1669,11 +1495,11 @@ export default function PermissionsPage() {
             <section className="hidden shrink-0 overflow-hidden rounded-lg border bg-card xl:grid xl:grid-cols-4">
               <DesktopSummaryMetric
                 icon={Users}
-                label={hasAppliedFilters ? "필터 결과" : "전체 사용자"}
-                value={usersTotal}
-                detail={`현재 페이지 ${formatCount(usersPageTotal)}명`}
+                label={hasAppliedMatrixFilters ? "필터 결과" : "전체 사용자"}
+                value={matrixTotal}
+                detail={`불러온 사용자 ${formatCount(matrixLoadedTotal)}명`}
                 tone="secondary"
-                isLoading={usersQuery.isFetching}
+                isLoading={isMatrixReplacing}
               />
               <DesktopSummaryMetric
                 icon={Clock3}
@@ -1685,11 +1511,11 @@ export default function PermissionsPage() {
               />
               <DesktopSummaryMetric
                 icon={ShieldCheck}
-                label="현재 페이지 자동 허용"
-                value={usersSummary.policyAllowed}
+                label="불러온 사용자 자동 허용"
+                value={portalPolicyAllowed}
                 detail="자동 접근 규칙 기준"
                 tone="primary"
-                isLoading={usersQuery.isFetching}
+                isLoading={isMatrixReplacing}
               />
               <DesktopSummaryMetric
                 icon={SlidersHorizontal}
@@ -1706,23 +1532,14 @@ export default function PermissionsPage() {
               className="min-w-0 gap-4 xl:h-full xl:min-h-0 xl:overflow-hidden"
             >
               <div className="min-w-0 shrink-0 overflow-x-auto pb-1">
-                <TabsList className="w-max shrink-0">
+                <TabsList className="grid w-full shrink-0 grid-cols-4 xl:inline-flex xl:w-max">
                   <TabsTrigger value="matrix">
-                    <SlidersHorizontal className="size-4" />
-                    앱별 권한
-                  </TabsTrigger>
-                  <TabsTrigger value="users">
-                    <Users className="size-4" />
-                    인원별 권한
-                    <Badge
-                      variant="secondary"
-                      className="hidden min-w-5 justify-center px-1.5 tabular-nums xl:inline-flex"
-                    >
-                      {formatCount(usersTotal)}
-                    </Badge>
+                    <SlidersHorizontal className="hidden size-4 xl:block" />
+                    <span className="xl:hidden">매트릭스</span>
+                    <span className="hidden xl:inline">권한 매트릭스</span>
                   </TabsTrigger>
                   <TabsTrigger value="pending">
-                    <Clock3 className="size-4" />
+                    <Clock3 className="hidden size-4 xl:block" />
                     승인 대기
                     <Badge
                       variant={pendingTotal > 0 ? "destructive" : "secondary"}
@@ -1732,7 +1549,7 @@ export default function PermissionsPage() {
                     </Badge>
                   </TabsTrigger>
                   <TabsTrigger value="policies">
-                    <SlidersHorizontal className="size-4" />
+                    <SlidersHorizontal className="hidden size-4 xl:block" />
                     <span className="xl:hidden">자동 규칙</span>
                     <span className="hidden xl:inline">자동 접근 규칙</span>
                     <Badge
@@ -1743,7 +1560,7 @@ export default function PermissionsPage() {
                     </Badge>
                   </TabsTrigger>
                   <TabsTrigger value="audit">
-                    <History className="size-4" />
+                    <History className="hidden size-4 xl:block" />
                     변경 이력
                   </TabsTrigger>
                 </TabsList>
@@ -1757,29 +1574,13 @@ export default function PermissionsPage() {
                   setFilterDraft={setMatrixFilterDraft}
                   onApplyFilters={handleApplyMatrixFilters}
                   onResetFilters={handleResetMatrixFilters}
-                  onPageChange={(page) => setMatrixFilters((current) => ({ ...current, page }))}
                   onAccessChange={handleMatrixAccessChange}
+                  onRoleChange={handleMatrixRoleChange}
                   pendingCell={pendingMatrixCell}
-                />
-              </TabsContent>
-
-              <TabsContent value="users" className="min-w-0 xl:min-h-0 xl:overflow-hidden">
-                <UsersPanel
-                  query={usersQuery}
-                  filters={filters}
-                  setFilters={setFilters}
-                  filterDraft={filterDraft}
-                  setFilterDraft={setFilterDraft}
-                  onApplyFilters={handleApplyFilters}
-                  onResetFilters={handleResetFilters}
-                  hasAppliedFilters={hasAppliedFilters}
-                  onDecision={handleDecisionOpen}
-                  onPageChange={(page) => setFilters((current) => ({ ...current, page }))}
-                  onShowPending={() => setActiveTab("pending")}
-                  onShowPolicies={() => setActiveTab("policies")}
                   isMutating={decisionMutation.isPending}
                 />
               </TabsContent>
+
               <TabsContent value="pending" className="min-w-0 xl:min-h-0 xl:overflow-hidden">
                 <PendingPanel
                   query={pendingQuery}
