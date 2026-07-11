@@ -244,7 +244,47 @@ class L3SpiderServiceTests(SimpleTestCase):
 
         self.assertNotIn("equipmentRanking", daily)
         self.assertEqual(daily["headline"]["highRiskEqpchs"], 1)
+        self.assertEqual(
+            daily["runStats"]["byLineName"],
+            [{"lineName": "L1", "stepSeqCount": 1, "rowCnt": 3}],
+        )
         self.assertEqual(parallel_read.call_count, 1)
+
+    def test_daily_summary_splits_step_counts_for_multiple_line_names(self) -> None:
+        """동일 line_id가 여러 line_name이면 분석 step 수를 각각 집계해야 합니다."""
+
+        file_df = pd.DataFrame([
+            {
+                "line_id": "L1", "process_id": "P1", "eds_step": "EDS_M",
+                "step_seq": "S1", "ppid": "PPID_A", "hr": 1, "wn": 0,
+                "row_cnt": 10, "bins": ["BIN_A"], "hr_eqcs": ["EQC_A"],
+                "total_bins": 1,
+            },
+            {
+                "line_id": "L1", "process_id": "P1", "eds_step": "EDS_M",
+                "step_seq": "S2", "ppid": "PPID_B", "hr": 0, "wn": 1,
+                "row_cnt": 20, "bins": ["BIN_B"], "hr_eqcs": [],
+                "total_bins": 1,
+            },
+        ])
+
+        with patch.object(
+            line_name_rules,
+            "resolve_line_name",
+            side_effect=lambda _line_id, _process_id, step_seq: (
+                "EndFab" if step_seq == "S2" else "FAB_A"
+            ),
+        ):
+            services._aggregate_daily(file_df, ["2025-01-15"])
+            by_line_name = services._build_line_name_run_stats(file_df)
+
+        self.assertEqual(
+            by_line_name,
+            [
+                {"lineName": "EndFab", "stepSeqCount": 1, "rowCnt": 20},
+                {"lineName": "FAB_A", "stepSeqCount": 1, "rowCnt": 10},
+            ],
+        )
 
     def test_extensionless_filename_key_supplies_step_and_ppid(self) -> None:
         """확장자 없는 STEP#PPID#N 파일명이 summary/data 필터에 반영되는지 확인합니다."""

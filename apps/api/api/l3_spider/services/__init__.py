@@ -1937,7 +1937,7 @@ def _empty_daily_summary() -> dict[str, object]:
             "anomalyEqpchs": 0, "highRiskEqpchs": 0, "warningEqpchs": 0,
         },
         "matrix": {"lines": [], "processes": [], "edsSteps": [], "cells": []},
-        "runStats": {"totalRows": 0, "combinations": 0, "byLine": []},
+        "runStats": {"totalRows": 0, "combinations": 0, "byLine": [], "byLineName": []},
     }
 
 
@@ -2119,6 +2119,24 @@ def _aggregate_daily(file_df: pd.DataFrame, dates: list) -> dict:
     return {"dates": sorted(dates), "headline": headline, "matrix": matrix}
 
 
+def _build_line_name_run_stats(file_df: pd.DataFrame) -> list[dict[str, object]]:
+    """Summary에 반영된 데이터에서 line_name별 분석 step과 row 수를 집계합니다."""
+
+    required = {"line_name", "step_seq", "row_cnt"}
+    if file_df.empty or not required.issubset(file_df.columns):
+        return []
+
+    result: list[dict[str, object]] = []
+    for line_name, group in file_df.groupby("line_name", sort=True):
+        step_seqs = group["step_seq"].dropna().astype(str).str.strip()
+        result.append({
+            "lineName": str(line_name),
+            "stepSeqCount": int(step_seqs[step_seqs != ""].nunique()),
+            "rowCnt": int(group["row_cnt"].fillna(0).astype(int).sum()),
+        })
+    return result
+
+
 def get_daily_summary(selection: dict[str, object], *, user: Any | None = None) -> dict[str, object]:
     """선택한 날짜 전체의 line_name×process×eds_step 기준 이상감지 요약을 반환합니다.
 
@@ -2189,6 +2207,7 @@ def get_daily_summary(selection: dict[str, object], *, user: Any | None = None) 
         id_to_name = dict(zip(file_df["line_id"].astype(str), file_df["line_name"].astype(str)))
         for entry in run_stats["byLine"]:
             entry["lineName"] = id_to_name.get(str(entry["lineId"]), entry["lineId"])
+    run_stats["byLineName"] = _build_line_name_run_stats(file_df)
     result["runStats"] = run_stats
     _daily_summary_cache.set(cache_key, result)
     return result
