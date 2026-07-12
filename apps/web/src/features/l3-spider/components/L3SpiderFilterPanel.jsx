@@ -69,7 +69,7 @@ function ColumnCard({
   return (
     <Card
       className={cn(
-        "grid min-h-0 grid-rows-[48px_40px_minmax(0,1fr)] gap-0 overflow-hidden rounded-xl border bg-card py-0 shadow-sm transition-all",
+        "grid min-h-0 min-w-0 grid-rows-[48px_40px_minmax(0,1fr)] gap-0 overflow-hidden rounded-xl border bg-card py-0 shadow-sm transition-all",
         isActive && "ring-2 ring-primary/50",
       )}
     >
@@ -213,7 +213,7 @@ export function L3SpiderFilterPanel({
   }
 
   return (
-    <section className="grid h-[320px] min-w-[936px] grid-cols-[minmax(8.5rem,1fr)_27rem_minmax(11.5rem,1.35fr)_minmax(8.5rem,1fr)] gap-4">
+    <section className="grid h-[320px] min-w-0 grid-cols-[minmax(0,1.2fr)_minmax(0,1.9fr)_minmax(0,1fr)_minmax(0,1fr)] gap-4">
       <ColumnCard
         title="Step Seq"
         badge={totalStepCount > 0 ? `${totalStepCount}` : null}
