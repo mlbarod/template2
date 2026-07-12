@@ -1,4 +1,4 @@
-const TTTM_SPIDER_URL = "http://10.172.60.187:32710"
+const TTTM_SPIDER_URL = "/tttm-spider/"
 
 export function TttmSpiderPage() {
   return (
