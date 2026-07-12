@@ -187,9 +187,9 @@ function SpiderWebFrame() {
 
 function SpiderCenterLogo() {
   return (
-    <span className="absolute left-1/2 top-1/2 z-10 flex size-32 -translate-x-1/2 -translate-y-[47%] items-center justify-center">
-      <img src={spiderLogoLightPng} alt="Spider Logo" className="h-22 w-auto object-contain dark:hidden" />
-      <img src={spiderLogoDarkPng} alt="Spider Logo" className="hidden h-22 w-auto object-contain dark:block" />
+    <span className="absolute left-1/2 top-1/2 z-10 flex size-24 -translate-x-1/2 -translate-y-[47%] items-center justify-center">
+      <img src={spiderLogoLightPng} alt="Spider Logo" className="h-16 w-auto object-contain dark:hidden" />
+      <img src={spiderLogoDarkPng} alt="Spider Logo" className="hidden h-16 w-auto object-contain dark:block" />
     </span>
   )
 }
@@ -311,19 +311,20 @@ function SpiderLinkStack({ links = [], itemRefs = [] }) {
   }
 
   return (
-    <div className="grid min-w-52 gap-2 sm:min-w-60">
+    <div className="grid min-w-52 gap-1.5 sm:min-w-60">
       {links.map((item, index) => {
         const Icon = item.icon
+        const isAbsoluteExternalHref = item.external && /^https?:\/\//.test(item.href)
         const className = [
-          "group flex min-w-0 items-center gap-2.5 rounded-xl border px-3 py-2 transition-colors sm:gap-3 sm:py-2.5",
+          "group flex min-w-0 items-center gap-2 rounded-xl border px-3 py-1.5 transition-colors sm:gap-2.5 sm:py-2",
           item.allowed
             ? "border-border/70 hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             : "cursor-not-allowed border-dashed border-border/60 opacity-75",
         ].join(" ")
         const content = (
           <>
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/70 text-muted-foreground sm:size-10">
-              <Icon className="size-4.5 sm:size-5" aria-hidden="true" />
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border/70 text-muted-foreground sm:size-9">
+              <Icon className="size-4 sm:size-4.5" aria-hidden="true" />
             </span>
             <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{item.title}</span>
             {item.allowed ? (
@@ -343,6 +344,21 @@ function SpiderLinkStack({ links = [], itemRefs = [] }) {
             )}
           </>
         )
+
+        if (item.allowed && isAbsoluteExternalHref) {
+          return (
+            <a
+              key={item.title}
+              ref={itemRefs[index]}
+              href={item.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={className}
+            >
+              {content}
+            </a>
+          )
+        }
 
         return item.allowed ? (
           <Link
@@ -373,7 +389,8 @@ function ThemeSharing({ spiderLinks = [] }) {
   const link3Ref = useRef(null)
   const link4Ref = useRef(null)
   const link5Ref = useRef(null)
-  const linkRefs = [link1Ref, link2Ref, link3Ref, link4Ref, link5Ref]
+  const link6Ref = useRef(null)
+  const linkRefs = [link1Ref, link2Ref, link3Ref, link4Ref, link5Ref, link6Ref]
 
   return (
     <div ref={containerRef} className="relative z-1 flex w-full max-w-2xl items-center justify-center gap-6 px-4 sm:px-6">
@@ -616,7 +633,7 @@ export function SpiderBentoAppCards({ spiderLinks = [] }) {
   return (
     <section
       aria-label="Imported app cards"
-      className="mx-auto grid w-full max-w-7xl grid-cols-1 gap-4 rounded-3xl border border-border bg-muted/70 p-4 shadow-sm md:grid-cols-2 xl:grid-cols-4"
+      className="mx-auto grid w-full max-w-screen-2xl grid-cols-1 gap-5 rounded-3xl border border-border bg-muted/70 p-5 shadow-sm md:grid-cols-2 xl:grid-cols-4"
     >
       <SeamlessIntegrationsCard />
       <ThemeSharingCard spiderLinks={spiderLinks} />

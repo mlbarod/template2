@@ -1,4 +1,4 @@
-import { Activity, Gauge, Network, Radar, ScanSearch } from "lucide-react"
+import { Activity, Bug, Gauge, Network, Radar, ScanSearch } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { hasAppAccess } from "@/lib/access/appAccess"
@@ -48,6 +48,13 @@ const spiderLinks = [
     badge: "PM",
     appScope: "pm-spider",
   },
+  {
+    icon: Bug,
+    title: "Defect Spider",
+    description: "Defect Spider 외부 분석 화면으로 이동합니다.",
+    href: "/spider/defect",
+    badge: "Defect",
+  },
 ]
 
 function SpiderHeroIntroSection() {
@@ -74,13 +81,13 @@ export function SpiderHomePage() {
   const { user } = useAuth()
   const spiderLinkItems = spiderLinks.map((item) => ({
     ...item,
-    allowed: hasAppAccess(user, item.appScope),
+    allowed: !item.disabled && (!item.appScope || hasAppAccess(user, item.appScope)),
   }))
 
   return (
     <div className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
       <main className="relative z-10 min-h-0 flex-1 overflow-y-auto px-6 py-8">
-        <div className="mx-auto grid w-full max-w-7xl gap-6">
+        <div className="mx-auto grid w-full max-w-screen-2xl gap-6">
           <SpiderHeroIntroSection />
 
           <SpiderBentoAppCards spiderLinks={spiderLinkItems} />

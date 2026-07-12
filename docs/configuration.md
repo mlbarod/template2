@@ -93,6 +93,7 @@
 | MinIO | `MINIO_*` | 메일 asset storage |
 | `VITE_*` / Web | `VITE_BACKEND_URL`, `BACKEND_API_URL`, `VITE_ASSISTANT_API_URL`, `VITE_AIRFLOW_BASE_URL`, `VITE_SITE_URL` | 브라우저와 container 내부 API URL |
 | `VITE_PORTAL_*` / Web | `VITE_PORTAL_PMX_URL`, `VITE_PORTAL_MOSAIC_URL`, `VITE_PORTAL_CONFLUENCE_URL` | Portal 전역 네비게이션 외부 링크. 비어 있으면 메뉴 또는 화면에서 숨김/안내 |
+| Spider 외부 링크 / Web | `VITE_DEFECT_SPIDER_URL` | `/spider` 허브의 Defect Spider 외부 링크. 비어 있으면 카드가 비활성 안내 상태로 표시 |
 | Account UI fixture / Web | `VITE_ACCOUNT_DEV_FIXTURES` | 로컬 계정 화면 예시 데이터. 명시적으로 `1`일 때만 활성화 |
 | Monitoring | `PROMETHEUS_RETENTION_TIME`, `GF_SECURITY_ADMIN_USER`, `GF_SECURITY_ADMIN_PASSWORD`, `GF_SERVER_ROOT_URL`, `GF_SERVER_SERVE_FROM_SUB_PATH` | Prometheus 보관 기간, Grafana 관리자 계정, nginx subpath 프록시 설정 |
 | TTTM Spider | `TTTM_SPIDER_UPSTREAM` | nginx `/tttm-spider/` HTTPS 프록시가 전달할 내부 TTTM Spider host:port |
