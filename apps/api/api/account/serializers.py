@@ -69,6 +69,12 @@ class AccessDecisionSerializer(serializers.Serializer):
     )
 
 
+class AccessRequestSerializer(serializers.Serializer):
+    """현재 사용자 접근 신청 입력 스키마."""
+
+    scope = serializers.CharField(max_length=64)
+
+
 class AccessUserDecisionSerializer(serializers.Serializer):
     """관리자 사용자별 접근 상태 변경 입력 스키마."""
 

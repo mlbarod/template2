@@ -15,7 +15,6 @@ import {
   navigationMenuTriggerStyle,
 } from "@/components/ui/navigation-menu"
 import { useAuth } from "@/lib/auth"
-import { hasAnyAppAccess, hasEveryAppAccess } from "@/lib/access/appAccess"
 import { PORTAL_BRAND_KEY, resolvePortalBrand } from "@/lib/config/portalBranding"
 import { buildProfileImageUrl, resolveProfileAvatarId } from "@/lib/profileImage"
 import { useTheme } from "@/lib/theme"
@@ -34,9 +33,7 @@ const NAV_SUB_LINK_CLASS_NAME = "block whitespace-nowrap px-3 py-1.5"
 
 function canShowNavigationItem(item, user) {
   if (item?.requireSuperuser && !user?.is_superuser) return false
-  if (item?.anyAppScopes) return hasAnyAppAccess(user, item.anyAppScopes)
-  const requiredScopes = item?.requiredAppScopes || (item?.appScope ? [item.appScope] : [])
-  return hasEveryAppAccess(user, requiredScopes)
+  return true
 }
 
 export function PortalNavbar({ navigationItems }) {

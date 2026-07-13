@@ -55,14 +55,11 @@ class Command(BaseCommand):
         return findings
 
     def _check_app_boolean_contract(self) -> list[str]:
-        """앱 scope와 연결된 role/requestable 값이 boolean 계약을 따르는지 확인합니다."""
+        """앱 scope와 연결된 role 값이 boolean 권한 계약을 따르는지 확인합니다."""
 
         findings = []
         app_scopes = AccessScope.objects.filter(scope_type=AccessScope.ScopeTypes.APP)
-        invalid_scope_count = app_scopes.exclude(
-            default_role=AccessRole.VIEWER,
-            requestable=False,
-        ).count()
+        invalid_scope_count = app_scopes.exclude(default_role=AccessRole.VIEWER).count()
         if invalid_scope_count:
             findings.append(f"boolean 계약을 벗어난 앱 scope가 {invalid_scope_count}건입니다.")
 

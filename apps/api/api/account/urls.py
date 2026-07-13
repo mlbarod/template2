@@ -17,6 +17,7 @@ from django.urls import path
 from .views import (
     AccountAccessAuditLogView,
     AccountAccessPolicyRuleView,
+    AccountAccessRequestView,
     AccountAccessUserDecisionView,
     AccountAccessUserView,
     AccountAppAccessMatrixView,
@@ -59,6 +60,7 @@ urlpatterns = [
         name="account-affiliation-reconfirm",
     ),
     path("portal-access", AccountPortalAccessView.as_view(), name="account-portal-access"),
+    path("access/request", AccountAccessRequestView.as_view(), name="account-access-request"),
     path(
         "portal-access/approvals",
         AccountPortalAccessApprovalView.as_view(),

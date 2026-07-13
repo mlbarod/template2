@@ -411,10 +411,6 @@ class AccessScope(models.Model):
                 condition=models.Q(default_role__in=("viewer", "member", "manager", "admin")),
                 name="chk_acc_scp_role_valid",
             ),
-            models.CheckConstraint(
-                condition=~models.Q(scope_type="app") | models.Q(requestable=False),
-                name="chk_acc_scp_app_not_req",
-            ),
         ]
         indexes = [
             models.Index(fields=["scope_type"], name="idx_acc_acc_scp_typ"),
@@ -432,8 +428,6 @@ class AccessScope(models.Model):
         if self.scope_type == self.ScopeTypes.APP:
             if self.default_role != AccessRole.VIEWER:
                 raise ValidationError({"default_role": "앱 scope의 기본 role은 viewer만 허용됩니다."})
-            if self.requestable:
-                raise ValidationError({"requestable": "앱 scope는 사용자 요청을 지원하지 않습니다."})
 
 
 class AccessPolicyRule(models.Model):

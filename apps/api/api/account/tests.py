@@ -329,7 +329,7 @@ class AccountEndpointTests(TestCase):
         for scope in scopes:
             with self.subTest(scope=scope.key):
                 self.assertTrue(scope.is_active)
-                self.assertFalse(scope.requestable)
+                self.assertTrue(scope.requestable)
                 self.assertEqual(scope.default_role, "viewer")
 
     def test_new_user_does_not_receive_automatic_app_access(self) -> None:
@@ -391,14 +391,35 @@ class AccountEndpointTests(TestCase):
         self.assertEqual(preserved.status, UserAccess.Status.DENIED)
         self.assertEqual(preserved.reason, "기존 수동 차단 유지")
 
-    def test_app_scope_is_not_self_requestable(self) -> None:
-        """앱 권한은 self-service 요청 대신 권한 관리자가 직접 결정해야 합니다."""
+    def test_app_scope_is_self_requestable(self) -> None:
+        """앱 권한은 사용자가 직접 신청할 수 있어야 합니다."""
 
         payload, status_code = request_access(user=self.user, scope_key="appstore")
 
-        self.assertEqual(status_code, 400)
-        self.assertEqual(payload["error"], "not_requestable")
-        self.assertFalse(UserAccess.objects.filter(user=self.user, scope__key="appstore").exists())
+        self.assertEqual(status_code, 200)
+        self.assertEqual(payload["status"], "pending")
+        access = UserAccess.objects.get(user=self.user, scope__key="appstore")
+        self.assertEqual(access.status, UserAccess.Status.PENDING)
+
+    def test_app_access_request_endpoint_creates_pending_request(self) -> None:
+        """현재 사용자 앱 접근 신청 API가 pending 요청을 생성하는지 확인합니다."""
+
+        self.client.force_login(self.user)
+        response = self.client.post(
+            reverse("account-access-request"),
+            data='{"scope":"appstore"}',
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "pending")
+        self.assertTrue(
+            UserAccess.objects.filter(
+                user=self.user,
+                scope__key="appstore",
+                status=UserAccess.Status.PENDING,
+            ).exists()
+        )
 
     def test_access_permissions_migration_moves_existing_managers_to_standard_group(self) -> None:
         """순방향 권한 migration은 기존 관리자와 직접 permission 보유자를 표준 그룹으로 이전해야 합니다."""
@@ -519,8 +540,7 @@ class AccountEndpointTests(TestCase):
             scope_type=AccessScope.ScopeTypes.APP,
             requestable=True,
         )
-        with self.assertRaises(ValidationError):
-            requestable_scope.full_clean()
+        requestable_scope.full_clean()
 
     def test_user_access_database_rejects_unknown_status(self) -> None:
         """UserAccess status는 DB에서도 pending/allowed/denied 외 값을 거부해야 합니다."""

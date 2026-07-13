@@ -23,6 +23,7 @@ from . import selectors, services
 from .serializers import (
     AccessDecisionSerializer,
     AccessPolicyRuleMutationSerializer,
+    AccessRequestSerializer,
     AccessUserDecisionSerializer,
     AffiliationApprovalSerializer,
     AffiliationReconfirmResponseSerializer,
@@ -279,6 +280,32 @@ class AccountPortalAccessView(APIView):
             return JsonResponse({"error": "unauthorized"}, status=401)
 
         payload, status_code = services.request_portal_access(user=user)
+        return JsonResponse(payload, status=status_code)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class AccountAccessRequestView(APIView):
+    """현재 사용자의 포털/앱 접근 신청을 생성합니다."""
+
+    def post(self, request: HttpRequest, *args: object, **kwargs: object) -> JsonResponse:
+        """요청한 scope의 접근 신청을 pending 상태로 저장합니다."""
+
+        user = request.user
+        if not user or not user.is_authenticated:
+            return JsonResponse({"error": "unauthorized"}, status=401)
+
+        content_type_error = _require_json_content_type(request)
+        if content_type_error is not None:
+            return content_type_error
+
+        serializer = AccessRequestSerializer(data=parse_json_body(request))
+        if not serializer.is_valid():
+            return JsonResponse({"error": "invalid_request", "details": serializer.errors}, status=400)
+
+        payload, status_code = services.request_access(
+            user=user,
+            scope_key=serializer.validated_data["scope"],
+        )
         return JsonResponse(payload, status=status_code)
 
 
