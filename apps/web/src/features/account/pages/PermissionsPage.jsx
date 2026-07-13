@@ -1359,36 +1359,13 @@ export default function PermissionsPage() {
   const handleMatrixAccessChange = async ({ user: targetUser, scope, access, nextValue }) => {
     if (decisionMutation.isPending || isSuperuserBypass(access)) return
 
-    if (scope.scopeType === "portal") {
-      let action = ""
-      if (nextValue === "inherit") {
-        if (!access?.explicitStatus) return
-        action = "reset_to_policy"
-      } else if (nextValue === "denied") {
-        action = access?.explicitStatus === "pending" ? "reject" : "revoke"
-      } else if (nextValue === "allowed") {
-        action = access?.explicitStatus === "pending" ? "approve" : "grant"
-      } else {
-        return
-      }
-      handleDecisionOpen(
-        { user: targetUser, access: { ...access, role: "viewer" } },
-        action,
-        ACTION_LABELS[action],
-        scope,
-      )
-      return
-    }
-
     let action = ""
     if (nextValue === "inherit") {
       if (!access?.explicitStatus) return
       action = "reset_to_policy"
     } else if (nextValue === "denied") {
-      if (access?.explicitStatus === "denied") return
       action = "revoke"
     } else if (nextValue === "allowed") {
-      if (access?.explicitStatus === "allowed") return
       action = "grant"
     } else {
       return
@@ -1401,6 +1378,7 @@ export default function PermissionsPage() {
         userId: targetUser.id,
         scope: scope.key,
         action,
+        role: scope.scopeType === "portal" && action === "grant" ? "viewer" : undefined,
         reason: "권한 매트릭스에서 수동 변경",
       })
       toast.success(`${scope.name} 권한을 변경했습니다.`)
