@@ -172,6 +172,8 @@ API_CATEGORY_KEYS: dict[str, frozenset[str]] = {
             "DRONE_JIRA_CONNECT_TIMEOUT",
             "DRONE_JIRA_READ_TIMEOUT",
             "DRONE_JIRA_USER",
+            "DRONE_JIRA_VERIFY_SSL",
+            # stage 기존 파일의 철자를 값과 함께 그대로 보존합니다.
             "DRONE_JIRA_VERFY_SSL",
             "DRONE_CTTTM_TABLE_NAME",
             "DRONE_CTTTM_BASE_URL",
