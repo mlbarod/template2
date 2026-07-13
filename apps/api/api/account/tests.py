@@ -2564,6 +2564,123 @@ class AccountEndpointTests(TestCase):
         with self.assertRaises(CommandError):
             call_command("check_access_permission_integrity", stdout=StringIO(), stderr=StringIO())
 
+    def test_grant_initial_access_command_grants_portal_and_active_apps(self) -> None:
+        """초기 권한 부여 명령은 활성 사용자에게 Portal과 활성 앱 권한을 생성해야 합니다."""
+
+        portal_scope = AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL)
+        app_scope_ids = set(
+            AccessScope.objects.filter(
+                scope_type=AccessScope.ScopeTypes.APP,
+                is_active=True,
+            ).values_list("id", flat=True)
+        )
+        target_scope_ids = {portal_scope.id, *app_scope_ids}
+
+        output = StringIO()
+        call_command("grant_initial_access", stdout=output)
+
+        rows = UserAccess.objects.filter(user=self.user, scope_id__in=target_scope_ids)
+        self.assertEqual(set(rows.values_list("scope_id", flat=True)), target_scope_ids)
+        self.assertFalse(rows.exclude(status=UserAccess.Status.ALLOWED, role="viewer").exists())
+        self.assertEqual(
+            AccessAuditLog.objects.filter(
+                target_user=self.user,
+                scope_id__in=target_scope_ids,
+                action=AccessAuditLog.Actions.GRANT,
+                reason="초기 배포 전체 권한 부여",
+            ).count(),
+            len(target_scope_ids),
+        )
+        self.assertTrue(
+            AccessAuditLog.objects.filter(
+                action=AccessAuditLog.Actions.USER_ACCESS_UPDATE,
+                after__marker="grant_initial_access",
+                reason="초기 배포 전체 권한 부여 완료",
+            ).exists()
+        )
+        self.assertIn("초기 접근 권한 부여를 완료", output.getvalue())
+
+    def test_grant_initial_access_command_dry_run_does_not_write(self) -> None:
+        """dry-run은 권한 row와 감사 로그를 생성하지 않아야 합니다."""
+
+        before_access_count = UserAccess.objects.count()
+        before_audit_count = AccessAuditLog.objects.count()
+        output = StringIO()
+
+        call_command("grant_initial_access", dry_run=True, stdout=output)
+
+        self.assertEqual(UserAccess.objects.count(), before_access_count)
+        self.assertEqual(AccessAuditLog.objects.count(), before_audit_count)
+        self.assertIn("dryRun=True", output.getvalue())
+
+    def test_grant_initial_access_command_preserves_existing_decisions_by_default(self) -> None:
+        """초기 권한 부여 명령은 기본 실행에서 기존 결정을 덮어쓰지 않아야 합니다."""
+
+        scope = AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL)
+        access = UserAccess.objects.create(
+            scope=scope,
+            user=self.user,
+            status=UserAccess.Status.DENIED,
+            role="viewer",
+            reason="운영 전 수동 차단",
+        )
+
+        call_command("grant_initial_access", stdout=StringIO())
+
+        access.refresh_from_db()
+        self.assertEqual(access.status, UserAccess.Status.DENIED)
+        self.assertEqual(access.reason, "운영 전 수동 차단")
+
+    def test_grant_initial_access_command_can_overwrite_existing_decisions(self) -> None:
+        """명시 옵션이 있으면 기존 pending/denied 상태도 allowed로 변경해야 합니다."""
+
+        scope = AccessScope.objects.get(key=ACCESS_SCOPE_PORTAL)
+        access = UserAccess.objects.create(
+            scope=scope,
+            user=self.user,
+            status=UserAccess.Status.DENIED,
+            role="viewer",
+            reason="운영 전 수동 차단",
+        )
+
+        call_command("grant_initial_access", overwrite_existing=True, stdout=StringIO())
+
+        access.refresh_from_db()
+        self.assertEqual(access.status, UserAccess.Status.ALLOWED)
+        self.assertIsNone(access.reason)
+
+    def test_grant_initial_access_command_skips_after_completion_marker(self) -> None:
+        """초기 권한 부여 명령은 완료 marker가 있으면 다시 실행하지 않아야 합니다."""
+
+        call_command("grant_initial_access", stdout=StringIO())
+
+        User = get_user_model()
+        later_user = User.objects.create_user(
+            sabun=f"S{timezone.now().strftime('%H%M%S%f')}",
+            password="test-password",
+        )
+        output = StringIO()
+        call_command("grant_initial_access", stdout=output)
+
+        self.assertIn("이미 완료되어 건너뜁니다", output.getvalue())
+        self.assertFalse(UserAccess.objects.filter(user=later_user).exists())
+
+    def test_grant_initial_access_command_force_ignores_completion_marker(self) -> None:
+        """force 옵션은 완료 marker가 있어도 명시적으로 다시 실행해야 합니다."""
+
+        call_command("grant_initial_access", stdout=StringIO())
+
+        User = get_user_model()
+        later_user = User.objects.create_user(
+            sabun=f"S{timezone.now().strftime('%H%M%S%f')}",
+            password="test-password",
+        )
+        output = StringIO()
+        call_command("grant_initial_access", force=True, stdout=output)
+
+        self.assertIn("초기 접근 권한 부여를 완료", output.getvalue())
+        self.assertTrue(UserAccess.objects.filter(user=later_user).exists())
+
     def test_auth_me_does_not_create_access_row_for_current_affiliation(self) -> None:
         """auth_me 호출이 현재 소속 접근 권한 행을 백필하지 않는지 확인합니다."""
         self.assertFalse(

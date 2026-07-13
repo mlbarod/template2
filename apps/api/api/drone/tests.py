@@ -3171,8 +3171,8 @@ class DroneSopTargetRecipientTests(TestCase):
         self.assertEqual(payload["channel"], "mail")
         self.assertEqual([row["userId"] for row in payload["recipients"]], [self.mail_user.id])
 
-    def test_notification_recipient_endpoint_forbids_non_operator_update(self) -> None:
-        """운영자가 아닌 사용자는 수신인을 저장할 수 없어야 합니다."""
+    def test_notification_recipient_endpoint_allows_non_operator_update(self) -> None:
+        """로그인 사용자는 운영자가 아니어도 수신인을 저장할 수 있어야 합니다."""
 
         self.client.force_login(self.same_group_user)
         response = self.client.put(
@@ -3188,16 +3188,17 @@ class DroneSopTargetRecipientTests(TestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 403)
-        self.assertFalse(
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
             DroneSopTargetRecipient.objects.filter(
                 target__target_user_sdwt_prod="ETCH_A",
                 channel=DroneSopTargetRecipient.Channels.MAIL,
+                user=self.mail_user,
             ).exists()
         )
 
-    def test_notification_recipient_endpoint_ignores_account_group_manager_permission(self) -> None:
-        """account 공통 그룹 manager만으로는 Drone 수신인을 저장할 수 없어야 합니다."""
+    def test_notification_recipient_endpoint_allows_account_group_manager_user(self) -> None:
+        """account 공통 그룹 manager도 로그인 사용자 기준으로 수신인을 저장할 수 있어야 합니다."""
 
         User = get_user_model()
         account_manager = User.objects.create_user(
@@ -3223,16 +3224,17 @@ class DroneSopTargetRecipientTests(TestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 403)
-        self.assertFalse(
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
             DroneSopTargetRecipient.objects.filter(
                 target__target_user_sdwt_prod="ETCH_A",
                 channel=DroneSopTargetRecipient.Channels.MAIL,
+                user=self.mail_user,
             ).exists()
         )
 
     def test_notification_recipient_permission_endpoint_returns_drone_context(self) -> None:
-        """권한 컨텍스트 API가 운영자 여부를 반환하는지 확인합니다."""
+        """권한 컨텍스트 API가 운영자 여부와 변경 가능 여부를 분리해 반환하는지 확인합니다."""
 
         self.client.force_login(self.same_group_user)
         response = self.client.get(reverse("line-dashboard-notification-recipient-permissions"))
@@ -3240,6 +3242,7 @@ class DroneSopTargetRecipientTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertFalse(payload["isOperator"])
+        self.assertTrue(payload["canManageRecipients"])
         self.assertEqual(payload["manageableUserSdwtProds"], [])
 
     def test_notification_recipient_permission_endpoint_operator_can_manage_all_targets(self) -> None:
@@ -3253,6 +3256,7 @@ class DroneSopTargetRecipientTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertTrue(payload["isOperator"])
+        self.assertTrue(payload["canManageRecipients"])
         self.assertIn("ETCH_A", payload["manageableUserSdwtProds"])
 
     def test_my_notification_recipient_targets_returns_current_user_targets(self) -> None:
@@ -4647,8 +4651,8 @@ class DroneJiraKeyEndpointTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["error"], "userSdwtProd is required")
 
-    def test_jira_key_update_requires_operator(self) -> None:
-        """Jira 키 갱신은 운영자 권한이 필요하고 staff도 허용되는지 확인합니다."""
+    def test_jira_key_update_allows_authenticated_user(self) -> None:
+        """Jira 키 갱신은 로그인 사용자와 staff 모두 허용되는지 확인합니다."""
         payload = {"lineId": "L1", "userSdwtProd": "SDWT", "jiraKey": "PROJ", "templateKey": "common"}
 
         self.client.force_login(self.user)
@@ -4657,7 +4661,7 @@ class DroneJiraKeyEndpointTests(TestCase):
             data=json.dumps(payload),
             content_type="application/json",
         )
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 200)
 
         self.client.force_login(self.staff_user)
         response = self.client.post(

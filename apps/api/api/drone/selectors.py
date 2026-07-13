@@ -1225,9 +1225,9 @@ def user_can_manage_drone_sop_recipients(*, user: Any) -> bool:
     """
 
     # -----------------------------------------------------------------------------
-    # 1) 이번 범위에서는 별도 앱 권한 없이 전역 운영자만 허용
+    # 1) 초기 배포 혼선을 줄이기 위해 로그인 사용자는 알림 설정 변경을 허용
     # -----------------------------------------------------------------------------
-    return account_selectors.is_operator_user(user=user)
+    return bool(user and getattr(user, "is_authenticated", False))
 
 
 def get_drone_sop_permission_context(*, user: Any) -> dict[str, object]:
@@ -1243,11 +1243,13 @@ def get_drone_sop_permission_context(*, user: Any) -> dict[str, object]:
         없음. 읽기 전용 조회입니다.
     """
 
-    is_operator = user_can_manage_drone_sop_recipients(user=user)
+    is_operator = account_selectors.is_operator_user(user=user)
+    can_manage_recipients = user_can_manage_drone_sop_recipients(user=user)
     return {
         "isOperator": is_operator,
+        "canManageRecipients": can_manage_recipients,
         "manageableUserSdwtProds": (
-            list_drone_sop_target_user_sdwt_prod_values() if is_operator else []
+            list_drone_sop_target_user_sdwt_prod_values() if can_manage_recipients else []
         ),
     }
 

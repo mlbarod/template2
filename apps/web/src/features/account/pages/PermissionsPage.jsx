@@ -1372,7 +1372,7 @@ export default function PermissionsPage() {
         return
       }
       handleDecisionOpen(
-        { user: targetUser, access },
+        { user: targetUser, access: { ...access, role: "viewer" } },
         action,
         ACTION_LABELS[action],
         scope,
@@ -1409,16 +1409,6 @@ export default function PermissionsPage() {
     } finally {
       setPendingMatrixCell("")
     }
-  }
-
-  const handleMatrixRoleChange = ({ user: targetUser, scope, access }) => {
-    if (decisionMutation.isPending || isSuperuserBypass(access)) return
-    handleDecisionOpen(
-      { user: targetUser, access },
-      "change_role",
-      ACTION_LABELS.change_role,
-      scope,
-    )
   }
 
   const handleRefresh = () => {
@@ -1575,7 +1565,6 @@ export default function PermissionsPage() {
                   onApplyFilters={handleApplyMatrixFilters}
                   onResetFilters={handleResetMatrixFilters}
                   onAccessChange={handleMatrixAccessChange}
-                  onRoleChange={handleMatrixRoleChange}
                   pendingCell={pendingMatrixCell}
                   isMutating={decisionMutation.isPending}
                 />

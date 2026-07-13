@@ -1,4 +1,4 @@
-import { RefreshCw, RotateCcw, Search, SlidersHorizontal } from "lucide-react"
+import { RefreshCw, RotateCcw, Search } from "lucide-react"
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/common"
 import { Badge } from "@/components/ui/badge"
@@ -9,13 +9,6 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-
-const ROLE_LABELS = {
-  viewer: "Portal 조회 역할",
-  member: "Portal 일반 역할",
-  manager: "Portal 운영 역할",
-  admin: "Portal 관리자 역할",
-}
 
 function isSuperuserBypass(access) {
   return access?.source === "superuser_bypass" || access?.source === "admin"
@@ -29,11 +22,16 @@ function getCellValue(access) {
   return "inherit"
 }
 
-function getInheritedLabel(access) {
-  if (access?.policyMatched || access?.policy?.matched) {
-    return "자동 허용"
-  }
-  return "미지정"
+function getInheritedLabel() {
+  return "자동"
+}
+
+function getEffectiveLabel(access) {
+  if (access?.allowed) return "허용"
+  if (access?.effectiveStatus === "pending") return "승인 대기"
+  if (access?.effectiveStatus === "denied") return "차단"
+  if (access?.effectiveStatus === "inactive") return "비활성"
+  return "차단"
 }
 
 function getAccessMeta(access) {
@@ -48,60 +46,117 @@ function getAccessMeta(access) {
   return "자동 규칙 없음"
 }
 
-function AppPermissionCell({ user, scope, access, pendingCell, isMutating, onChange, onRoleChange }) {
+function getSourceDescription(access) {
+  if (isSuperuserBypass(access)) return "슈퍼유저 권한으로 접근이 허용됩니다."
+  if (access?.source === "portal_access_required") return "Portal 권한이 없어 앱 접근이 막힌 상태입니다."
+  if (access?.source === "scope_inactive") return "권한 범위가 비활성화되어 접근할 수 없습니다."
+  if (access?.source === "scope_not_found") return "권한 범위를 찾을 수 없습니다."
+  if (access?.explicitStatus === "pending") return "사용자가 요청했고 아직 승인되지 않았습니다."
+  if (access?.explicitStatus === "denied") return "관리자가 직접 차단했습니다."
+  if (access?.explicitStatus === "allowed") return "관리자가 직접 허용했습니다."
+  if (access?.source === "policy_department") return "사용자의 부서가 자동 규칙과 일치합니다."
+  return "수동 설정이 없고 적용되는 자동 규칙도 없습니다."
+}
+
+function getPolicyDescription(access) {
+  const policy = access?.policy
+  if (access?.policyMatched || policy?.matched) {
+    const ruleType = policy?.ruleType === "department" ? "부서" : policy?.ruleType || "규칙"
+    const value = policy?.value || access?.department || "-"
+    return `${ruleType}: ${value}`
+  }
+  return "적용 규칙 없음"
+}
+
+function getVisibleLabel(value, inheritedLabel) {
+  if (value === "inherit") return inheritedLabel
+  if (value === "pending") return "승인 대기"
+  if (value === "denied") return "차단"
+  return "허용"
+}
+
+function AccessTooltipContent({ access, scope, visibleLabel }) {
+  const effectiveLabel = getEffectiveLabel(access)
+  const metaLabel = getAccessMeta(access)
+  const policyLabel = getPolicyDescription(access)
+  const role = scope.scopeType === "portal" && access?.role ? access.role : ""
+
+  return (
+    <div className="grid max-w-72 gap-2 text-xs">
+      <div className="font-medium text-popover-foreground">{scope.name}</div>
+      <div className="grid gap-1">
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-muted-foreground">선택값</span>
+          <span className="font-medium">{visibleLabel}</span>
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-muted-foreground">최종 결과</span>
+          <span className="font-medium">{effectiveLabel}</span>
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-muted-foreground">설정 방식</span>
+          <span className="font-medium">{metaLabel}</span>
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-muted-foreground">자동 규칙</span>
+          <span className="max-w-44 truncate font-medium" title={policyLabel}>{policyLabel}</span>
+        </div>
+        {access?.blockedByPortal ? (
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-muted-foreground">Portal 영향</span>
+            <span className="font-medium">Portal 차단 우선</span>
+          </div>
+        ) : null}
+        {role ? (
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-muted-foreground">내부 role</span>
+            <span className="font-medium">{role}</span>
+          </div>
+        ) : null}
+      </div>
+      <p className="leading-5 text-muted-foreground">{getSourceDescription(access)}</p>
+    </div>
+  )
+}
+
+function AppPermissionCell({ user, scope, access, pendingCell, isMutating, onChange }) {
   const cellKey = `${user.id}:${scope.key}`
   const value = getCellValue(access)
   const hasSuperuserBypass = isSuperuserBypass(access)
-  const isPortal = scope.scopeType === "portal"
   const isScopeUnavailable = ["scope_inactive", "scope_not_found"].includes(access?.source)
   const isPending = pendingCell === cellKey
-  const inheritedLabel = getInheritedLabel(access)
-  const roleLabel = ROLE_LABELS[access?.role] || access?.role || scope.defaultRole || "Portal 조회 역할"
+  const inheritedLabel = getInheritedLabel()
+  const visibleLabel = getVisibleLabel(value, inheritedLabel)
+  const tooltipLabel = `${visibleLabel}, 최종 ${getEffectiveLabel(access)}, ${getAccessMeta(access)}`
 
   return (
-    <div className="flex w-40 min-w-40 max-w-40 items-center justify-center gap-1 overflow-hidden">
+    <div className="flex w-40 min-w-40 max-w-40 items-center justify-center gap-1 overflow-visible">
       <Select
         value={value}
         onValueChange={(nextValue) => onChange({ user, scope, access, nextValue })}
         disabled={hasSuperuserBypass || isScopeUnavailable || isPending || isMutating}
       >
-        <SelectTrigger
-          className="h-8 w-24 shrink-0 text-center text-xs"
-          aria-label={`${user.knoxId || user.sabun || user.id} ${scope.name} 권한`}
-        >
-          {isPending ? <RefreshCw className="size-3.5 animate-spin" /> : null}
-          <SelectValue />
-        </SelectTrigger>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <SelectTrigger
+              className="h-8 w-24 shrink-0 text-center text-xs"
+              aria-label={`${user.knoxId || user.sabun || user.id} ${scope.name} 권한, ${tooltipLabel}`}
+            >
+              {isPending ? <RefreshCw className="size-3.5 animate-spin" /> : null}
+              <SelectValue />
+            </SelectTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="top" align="center" className="p-3">
+            <AccessTooltipContent access={access} scope={scope} visibleLabel={visibleLabel} />
+          </TooltipContent>
+        </Tooltip>
         <SelectContent>
           <SelectItem value="inherit">{inheritedLabel}</SelectItem>
           {value === "pending" ? <SelectItem value="pending">승인 대기</SelectItem> : null}
-          <SelectItem value="allowed">{access?.blockedByPortal ? "허용 설정" : "허용"}</SelectItem>
+          <SelectItem value="allowed">허용</SelectItem>
           <SelectItem value="denied">차단</SelectItem>
         </SelectContent>
       </Select>
-      {!hasSuperuserBypass ? (
-        <span className="min-w-0 flex-1 truncate text-center text-[11px] text-muted-foreground" title={getAccessMeta(access)}>
-          {getAccessMeta(access)}
-        </span>
-      ) : null}
-      {!hasSuperuserBypass && isPortal && access?.allowed ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              className="size-7 shrink-0 text-muted-foreground"
-              onClick={() => onRoleChange({ user, scope, access })}
-              disabled={isPending || isMutating}
-              aria-label={`${user.knoxId || user.sabun || user.id} ${scope.name} ${roleLabel} 변경`}
-            >
-              <SlidersHorizontal className="size-3" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">{roleLabel} 변경</TooltipContent>
-        </Tooltip>
-      ) : null}
     </div>
   )
 }
@@ -114,7 +169,6 @@ export function AppPermissionMatrix({
   onApplyFilters,
   onResetFilters,
   onAccessChange,
-  onRoleChange,
   pendingCell,
   isMutating = false,
 }) {
@@ -206,22 +260,21 @@ export function AppPermissionMatrix({
         ) : (
           <Table stickyHeader className="w-max min-w-full" aria-label="사용자별 접근 권한 매트릭스">
             <TableHeader>
-              <TableRow className="h-12 hover:bg-transparent">
-                <TableHead className="sticky left-0 z-30 w-44 min-w-44 max-w-44 bg-muted px-2 text-center text-xs font-medium text-muted-foreground">
+              <TableRow className="h-12 bg-muted hover:bg-muted">
+                <TableHead className="sticky left-0 z-40 w-44 min-w-44 max-w-44 bg-muted px-2 text-center text-xs font-medium text-muted-foreground shadow-[inset_0_-1px_0_hsl(var(--border))]">
                   이름
                 </TableHead>
-                <TableHead className="sticky left-44 z-30 w-40 min-w-40 max-w-40 bg-muted px-2 text-center text-[11px] font-medium text-muted-foreground">
+                <TableHead className="sticky left-44 z-40 w-40 min-w-40 max-w-40 bg-muted px-2 text-center text-[11px] font-medium text-muted-foreground shadow-[inset_0_-1px_0_hsl(var(--border))]">
                   사용자 ID (Knox ID)
                 </TableHead>
-                <TableHead className="sticky left-84 z-30 w-40 min-w-40 max-w-40 border-r bg-muted px-2 text-center text-xs font-medium text-muted-foreground">
+                <TableHead className="sticky left-84 z-40 w-40 min-w-40 max-w-40 border-r bg-muted px-2 text-center text-xs font-medium text-muted-foreground shadow-[inset_0_-1px_0_hsl(var(--border))]">
                   부서
                 </TableHead>
                 {scopes.map((scope) => {
-                  const isPortal = scope.scopeType === "portal"
                   return (
                     <TableHead
                       key={scope.key}
-                      className={isPortal ? "w-44 min-w-44 max-w-44 bg-muted/60 px-2 text-center align-middle" : "w-44 min-w-44 max-w-44 bg-muted/30 px-2 text-center align-middle"}
+                      className="z-30 w-44 min-w-44 max-w-44 bg-muted px-2 text-center align-middle shadow-[inset_0_-1px_0_hsl(var(--border))]"
                     >
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -274,7 +327,6 @@ export function AppPermissionMatrix({
                             pendingCell={pendingCell}
                             isMutating={isBusy}
                             onChange={onAccessChange}
-                            onRoleChange={onRoleChange}
                           />
                         </TableCell>
                       )

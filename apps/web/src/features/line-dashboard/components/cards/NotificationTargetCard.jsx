@@ -536,7 +536,7 @@ export function NotificationTargetCard({
           ) : null}
           {!canCreateTarget && !isCreateTargetPermissionLoading ? (
             <p className="text-[11px] text-muted-foreground">
-              알림 Target 추가는 operator 권한과 선택된 line이 필요합니다.
+              알림 Target 추가는 선택된 line이 필요합니다.
             </p>
           ) : null}
         </div>

@@ -160,7 +160,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
     ? String(searchParams.get("target") || "").trim()
     : ""
   const [selectedUserSdwtProd, setSelectedUserSdwtProd] = React.useState("")
-  const [isGlobalOperator, setIsGlobalOperator] = React.useState(false)
+  const [canManageNotificationSettings, setCanManageNotificationSettings] = React.useState(false)
   const [hasLoadedPermissionContext, setHasLoadedPermissionContext] = React.useState(false)
   const {
     entries,
@@ -280,10 +280,10 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
   const selectedNotificationTarget = notificationTargets.find(
     (target) => target.targetUserSdwtProd === selectedUserSdwtProd,
   )
-  const canManageRecipients = Boolean(selectedUserSdwtProd && isGlobalOperator)
-  const canManageChannelSettings = Boolean(lineId && selectedUserSdwtProd && isGlobalOperator)
-  const canCreateTarget = Boolean(lineId && isGlobalOperator)
-  const canManageMappings = Boolean(selectedNotificationTarget && isGlobalOperator)
+  const canManageRecipients = Boolean(selectedUserSdwtProd && canManageNotificationSettings)
+  const canManageChannelSettings = Boolean(lineId && selectedUserSdwtProd && canManageNotificationSettings)
+  const canCreateTarget = Boolean(lineId && canManageNotificationSettings)
+  const canManageMappings = Boolean(selectedNotificationTarget && canManageNotificationSettings)
   const mappingUserLineOptions = React.useMemo(
     () => buildMappingLineOptions({
       lineRows: mappingOptionLines,
@@ -782,7 +782,7 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
 
   React.useEffect(() => {
     let isActive = true
-    setIsGlobalOperator(false)
+    setCanManageNotificationSettings(false)
     setHasLoadedPermissionContext(false)
 
     async function loadRecipientOptions() {
@@ -809,9 +809,9 @@ export function LineSettingsPage({ lineId = "", mode = "notification" }) {
       }
 
       if (permissionContextResult.status === "fulfilled") {
-        setIsGlobalOperator(Boolean(permissionContextResult.value?.isOperator))
+        setCanManageNotificationSettings(Boolean(permissionContextResult.value?.canManageRecipients))
       } else {
-        setIsGlobalOperator(false)
+        setCanManageNotificationSettings(false)
       }
       setHasLoadedPermissionContext(true)
     }

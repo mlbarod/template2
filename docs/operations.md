@@ -98,6 +98,7 @@ make makemigrations-check
 | Command | 설명 |
 | --- | --- |
 | `check_access_permission_integrity` | 배포 전 접근 권한 scope, 정책, 사용자 권한, 관리자 그룹 정합성 점검 |
+| `grant_initial_access` | 배포 직후 활성 사용자에게 Portal과 활성 앱 접근 권한을 1회 보충 |
 | `ensure_dev_database` | dev 환경에서 Django 기본 DB와 필수 PostgreSQL extension 생성 |
 | `process_email_outbox` | EmailOutbox RAG 작업 처리 |
 | `seed_dev_data` | 로컬 개발용 더미 사용자 보정 및 더미 데이터 통합 refresh |
@@ -120,6 +121,9 @@ make makemigrations-check
 
 ```bash
 docker compose -f docker-compose.dev.yml exec -T api python manage.py migrate --noinput
+docker compose -f docker-compose.dev.yml exec -T api python manage.py grant_initial_access --dry-run
+docker compose -f docker-compose.dev.yml exec -T api python manage.py grant_initial_access
+docker compose -f docker-compose.dev.yml exec -T api python manage.py grant_initial_access --force
 docker compose -f docker-compose.dev.yml exec -T api python manage.py check_access_permission_integrity
 docker compose -f docker-compose.dev.yml exec -T api python manage.py ensure_dev_database
 docker compose -f docker-compose.dev.yml exec -T api python manage.py process_email_outbox
@@ -140,7 +144,7 @@ docker compose -f docker-compose.dev.yml exec -T api python manage.py prune_dron
 docker compose -f docker-compose.dev.yml exec -T api python manage.py purge_drone_sop --dry-run
 ```
 
-서버의 account migration이 `0001_initial`까지 적용된 상태에서 `account.0002_access_permissions`를 적용하면 기존 사용자의 활성 앱 누락 권한을 보충합니다. 적용 후 `check_access_permission_integrity`를 실행하며, migration 적용 이후 생성된 신규 사용자는 자동 허용하지 않습니다.
+초기 배포 시 Portal/활성 앱 권한을 보충하려면 `migrate` 이후 운영자가 `grant_initial_access`를 수동 실행합니다. 실제 권한 부여는 DB의 완료 marker 기준으로 최초 1회만 수행하며, 다시 실행하면 건너뜁니다. 기본 실행은 기존 `pending/denied` 결정을 덮어쓰지 않습니다. 먼저 `--dry-run`으로 예정 건수를 확인하고, 완료 marker 이후 다시 실행해야 할 때만 `--force`를 사용합니다.
 
 로컬 dev 로그인 사용자는 `env/api.dev.env`의 `DEV_AUTO_AFFILIATION_ALLOWED=1` 설정으로 기본 소속이 보장됩니다.
 `DUMMY_ADFS_*` 기준 dummy 사용자는 staff 슈퍼유저로 보정됩니다.
