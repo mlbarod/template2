@@ -160,6 +160,68 @@ def _grant_manage_access(user):
     return user
 
 
+class AccountConfigDefaultUserTests(TestCase):
+    """account 앱의 migrate 후 기본 사용자 보장 로직을 검증합니다."""
+
+    def test_ensure_default_superuser_promotes_existing_dev_dummy_user(self) -> None:
+        """기존 dev dummy 사용자는 migrate 보정 시 staff 슈퍼유저가 되어야 합니다."""
+
+        User = get_user_model()
+        user = User.objects.create_user(
+            sabun="S-DUMMY-EXISTING",
+            password="test-password",
+            knox_id="dummy.existing",
+            email="old@example.com",
+        )
+
+        with patch.dict(
+            "os.environ",
+            {
+                "ENVIRONMENT": "development",
+                "DUMMY_ADFS_SABUN": "S-DUMMY-EXISTING",
+                "DUMMY_ADFS_LOGINID": "dummy.existing",
+                "DUMMY_ADFS_EMAIL": "dummy.existing@example.com",
+                "DUMMY_ADFS_NAME": "Dummy Existing",
+                "DUMMY_ADFS_DEPT": "Development",
+            },
+            clear=True,
+        ):
+            django_apps.get_app_config("account")._ensure_default_superuser()
+
+        user.refresh_from_db()
+        self.assertTrue(user.is_staff)
+        self.assertTrue(user.is_superuser)
+        self.assertEqual(user.email, "dummy.existing@example.com")
+        self.assertEqual(user.username, "Dummy Existing")
+        self.assertEqual(user.department, "Development")
+
+    def test_ensure_default_superuser_creates_dev_dummy_superuser(self) -> None:
+        """dev dummy 사용자가 없으면 migrate 보정 시 슈퍼유저로 생성해야 합니다."""
+
+        with patch.dict(
+            "os.environ",
+            {
+                "ENVIRONMENT": "development",
+                "DUMMY_ADFS_SABUN": "S-DUMMY-NEW",
+                "DUMMY_ADFS_LOGINID": "dummy.new",
+                "DUMMY_ADFS_EMAIL": "dummy.new@example.com",
+                "DUMMY_ADFS_NAME": "Dummy New",
+                "DUMMY_ADFS_DEPT": "Development",
+                "DJANGO_SUPERUSER_PASSWORD": "test-password",
+            },
+            clear=True,
+        ):
+            django_apps.get_app_config("account")._ensure_default_superuser()
+
+        User = get_user_model()
+        user = User.objects.get(sabun="S-DUMMY-NEW")
+        self.assertEqual(user.knox_id, "dummy.new")
+        self.assertTrue(user.is_staff)
+        self.assertTrue(user.is_superuser)
+        self.assertEqual(user.email, "dummy.new@example.com")
+        self.assertTrue(user.check_password("test-password"))
+
+
 class AccountEndpointTests(TestCase):
     """계정 관련 엔드포인트의 기본 흐름을 검증합니다."""
 
