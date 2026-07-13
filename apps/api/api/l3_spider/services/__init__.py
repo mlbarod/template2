@@ -401,35 +401,25 @@ def _dataframe_to_columnar(merged: pd.DataFrame) -> dict[str, object]:
 # ─── 서비스 함수 ─────────────────────────────────────────────────────────────
 
 def _get_raw_file_rows() -> list[dict[str, str]]:
-    """전체 파일 트리를 스캔하여 (date, line_id, process_id, eds_step) 행 목록을 반환합니다.
+    """전체 실행 통계에서 (date, line_id, process_id, eds_step) 행을 반환합니다.
 
     결과를 별도 캐시에 저장하여 사용자별 exclusion 규칙 계산과 분리합니다.
-    같은 워커 내 여러 사용자가 스캔 비용을 공유하고, 필터 변경 시에도 재스캔하지 않습니다.
+    같은 워커 내 여러 사용자가 PostgreSQL 조회 비용을 공유합니다.
     """
     cached = _raw_file_rows_cache.get(_RAW_FILE_ROWS_KEY)
     if cached is not None:
         return cached
 
-    try:
-        files = list(selectors.iter_all_data_files())
-    except FileNotFoundError as exc:
-        raise L3SpiderServiceError(str(exc), status_code=404) from exc
-    except NotADirectoryError as exc:
-        raise L3SpiderServiceError(str(exc), status_code=400) from exc
-
-    root = selectors.get_data_root()
-    rows: list[dict[str, str]] = []
-    for path in files:
-        parts = path.relative_to(root).parts
-        if len(parts) != 5:
-            continue
-        date, line_id, process_id, eds_step = parts[:4]
-        rows.append({
+    rows = [
+        {
             "date": date,
             "line_id": line_id,
             "process_id": process_id,
             "eds_step": eds_step,
-        })
+        }
+        for date, line_id, process_id, eds_step, _step_seq
+        in selectors.query_all_date_line_process_eds_step()
+    ]
 
     _raw_file_rows_cache.set(_RAW_FILE_ROWS_KEY, rows)
     return rows
@@ -512,8 +502,8 @@ def _filter_files_by_line_names(files: list, selection: dict[str, object]) -> li
 
 
 def _build_line_groups_impl() -> list[dict]:
-    # 규칙 기반: file_index의 (line_id, process_id, step_seq) 조합을 resolve_line_name으로
-    # line_name에 매핑(eqc·parquet·Postgres 불필요). step_seq마다 line_name이 달라질 수 있어
+    # 규칙 기반: daily_run_stats의 (line_id, process_id, step_seq) 조합을 resolve_line_name으로
+    # line_name에 매핑한다. step_seq마다 line_name이 달라질 수 있어
     # (override) 한 (line_id, process)가 여러 line_name에 나타날 수 있다. line_name→line_id 해석용.
     combos = selectors.query_all_date_line_process_eds_step()
     groups: dict[str, dict[str, dict[str, set[str]]]] = {}   # lineName -> lineId -> process -> {eds}
@@ -1214,10 +1204,9 @@ def _rule_local_today(rule, *, now: dt_datetime) -> "date":
 def _mail_rule_target_date(rule, *, now: dt_datetime) -> str:
     """메일에 담을 데이터 날짜(ISO 문자열)를 반환합니다.
 
-    run_status(완료 마커)가 있으면 '오늘 이하에서 가장 최근 완료된 날짜'를 사용한다.
+    run_status에서 '오늘 이하에서 가장 최근 완료된 날짜'를 사용한다.
     즉 오늘 알고리즘이 아직 완료되지 않았으면 직전 완료 날짜(보통 어제)를 발송한다
-    — 대시보드의 완결성 게이트와 동일 기준. run_status가 없거나(알고리즘 서버 미반영)
-    완료 날짜가 없으면 캘린더 오늘로 폴백(하위호환).
+    — 대시보드의 완결성 게이트와 동일 기준. 완료 날짜가 없으면 캘린더 오늘을 사용한다.
     """
     local_today = _rule_local_today(rule, now=now).isoformat()
     completed = selectors.query_completed_dates()
@@ -2119,15 +2108,28 @@ def _aggregate_daily(file_df: pd.DataFrame, dates: list) -> dict:
     return {"dates": sorted(dates), "headline": headline, "matrix": matrix}
 
 
-def _build_line_name_run_stats(file_df: pd.DataFrame) -> list[dict[str, object]]:
-    """Summary에 반영된 데이터에서 line_name별 분석 step과 row 수를 집계합니다."""
+def _build_line_name_run_stats(
+    details: list[dict[str, object]],
+    rules: list[dict],
+) -> list[dict[str, object]]:
+    """전체 실행 통계에서 line_name별 분석 step과 row 수를 집계합니다."""
 
-    required = {"line_name", "step_seq", "row_cnt"}
-    if file_df.empty or not required.issubset(file_df.columns):
+    if not details:
         return []
 
+    frame = pd.DataFrame(details)
+    frame = _apply_exclusion_filters_with_rules(frame, rules)
+    if frame.empty:
+        return []
+    frame["line_name"] = [
+        line_name_rules.resolve_line_name(line_id, process_id, step_seq)
+        for line_id, process_id, step_seq in frame[
+            ["line_id", "process_id", "step_seq"]
+        ].itertuples(index=False)
+    ]
+
     result: list[dict[str, object]] = []
-    for line_name, group in file_df.groupby("line_name", sort=True):
+    for line_name, group in frame.groupby("line_name", sort=True):
         step_seqs = group["step_seq"].dropna().astype(str).str.strip()
         result.append({
             "lineName": str(line_name),
@@ -2203,11 +2205,12 @@ def get_daily_summary(selection: dict[str, object], *, user: Any | None = None) 
     file_df = pd.concat(file_frames, ignore_index=True) if file_frames else pd.DataFrame()
     result = _aggregate_daily(file_df, dates)
     run_stats = selectors.query_run_stats(dates)
+    run_stat_details = run_stats.pop("_details", [])
     if not file_df.empty and "line_name" in file_df.columns:
         id_to_name = dict(zip(file_df["line_id"].astype(str), file_df["line_name"].astype(str)))
         for entry in run_stats["byLine"]:
             entry["lineName"] = id_to_name.get(str(entry["lineId"]), entry["lineId"])
-    run_stats["byLineName"] = _build_line_name_run_stats(file_df)
+    run_stats["byLineName"] = _build_line_name_run_stats(run_stat_details, rules)
     result["runStats"] = run_stats
     _daily_summary_cache.set(cache_key, result)
     return result

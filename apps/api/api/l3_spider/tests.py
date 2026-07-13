@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import time as datetime_time, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, TestCase, override_settings
@@ -16,7 +16,7 @@ from django.urls import reverse
 
 import pandas as pd
 
-from . import services
+from . import selectors, services
 from .models import (
     L3SpiderExclusionFilter,
     L3SpiderMailDelivery,
@@ -40,6 +40,30 @@ class L3SpiderServiceTests(SimpleTestCase):
         services._line_groups_cache.clear()
         line_name_rules._cache["mtime"] = None
         line_name_rules._cache["rules"] = None
+        selector_patchers = [
+            patch.object(selectors, "query_completed_dates", return_value=None),
+            patch.object(
+                selectors,
+                "query_all_date_line_process_eds_step",
+                side_effect=selectors._query_all_date_line_process_eds_step_legacy,
+            ),
+            patch.object(selectors, "query_indexed_files", return_value=[]),
+            patch.object(selectors, "query_date_file_index", return_value=[]),
+            patch.object(selectors, "query_trend_data", return_value=[]),
+            patch.object(
+                selectors,
+                "query_run_stats",
+                return_value={
+                    "totalRows": 0,
+                    "combinations": 0,
+                    "byLine": [],
+                    "_details": [],
+                },
+            ),
+        ]
+        for patcher in selector_patchers:
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def _columnar_rows(self, data: dict[str, object]) -> list[dict[str, object]]:
         """columnar 응답을 테스트 검증용 row 목록으로 변환합니다."""
@@ -239,7 +263,23 @@ class L3SpiderServiceTests(SimpleTestCase):
                 services,
                 "_parallel_read",
                 wraps=services._parallel_read,
-            ) as parallel_read:
+            ) as parallel_read, patch.object(
+                selectors,
+                "query_run_stats",
+                return_value={
+                    "totalRows": 3,
+                    "combinations": 1,
+                    "byLine": [{"lineId": "L1", "stepSeqCount": 1, "rowCnt": 3}],
+                    "_details": [{
+                        "date": "2025-01-15",
+                        "line_id": "L1",
+                        "process_id": "P1",
+                        "eds_step": "EDS_M",
+                        "step_seq": "S1",
+                        "row_cnt": 3,
+                    }],
+                },
+            ):
                 daily = services.get_daily_summary({"dates": ["2025-01-15"]})
 
         self.assertNotIn("equipmentRanking", daily)
@@ -250,23 +290,57 @@ class L3SpiderServiceTests(SimpleTestCase):
         )
         self.assertEqual(parallel_read.call_count, 1)
 
+    def test_daily_summary_keeps_analyzed_steps_without_anomaly_file(self) -> None:
+        """이상 파일이 없어도 실행 통계의 분석 step은 line_name별로 남아야 합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            with override_settings(L3_SPIDER_DATA_ROOT=temp_dir), patch.object(
+                services,
+                "_get_exclusion_rules",
+                return_value=[],
+            ), patch.object(
+                selectors,
+                "query_run_stats",
+                return_value={
+                    "totalRows": 100,
+                    "combinations": 1,
+                    "byLine": [{"lineId": "L2", "stepSeqCount": 1, "rowCnt": 100}],
+                    "_details": [{
+                        "date": "2025-01-15",
+                        "line_id": "L2",
+                        "process_id": "P2",
+                        "eds_step": "EDS_M",
+                        "step_seq": "S10",
+                        "row_cnt": 100,
+                    }],
+                },
+            ), patch.object(
+                line_name_rules,
+                "resolve_line_name",
+                return_value="FAB_B",
+            ):
+                daily = services.get_daily_summary({"dates": ["2025-01-15"]})
+
+        self.assertEqual(daily["headline"]["totalRows"], 0)
+        self.assertEqual(
+            daily["runStats"]["byLineName"],
+            [{"lineName": "FAB_B", "stepSeqCount": 1, "rowCnt": 100}],
+        )
+        self.assertNotIn("_details", daily["runStats"])
+
     def test_daily_summary_splits_step_counts_for_multiple_line_names(self) -> None:
         """동일 line_id가 여러 line_name이면 분석 step 수를 각각 집계해야 합니다."""
 
-        file_df = pd.DataFrame([
+        details = [
             {
-                "line_id": "L1", "process_id": "P1", "eds_step": "EDS_M",
-                "step_seq": "S1", "ppid": "PPID_A", "hr": 1, "wn": 0,
-                "row_cnt": 10, "bins": ["BIN_A"], "hr_eqcs": ["EQC_A"],
-                "total_bins": 1,
+                "date": "2025-01-15", "line_id": "L1", "process_id": "P1",
+                "eds_step": "EDS_M", "step_seq": "S1", "row_cnt": 10,
             },
             {
-                "line_id": "L1", "process_id": "P1", "eds_step": "EDS_M",
-                "step_seq": "S2", "ppid": "PPID_B", "hr": 0, "wn": 1,
-                "row_cnt": 20, "bins": ["BIN_B"], "hr_eqcs": [],
-                "total_bins": 1,
+                "date": "2025-01-15", "line_id": "L1", "process_id": "P1",
+                "eds_step": "EDS_M", "step_seq": "S2", "row_cnt": 20,
             },
-        ])
+        ]
 
         with patch.object(
             line_name_rules,
@@ -275,8 +349,7 @@ class L3SpiderServiceTests(SimpleTestCase):
                 "EndFab" if step_seq == "S2" else "FAB_A"
             ),
         ):
-            services._aggregate_daily(file_df, ["2025-01-15"])
-            by_line_name = services._build_line_name_run_stats(file_df)
+            by_line_name = services._build_line_name_run_stats(details, [])
 
         self.assertEqual(
             by_line_name,
@@ -285,7 +358,6 @@ class L3SpiderServiceTests(SimpleTestCase):
                 {"lineName": "FAB_A", "stepSeqCount": 1, "rowCnt": 10},
             ],
         )
-
     def test_extensionless_filename_key_supplies_step_and_ppid(self) -> None:
         """확장자 없는 STEP#PPID#N 파일명이 summary/data 필터에 반영되는지 확인합니다."""
 
@@ -420,6 +492,33 @@ class L3SpiderServiceTests(SimpleTestCase):
         self.assertEqual(candidates["eqcHighRiskBins"], {"EQC_A": ["BIN_A"]})
 
 
+class L3SpiderPostgresSelectorTests(SimpleTestCase):
+    """L3 Spider 외부 집계 테이블의 PostgreSQL 조회 계약을 검증합니다."""
+
+    def test_query_run_stats_returns_line_details_for_name_mapping(self) -> None:
+        """daily_run_stats 조회가 line_name 재집계에 필요한 상세 행을 반환해야 합니다."""
+
+        fetchall = MagicMock(side_effect=[
+            [(30, 2)],
+            [("L1", 2, 30)],
+            [
+                ("2025-01-15", "L1", "P1", "EDS_M", "S1", 10),
+                ("2025-01-15", "L1", "P1", "EDS_M", "S2", 20),
+            ],
+        ])
+
+        with patch.object(selectors, "_fetchall", fetchall):
+            result = selectors.query_run_stats(["2025-01-15"])
+
+        self.assertEqual(result["totalRows"], 30)
+        self.assertEqual(result["combinations"], 2)
+        self.assertEqual(result["byLine"][0]["stepSeqCount"], 2)
+        self.assertEqual([row["step_seq"] for row in result["_details"]], ["S1", "S2"])
+        self.assertEqual(fetchall.call_count, 3)
+        for executed in fetchall.call_args_list:
+            self.assertIn('"public"."daily_run_stats"', executed.args[0])
+
+
 class L3SpiderExclusionFilterOwnershipTests(TestCase):
     """L3 Spider 제외 필터 소유자 분리 규칙을 검증합니다."""
 
@@ -543,6 +642,14 @@ class L3SpiderMailRuleTests(TestCase):
             email="mail-writer@example.com",
             password="pw",
         )
+        selector_patchers = [
+            patch.object(selectors, "query_completed_dates", return_value=None),
+            patch.object(selectors, "query_indexed_files", return_value=[]),
+            patch.object(selectors, "query_indexed_files_by_range", return_value=[]),
+        ]
+        for patcher in selector_patchers:
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def _create_rule(
         self,
