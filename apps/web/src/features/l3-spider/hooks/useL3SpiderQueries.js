@@ -10,6 +10,7 @@ import {
   fetchL3SpiderStructure,
   fetchL3SpiderSummary,
   fetchL3SpiderTrend,
+  fetchL3SpiderUnmappedLineRules,
   l3SpiderQueryKeys,
 } from "../api"
 import {
@@ -24,6 +25,16 @@ export function useL3SpiderMeta() {
     queryKey: l3SpiderQueryKeys.meta(),
     queryFn: fetchL3SpiderMeta,
     staleTime: 5 * 60 * 1000,   // 백엔드 캐시(600s)와 맞춰 5분간 재요청 억제
+    gcTime: 10 * 60 * 1000,
+  })
+}
+
+export function useL3SpiderUnmappedLineRules(enabled) {
+  return useQuery({
+    queryKey: l3SpiderQueryKeys.unmappedLineRules(),
+    queryFn: fetchL3SpiderUnmappedLineRules,
+    enabled,
+    staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
   })
 }

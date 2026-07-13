@@ -56,6 +56,18 @@ class L3SpiderMetaView(APIView):
             return _error_response(error)
 
 
+class L3SpiderUnmappedLineRulesView(APIView):
+    """개발자 옵션에서 미매핑 line name 규칙을 조회합니다."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs) -> Response:
+        try:
+            return Response(services.get_unmapped_line_name_rules())
+        except Exception as error:
+            return _error_response(error)
+
+
 class L3SpiderStructureView(APIView):
     """파일명 스캔만으로 edsStepSeqs·edsStepPpids를 즉시 반환합니다."""
 

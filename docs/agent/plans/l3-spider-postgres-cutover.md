@@ -10,7 +10,8 @@
 - 운영 PostgreSQL은 알고리즘 서버가 세 테이블을 지속 적재하고 마지막에 `completed`를 기록한다.
 
 ## 범위
-- `public.file_index`, `public.daily_run_stats`, `public.run_status` read selector를 PostgreSQL로 변경한다.
+- `public.l3_spider_file_index`, `public.l3_spider_daily_run_stats`,
+  `public.l3_spider_run_status` read selector를 PostgreSQL로 변경한다.
 - SQLite 연결과 SQLite fallback을 제거한다.
 - Parquet 원본 파일 읽기는 기존 NFS mount를 유지한다.
 - 외부 적재 테이블을 Django migration으로 생성하거나 수정하지 않는다.
@@ -45,5 +46,6 @@
 ## 진행 기록
 - 2026-07-13: 운영 schema=`public`, 알고리즘 서버 지속 적재/완료 마커 계약 확인.
 - 2026-07-13: PostgreSQL 전용 전환 구현 시작.
-- 2026-07-13: L3 Spider 테스트 23개, backend boundary audit, migration check 통과.
+- 2026-07-13: L3 Spider 테스트 24개, backend boundary audit, migration check 통과.
 - 2026-07-13: 외부 테이블 미적재 환경에서 PostgreSQL 오류가 그대로 노출되어 SQLite fallback이 없음을 확인.
+- 2026-07-13: 외부 테이블명을 `l3_spider_*`로 변경.

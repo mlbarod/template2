@@ -36,9 +36,12 @@ def ensure_data_root() -> Path:
 
 
 _INDEX_SCHEMA = "public"
-_FILE_INDEX_TABLE = '"public"."file_index"'
-_DAILY_RUN_STATS_TABLE = '"public"."daily_run_stats"'
-_RUN_STATUS_TABLE = '"public"."run_status"'
+_FILE_INDEX_NAME = "l3_spider_file_index"
+_DAILY_RUN_STATS_NAME = "l3_spider_daily_run_stats"
+_RUN_STATUS_NAME = "l3_spider_run_status"
+_FILE_INDEX_TABLE = f'"{_INDEX_SCHEMA}"."{_FILE_INDEX_NAME}"'
+_DAILY_RUN_STATS_TABLE = f'"{_INDEX_SCHEMA}"."{_DAILY_RUN_STATS_NAME}"'
+_RUN_STATUS_TABLE = f'"{_INDEX_SCHEMA}"."{_RUN_STATUS_NAME}"'
 
 
 def _fetchall(sql: str, params: Sequence[object] = ()) -> list[tuple]:
@@ -118,7 +121,7 @@ def query_indexed_files(
         conditions.append("eds_step = %s")
         params.append(eds_step)
     if high_risk_only:
-        conditions.append("LOWER(COALESCE(has_high_risk::text, '')) IN ('1', 't', 'true')")
+        conditions.append("has_high_risk = 1")
     if eqp_id is not None:
         conditions.append(
             "EXISTS (SELECT 1 FROM jsonb_array_elements_text("
@@ -172,7 +175,7 @@ def query_indexed_files_by_range(
         conditions.append("eds_step = %s")
         params.append(eds_step)
     if high_risk_only:
-        conditions.append("LOWER(COALESCE(has_high_risk::text, '')) IN ('1', 't', 'true')")
+        conditions.append("has_high_risk = 1")
     if eqp_id is not None:
         conditions.append(
             "EXISTS (SELECT 1 FROM jsonb_array_elements_text("
@@ -405,7 +408,7 @@ def query_date_file_index(date: str) -> list[dict]:
     high_risk_cnt/warning_cnt/normal_cnt 가 있으면 요약을 parquet 없이 집계할 수 있습니다.
     카운트 컬럼이 없는 구 테이블이면 빈 리스트를 반환해 Parquet 집계로 전환합니다.
     """
-    available = _table_columns("file_index")
+    available = _table_columns(_FILE_INDEX_NAME)
     if "high_risk_cnt" not in available:
         return []
     wanted = [
@@ -426,7 +429,7 @@ def query_trend_data() -> list[dict]:
 
     file_index의 카운트 컬럼으로 날짜별·라인별 트렌드를 계산합니다.
     """
-    available = _table_columns("file_index")
+    available = _table_columns(_FILE_INDEX_NAME)
     if "high_risk_cnt" not in available:
         return []
     rows = _fetchall(
@@ -511,6 +514,29 @@ def query_all_line_process_step() -> list[tuple[str, str, str]]:
         f"FROM {_DAILY_RUN_STATS_TABLE}"
     )
     return [(str(row[0]), str(row[1]), str(row[2])) for row in rows]
+
+
+def query_line_rule_candidates() -> list[dict[str, object]]:
+    """daily_run_stats의 line name 규칙 점검용 분석 조합을 반환합니다."""
+
+    rows = _fetchall(
+        "SELECT line_id, process_id, step_seq, MIN(date), MAX(date), "
+        "COUNT(DISTINCT date) "
+        f"FROM {_DAILY_RUN_STATS_TABLE} "
+        "GROUP BY line_id, process_id, step_seq "
+        "ORDER BY line_id, process_id, step_seq"
+    )
+    return [
+        {
+            "line_id": str(row[0]),
+            "process_id": str(row[1]),
+            "step_seq": str(row[2]),
+            "first_seen_date": str(row[3]),
+            "last_seen_date": str(row[4]),
+            "date_count": int(row[5]),
+        }
+        for row in rows
+    ]
 
 
 def iter_all_data_files_legacy() -> list[Path]:
