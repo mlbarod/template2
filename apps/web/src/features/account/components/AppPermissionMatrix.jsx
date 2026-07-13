@@ -174,7 +174,8 @@ function AppPermissionCell({ user, scope, access, pendingCell, isMutating, onCha
           side="bottom"
           align="end"
           sideOffset={6}
-          className="border bg-popover p-3 text-popover-foreground shadow-lg [&>span:last-child]:hidden [&>svg]:hidden"
+          hideArrow
+          className="border bg-popover p-3 text-popover-foreground shadow-lg"
         >
           <AccessTooltipContent access={access} scope={scope} />
           {!isDisabled ? (
