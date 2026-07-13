@@ -5,12 +5,12 @@
 # =============================================================================
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
 from typing import Iterable, Optional, Sequence
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.db.models import Q
 
 import pandas as pd
@@ -35,17 +35,40 @@ def ensure_data_root() -> Path:
     return root
 
 
-def _get_index_db_path() -> Path:
-    """SQLite 인덱스 파일 경로를 반환합니다."""
-    return get_data_root() / "_meta" / "index.sqlite3"
+_INDEX_SCHEMA = "public"
+_FILE_INDEX_TABLE = '"public"."file_index"'
+_DAILY_RUN_STATS_TABLE = '"public"."daily_run_stats"'
+_RUN_STATUS_TABLE = '"public"."run_status"'
 
 
-def _connect_ro() -> sqlite3.Connection:
-    """인덱스 DB에 읽기 전용으로 연결합니다.
-    알고리즘 서버가 쓰는 중이어도 WAL 모드라면 커밋된 상태만 보여 안전합니다.
-    """
-    uri = f"file:{_get_index_db_path()}?mode=ro"
-    return sqlite3.connect(uri, uri=True, timeout=10)
+def _fetchall(sql: str, params: Sequence[object] = ()) -> list[tuple]:
+    """기본 PostgreSQL 연결에서 parameterized SQL을 실행합니다."""
+
+    with connection.cursor() as cursor:
+        cursor.execute(sql, params)
+        return list(cursor.fetchall())
+
+
+def _fetch_dicts(sql: str, params: Sequence[object] = ()) -> list[dict]:
+    """PostgreSQL 조회 결과를 컬럼명 기반 dict 목록으로 반환합니다."""
+
+    with connection.cursor() as cursor:
+        cursor.execute(sql, params)
+        columns = [column[0] for column in cursor.description]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+
+def _table_columns(table_name: str) -> set[str]:
+    """PostgreSQL public schema의 외부 적재 테이블 컬럼을 반환합니다."""
+
+    rows = _fetchall(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema = %s AND table_name = %s",
+        (_INDEX_SCHEMA, table_name),
+    )
+    if not rows:
+        raise RuntimeError(f"PostgreSQL {_INDEX_SCHEMA}.{table_name} 테이블이 없습니다.")
+    return {str(row[0]) for row in rows}
 
 
 def _rebuild_container_path(root: Path, date, line_id, process_id, eds_step, filepath) -> Path:
@@ -75,46 +98,48 @@ def query_indexed_files(
     chamber_id: Optional[str] = None,
     high_risk_only: bool = False,
 ) -> list[Path]:
-    """SQLite 인덱스에서 조건에 맞는 filepath 목록을 조회합니다.
+    """PostgreSQL file_index에서 조건에 맞는 filepath 목록을 조회합니다.
 
-    인덱스 파일이 없으면 빈 리스트를 반환합니다 — 호출부에서 기존 방식 폴백으로 처리하세요.
     반환된 Path 리스트는 기존 pd.read_parquet() 에 그대로 넘길 수 있습니다.
     """
-    if not _get_index_db_path().exists():
-        return []
-
     conditions: list[str] = []
     params: list = []
 
     if date is not None:
-        conditions.append("date = ?")
+        conditions.append("date = %s")
         params.append(date)
     if line_id is not None:
-        conditions.append("line_id = ?")
+        conditions.append("line_id = %s")
         params.append(line_id)
     if process_id is not None:
-        conditions.append("process_id = ?")
+        conditions.append("process_id = %s")
         params.append(process_id)
     if eds_step is not None:
-        conditions.append("eds_step = ?")
+        conditions.append("eds_step = %s")
         params.append(eds_step)
     if high_risk_only:
-        conditions.append("has_high_risk = 1")
+        conditions.append("LOWER(COALESCE(has_high_risk::text, '')) IN ('1', 't', 'true')")
     if eqp_id is not None:
-        conditions.append("EXISTS (SELECT 1 FROM json_each(eqp_ids) WHERE value = ?)")
+        conditions.append(
+            "EXISTS (SELECT 1 FROM jsonb_array_elements_text("
+            "COALESCE(NULLIF(eqp_ids::text, ''), '[]')::jsonb) AS item(value) "
+            "WHERE item.value = %s)"
+        )
         params.append(eqp_id)
     if chamber_id is not None:
-        conditions.append("EXISTS (SELECT 1 FROM json_each(chamber_ids) WHERE value = ?)")
+        conditions.append(
+            "EXISTS (SELECT 1 FROM jsonb_array_elements_text("
+            "COALESCE(NULLIF(chamber_ids::text, ''), '[]')::jsonb) AS item(value) "
+            "WHERE item.value = %s)"
+        )
         params.append(chamber_id)
 
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-    query = f"SELECT date, line_id, process_id, eds_step, filepath FROM file_index {where}"
-
-    conn = _connect_ro()
-    try:
-        rows = conn.execute(query, params).fetchall()
-    finally:
-        conn.close()
+    query = (
+        "SELECT date, line_id, process_id, eds_step, filepath "
+        f"FROM {_FILE_INDEX_TABLE} {where}"
+    )
+    rows = _fetchall(query, params)
 
     root = get_data_root()
     return [_rebuild_container_path(root, *row) for row in rows]
@@ -130,42 +155,44 @@ def query_indexed_files_by_range(
     chamber_id: Optional[str] = None,
     high_risk_only: bool = False,
 ) -> list[Path]:
-    """날짜 범위(date_from ≤ date ≤ date_to)로 filepath 목록을 조회합니다.
+    """PostgreSQL에서 날짜 범위로 filepath 목록을 조회합니다.
 
     양 끝 포함(inclusive). 'YYYY-MM-DD' 형식.
-    인덱스 파일이 없으면 빈 리스트를 반환합니다.
     """
-    if not _get_index_db_path().exists():
-        return []
-
-    conditions = ["date >= ?", "date <= ?"]
+    conditions = ["date >= %s", "date <= %s"]
     params: list = [date_from, date_to]
 
     if line_id is not None:
-        conditions.append("line_id = ?")
+        conditions.append("line_id = %s")
         params.append(line_id)
     if process_id is not None:
-        conditions.append("process_id = ?")
+        conditions.append("process_id = %s")
         params.append(process_id)
     if eds_step is not None:
-        conditions.append("eds_step = ?")
+        conditions.append("eds_step = %s")
         params.append(eds_step)
     if high_risk_only:
-        conditions.append("has_high_risk = 1")
+        conditions.append("LOWER(COALESCE(has_high_risk::text, '')) IN ('1', 't', 'true')")
     if eqp_id is not None:
-        conditions.append("EXISTS (SELECT 1 FROM json_each(eqp_ids) WHERE value = ?)")
+        conditions.append(
+            "EXISTS (SELECT 1 FROM jsonb_array_elements_text("
+            "COALESCE(NULLIF(eqp_ids::text, ''), '[]')::jsonb) AS item(value) "
+            "WHERE item.value = %s)"
+        )
         params.append(eqp_id)
     if chamber_id is not None:
-        conditions.append("EXISTS (SELECT 1 FROM json_each(chamber_ids) WHERE value = ?)")
+        conditions.append(
+            "EXISTS (SELECT 1 FROM jsonb_array_elements_text("
+            "COALESCE(NULLIF(chamber_ids::text, ''), '[]')::jsonb) AS item(value) "
+            "WHERE item.value = %s)"
+        )
         params.append(chamber_id)
 
-    query = f"SELECT date, line_id, process_id, eds_step, filepath FROM file_index WHERE {' AND '.join(conditions)}"
-
-    conn = _connect_ro()
-    try:
-        rows = conn.execute(query, params).fetchall()
-    finally:
-        conn.close()
+    query = (
+        "SELECT date, line_id, process_id, eds_step, filepath "
+        f"FROM {_FILE_INDEX_TABLE} WHERE {' AND '.join(conditions)}"
+    )
+    rows = _fetchall(query, params)
 
     root = get_data_root()
     return [_rebuild_container_path(root, *row) for row in rows]
@@ -340,25 +367,17 @@ def _query_all_line_process_step_legacy() -> list[tuple[str, str, str]]:
 
 
 def query_all_date_line_process_eds_step() -> list[tuple[str, str, str, str, str]]:
-    """file_index의 모든 (date, line_id, process_id, eds_step, step_seq) 조합을 반환합니다.
+    """PostgreSQL daily_run_stats의 모든 분석 조합을 반환합니다.
 
     날짜별 line_name 가용성(lineNameAvailability) 계산용. line_name은 step_seq로 결정되므로,
     특정 날짜에 어떤 line_name→process→eds가 '실제로' 존재하는지 알려면 date+eds+step_seq가
-    함께 필요합니다. 인덱스가 없거나 조회 실패 시 legacy 디렉토리 스캔으로 fallback합니다.
+    함께 필요합니다.
     """
-    if _get_index_db_path().exists():
-        conn = _connect_ro()
-        try:
-            rows = conn.execute(
-                "SELECT DISTINCT date, line_id, process_id, eds_step, step_seq FROM file_index"
-            ).fetchall()
-        except sqlite3.OperationalError:
-            rows = None
-        finally:
-            conn.close()
-        if rows is not None:
-            return [(str(r[0]), str(r[1]), str(r[2]), str(r[3]), str(r[4])) for r in rows]
-    return _query_all_date_line_process_eds_step_legacy()
+    rows = _fetchall(
+        "SELECT DISTINCT date, line_id, process_id, eds_step, step_seq "
+        f"FROM {_DAILY_RUN_STATS_TABLE}"
+    )
+    return [(str(r[0]), str(r[1]), str(r[2]), str(r[3]), str(r[4])) for r in rows]
 
 
 def _query_all_date_line_process_eds_step_legacy() -> list[tuple[str, str, str, str, str]]:
@@ -381,160 +400,117 @@ def _query_all_date_line_process_eds_step_legacy() -> list[tuple[str, str, str, 
 
 
 def query_date_file_index(date: str) -> list[dict]:
-    """특정 날짜의 file_index 행(파일별 메타 + 상태 카운트)을 반환합니다.
+    """PostgreSQL file_index의 특정 날짜 파일별 집계를 반환합니다.
 
     high_risk_cnt/warning_cnt/normal_cnt 가 있으면 요약을 parquet 없이 집계할 수 있습니다.
-    카운트 컬럼이 없는(구) 인덱스거나 인덱스 자체가 없으면 빈 리스트 → 호출부에서 parquet 폴백.
+    카운트 컬럼이 없는 구 테이블이면 빈 리스트를 반환해 Parquet 집계로 전환합니다.
     """
-    if not _get_index_db_path().exists():
+    available = _table_columns("file_index")
+    if "high_risk_cnt" not in available:
         return []
-    conn = _connect_ro()
-    try:
-        available = {r[1] for r in conn.execute("PRAGMA table_info(file_index)")}
-        if "high_risk_cnt" not in available:
-            return []  # 카운트 컬럼 미존재(구 인덱스) → parquet 폴백
-        wanted = [
-            "filepath", "line_id", "process_id", "eds_step", "step_seq", "ppid",
-            "bin_names", "row_cnt", "high_risk_cnt", "warning_cnt", "normal_cnt",
-            "high_risk_eqcs",  # 있으면 이상 EQPCH까지 인덱스로 집계
-            "total_bin_cnt",   # 있으면 이상 여부 무관 전체 bin 수(= 분석 그룹)까지 인덱스로 집계
-        ]
-        cols = [c for c in wanted if c in available]
-        cursor = conn.execute(
-            f"SELECT {', '.join(cols)} FROM file_index WHERE date = ?", (date,)
-        )
-        columns = [c[0] for c in cursor.description]
-        return [dict(zip(columns, row)) for row in cursor.fetchall()]
-    except sqlite3.OperationalError:
-        return []
-    finally:
-        conn.close()
+    wanted = [
+        "filepath", "line_id", "process_id", "eds_step", "step_seq", "ppid",
+        "bin_names", "row_cnt", "high_risk_cnt", "warning_cnt", "normal_cnt",
+        "high_risk_eqcs",  # 있으면 이상 EQPCH까지 인덱스로 집계
+        "total_bin_cnt",   # 있으면 이상 여부 무관 전체 bin 수(= 분석 그룹)까지 인덱스로 집계
+    ]
+    columns = [column for column in wanted if column in available]
+    return _fetch_dicts(
+        f"SELECT {', '.join(columns)} FROM {_FILE_INDEX_TABLE} WHERE date = %s",
+        (date,),
+    )
 
 
 def query_trend_data() -> list[dict]:
-    """모든 날짜의 (date, line_id, process_id, step_seq, hr, wn) 집계를 반환합니다.
+    """PostgreSQL file_index에서 날짜별 위험 집계를 반환합니다.
 
-    file_index의 카운트 컬럼으로 날짜별·라인별 트렌드 집계용. 인덱스 없거나 카운트
-    컬럼 없으면 빈 리스트 반환.
+    file_index의 카운트 컬럼으로 날짜별·라인별 트렌드를 계산합니다.
     """
-    if not _get_index_db_path().exists():
+    available = _table_columns("file_index")
+    if "high_risk_cnt" not in available:
         return []
-    conn = _connect_ro()
-    try:
-        available = {r[1] for r in conn.execute("PRAGMA table_info(file_index)")}
-        if "high_risk_cnt" not in available:
-            return []
-        sql = (
-            "SELECT date, line_id, process_id, step_seq, "
-            "SUM(COALESCE(high_risk_cnt, 0)) AS hr, "
-            "SUM(COALESCE(warning_cnt, 0)) AS wn "
-            "FROM file_index "
-            "GROUP BY date, line_id, process_id, step_seq "
-            "ORDER BY date"
-        )
-        rows = conn.execute(sql).fetchall()
-        return [
-            {"date": str(r[0]), "line_id": str(r[1]), "process_id": str(r[2]),
-             "step_seq": str(r[3]), "hr": int(r[4] or 0), "wn": int(r[5] or 0)}
-            for r in rows
-        ]
-    except sqlite3.OperationalError:
-        return []
-    finally:
-        conn.close()
+    rows = _fetchall(
+        "SELECT date, line_id, process_id, step_seq, "
+        "SUM(COALESCE(high_risk_cnt, 0)) AS hr, "
+        "SUM(COALESCE(warning_cnt, 0)) AS wn "
+        f"FROM {_FILE_INDEX_TABLE} "
+        "GROUP BY date, line_id, process_id, step_seq ORDER BY date"
+    )
+    return [
+        {"date": str(r[0]), "line_id": str(r[1]), "process_id": str(r[2]),
+         "step_seq": str(r[3]), "hr": int(r[4] or 0), "wn": int(r[5] or 0)}
+        for r in rows
+    ]
 
 
 def query_run_stats(dates: list[str]) -> dict:
-    """daily_run_stats 테이블에서 날짜별 알고리즘 실행 통계를 반환합니다.
+    """PostgreSQL daily_run_stats에서 알고리즘 실행 통계를 반환합니다.
 
-    테이블이 없거나 해당 날짜 데이터가 없으면 빈 결과를 반환합니다(에러 아님).
+    `_details`는 service의 line_name별 분석 step 집계에만 사용하고 API 응답 전에 제거합니다.
     """
-    if not _get_index_db_path().exists() or not dates:
-        return {"totalRows": 0, "byLine": []}
-    conn = None
-    try:
-        conn = _connect_ro()
-        cur = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='daily_run_stats'"
-        )
-        if not cur.fetchone():
-            return {"totalRows": 0, "byLine": []}
-        placeholders = ",".join("?" * len(dates))
-        total = conn.execute(
-            f"SELECT COALESCE(SUM(row_cnt), 0) FROM daily_run_stats WHERE date IN ({placeholders})",
-            dates,
-        ).fetchone()[0]
-        combinations = conn.execute(
-            f"SELECT COUNT(*) FROM daily_run_stats WHERE date IN ({placeholders})",
-            dates,
-        ).fetchone()[0]
-        rows = conn.execute(
-            f"""SELECT line_id, COUNT(DISTINCT step_seq) AS step_seq_count, SUM(row_cnt) AS row_cnt
-                FROM daily_run_stats WHERE date IN ({placeholders})
-                GROUP BY line_id ORDER BY line_id""",
-            dates,
-        ).fetchall()
-        return {
-            "totalRows": int(total),
-            "combinations": int(combinations),
-            "byLine": [{"lineId": r[0], "stepSeqCount": int(r[1]), "rowCnt": int(r[2])} for r in rows],
-        }
-    except sqlite3.OperationalError:
-        return {"totalRows": 0, "byLine": []}
-    finally:
-        if conn:
-            conn.close()
+    if not dates:
+        return {"totalRows": 0, "combinations": 0, "byLine": [], "_details": []}
+    placeholders = ",".join(["%s"] * len(dates))
+    total, combinations = _fetchall(
+        "SELECT COALESCE(SUM(row_cnt), 0), COUNT(*) "
+        f"FROM {_DAILY_RUN_STATS_TABLE} WHERE date IN ({placeholders})",
+        dates,
+    )[0]
+    by_line_rows = _fetchall(
+        "SELECT line_id, COUNT(DISTINCT step_seq), COALESCE(SUM(row_cnt), 0) "
+        f"FROM {_DAILY_RUN_STATS_TABLE} WHERE date IN ({placeholders}) "
+        "GROUP BY line_id ORDER BY line_id",
+        dates,
+    )
+    detail_rows = _fetchall(
+        "SELECT date, line_id, process_id, eds_step, step_seq, COALESCE(SUM(row_cnt), 0) "
+        f"FROM {_DAILY_RUN_STATS_TABLE} WHERE date IN ({placeholders}) "
+        "GROUP BY date, line_id, process_id, eds_step, step_seq",
+        dates,
+    )
+    return {
+        "totalRows": int(total or 0),
+        "combinations": int(combinations or 0),
+        "byLine": [
+            {"lineId": str(row[0]), "stepSeqCount": int(row[1]), "rowCnt": int(row[2])}
+            for row in by_line_rows
+        ],
+        "_details": [
+            {
+                "date": str(row[0]),
+                "line_id": str(row[1]),
+                "process_id": str(row[2]),
+                "eds_step": str(row[3]),
+                "step_seq": str(row[4]),
+                "row_cnt": int(row[5]),
+            }
+            for row in detail_rows
+        ],
+    }
 
 
 def query_completed_dates() -> Optional[set[str]]:
     """알고리즘 런이 '완전히' 끝난 날짜 집합을 반환합니다.
 
-    인덱스 DB의 run_status 테이블(status='completed')을 읽습니다. 알고리즘 서버가
+    PostgreSQL run_status 테이블(status='completed')을 읽습니다. 알고리즘 서버가
     해당 날짜의 마지막 그룹까지 저장한 뒤 한 번만 'completed'로 표시하는 것을 전제로 합니다.
-
-    반환:
-      - None : run_status 테이블/DB가 없음(알고리즘 서버 미구현) → 호출부는 게이트를 적용하지
-               않고 기존처럼 전체 날짜를 노출합니다(하위호환).
-      - set  : 완료된 날짜 집합. 비어 있으면 '아직 완료된 날짜 없음'.
     """
-    if not _get_index_db_path().exists():
-        return None
-    conn = _connect_ro()
-    try:
-        tables = {r[0] for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        )}
-        if "run_status" not in tables:
-            return None
-        rows = conn.execute(
-            "SELECT date FROM run_status WHERE status = 'completed'"
-        ).fetchall()
-        return {str(r[0]) for r in rows}
-    except sqlite3.OperationalError:
-        return None
-    finally:
-        conn.close()
+    rows = _fetchall(
+        f"SELECT date FROM {_RUN_STATUS_TABLE} WHERE status = 'completed'"
+    )
+    return {str(row[0]) for row in rows}
 
 
 def query_all_line_process_step() -> list[tuple[str, str, str]]:
-    """file_index의 모든 (line_id, process_id, step_seq) 조합을 반환합니다.
+    """PostgreSQL daily_run_stats의 모든 line/process/step 조합을 반환합니다.
 
-    규칙 기반 line_name 매핑(lineGroups)용. 인덱스가 없거나 조회 실패 시
-    기존 디렉토리 스캔으로 폴백합니다.
+    규칙 기반 line_name 매핑(lineGroups)용입니다.
     """
-    if _get_index_db_path().exists():
-        conn = _connect_ro()
-        try:
-            rows = conn.execute(
-                "SELECT DISTINCT line_id, process_id, step_seq FROM file_index"
-            ).fetchall()
-        except sqlite3.OperationalError:
-            rows = None
-        finally:
-            conn.close()
-        if rows is not None:
-            return [(str(r[0]), str(r[1]), str(r[2])) for r in rows]
-    return _query_all_line_process_step_legacy()
+    rows = _fetchall(
+        "SELECT DISTINCT line_id, process_id, step_seq "
+        f"FROM {_DAILY_RUN_STATS_TABLE}"
+    )
+    return [(str(row[0]), str(row[1]), str(row[2])) for row in rows]
 
 
 def iter_all_data_files_legacy() -> list[Path]:
