@@ -114,6 +114,8 @@ _raw_file_rows_cache = _SimpleCache(ttl=600.0)
 _RAW_FILE_ROWS_KEY = "raw"
 _line_groups_cache = _SimpleCache(ttl=600.0)
 _LINE_GROUPS_KEY = "groups"
+_line_rule_candidates_cache = _SimpleCache(ttl=300.0)
+_LINE_RULE_CANDIDATES_KEY = "candidates"
 
 
 class L3SpiderServiceError(Exception):
@@ -528,6 +530,39 @@ def _build_line_groups_impl() -> list[dict]:
         if ln not in existing:
             result.append({"lineName": ln, "lineId": "", "processIds": [], "procEds": {}})
     return result
+
+
+def get_unmapped_line_name_rules() -> dict[str, object]:
+    """CSV 규칙에 매칭되지 않은 실제 분석 조합을 반환합니다."""
+
+    candidates = _line_rule_candidates_cache.get(_LINE_RULE_CANDIDATES_KEY)
+    if candidates is None:
+        candidates = selectors.query_line_rule_candidates()
+        _line_rule_candidates_cache.set(_LINE_RULE_CANDIDATES_KEY, candidates)
+
+    items = []
+    for row in candidates:
+        _line_name, is_mapped = line_name_rules.resolve_line_name_mapping(
+            row["line_id"],
+            row["process_id"],
+            row["step_seq"],
+        )
+        if is_mapped:
+            continue
+        items.append({
+            "lineId": row["line_id"],
+            "processId": row["process_id"],
+            "stepSeq": row["step_seq"],
+            "firstSeenDate": row["first_seen_date"],
+            "lastSeenDate": row["last_seen_date"],
+            "dateCount": row["date_count"],
+        })
+
+    return {
+        "count": len(items),
+        "items": items,
+        "rulesFile": "_meta/line_name_rules.csv",
+    }
 
 
 def get_meta(*, user: Any | None = None) -> dict[str, object]:

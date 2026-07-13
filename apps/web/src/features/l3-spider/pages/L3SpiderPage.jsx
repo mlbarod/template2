@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 
 import { L3SpiderChart } from "../components/L3SpiderChart"
 import { L3SpiderDataSelector } from "../components/L3SpiderDataSelector"
+import { L3SpiderDeveloperSheet } from "../components/L3SpiderDeveloperSheet"
 import { L3SpiderExclusionSheet } from "../components/L3SpiderExclusionSheet"
 import { L3SpiderFilterPanel } from "../components/L3SpiderFilterPanel"
 import { L3SpiderMailRuleSheet } from "../components/L3SpiderMailRuleSheet"
@@ -240,6 +241,7 @@ export function L3SpiderPage() {
         )}
         headerExtra={(
           <>
+            <L3SpiderDeveloperSheet />
             <L3SpiderMailRuleSheet />
             <L3SpiderExclusionSheet />
           </>

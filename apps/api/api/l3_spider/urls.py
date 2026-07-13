@@ -23,10 +23,16 @@ from .views import (
     L3SpiderStructureView,
     L3SpiderSummaryView,
     L3SpiderTrendView,
+    L3SpiderUnmappedLineRulesView,
 )
 
 urlpatterns = [
     path("meta", L3SpiderMetaView.as_view(), name="l3-spider-meta"),
+    path(
+        "developer/unmapped-line-rules",
+        L3SpiderUnmappedLineRulesView.as_view(),
+        name="l3-spider-unmapped-line-rules",
+    ),
     path("structure", L3SpiderStructureView.as_view(), name="l3-spider-structure"),
     path("stats", L3SpiderStatsView.as_view(), name="l3-spider-stats"),
     path("summary", L3SpiderSummaryView.as_view(), name="l3-spider-summary"),

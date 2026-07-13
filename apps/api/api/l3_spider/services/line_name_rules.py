@@ -64,7 +64,7 @@ def _empty_rules() -> dict:
         "override_wild": [],   # [(process_pat, step_pat, line_name)] 파일 순서
         "base_exact": {},      # (line_id_lower, process_id_lower) → line_name
         "base_wild": [],       # [(line_id_pat, process_pat, line_name)] 파일 순서
-        "memo": {},            # (line_id, process_id, step_seq) → line_name 캐시
+        "memo": {},            # (line_id, process_id, step_seq) → (line_name, 매칭 여부)
     }
 
 
@@ -112,30 +112,42 @@ def _get_rules() -> dict:
         return _cache["rules"]
 
 
-def _resolve_uncached(rules: dict, line_id: object, process_id: object, step_seq: object) -> str:
+def _resolve_uncached(
+    rules: dict,
+    line_id: object,
+    process_id: object,
+    step_seq: object,
+) -> tuple[str, bool]:
+    """규칙 해석 결과와 CSV 명시 매칭 여부를 반환합니다."""
+
     p_lower = str(process_id).strip().lower()
     s_lower = str(step_seq).strip().lower()
     l_lower = str(line_id).strip().lower()
     # 1) override: 정확(O(1)) → 없으면 와일드카드(파일 순서)
     hit = rules["override_exact"].get((p_lower, s_lower))
     if hit is not None:
-        return hit
+        return hit, True
     for p_pat, s_pat, name in rules["override_wild"]:
         if _match(process_id, p_pat) and _match(step_seq, s_pat):
-            return name
+            return name, True
     # 2) base: 정확(O(1)) → 없으면 와일드카드
     hit = rules["base_exact"].get((l_lower, p_lower))
     if hit is not None:
-        return hit
+        return hit, True
     for l_pat, p_pat, name in rules["base_wild"]:
         if _match(line_id, l_pat) and _match(process_id, p_pat):
-            return name
+            return name, True
     # 3) 폴백
-    return str(line_id)
+    return str(line_id), False
 
 
-def resolve_line_name(line_id: object, process_id: object, step_seq: object) -> str:
-    """(line_id, process_id, step_seq) → line_name. 규칙 미매칭 시 line_id 로 폴백."""
+def resolve_line_name_mapping(
+    line_id: object,
+    process_id: object,
+    step_seq: object,
+) -> tuple[str, bool]:
+    """line name과 CSV 규칙 명시 매칭 여부를 함께 반환합니다."""
+
     rules = _get_rules()
     memo = rules["memo"]
     key = (str(line_id), str(process_id), str(step_seq))
@@ -145,6 +157,12 @@ def resolve_line_name(line_id: object, process_id: object, step_seq: object) -> 
     result = _resolve_uncached(rules, line_id, process_id, step_seq)
     memo[key] = result
     return result
+
+
+def resolve_line_name(line_id: object, process_id: object, step_seq: object) -> str:
+    """(line_id, process_id, step_seq) → line_name. 규칙 미매칭 시 line_id 로 폴백."""
+    line_name, _is_mapped = resolve_line_name_mapping(line_id, process_id, step_seq)
+    return line_name
 
 
 def get_configured_line_names() -> list[str]:

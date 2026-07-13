@@ -37,6 +37,10 @@ export function fetchL3SpiderMeta() {
   return request("/meta")
 }
 
+export function fetchL3SpiderUnmappedLineRules() {
+  return request("/developer/unmapped-line-rules")
+}
+
 export function fetchL3SpiderStructure(selection) {
   return postJson("/structure", selection)
 }

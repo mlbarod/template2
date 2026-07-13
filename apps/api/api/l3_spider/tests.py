@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
+from rest_framework.test import APIRequestFactory, force_authenticate
 
 import pandas as pd
 
@@ -24,6 +25,7 @@ from .models import (
     L3SpiderMailRulePermission,
 )
 from .services import line_name_rules
+from .views import L3SpiderUnmappedLineRulesView
 
 
 class L3SpiderServiceTests(SimpleTestCase):
@@ -38,6 +40,7 @@ class L3SpiderServiceTests(SimpleTestCase):
         services._daily_summary_cache.clear()
         services._raw_file_rows_cache.clear()
         services._line_groups_cache.clear()
+        services._line_rule_candidates_cache.clear()
         line_name_rules._cache["mtime"] = None
         line_name_rules._cache["rules"] = None
         selector_patchers = [
@@ -430,6 +433,62 @@ class L3SpiderServiceTests(SimpleTestCase):
         self.assertEqual(wild_override, "WildOverride")
         self.assertEqual(wild_base, "WildBase")
 
+    def test_line_name_rules_distinguish_explicit_same_name_from_fallback(self) -> None:
+        """line_id와 같은 line_name 규칙도 명시 매칭으로 판정해야 합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self._write_line_name_rules(
+                root,
+                "\n".join([
+                    "type,line_id,process_id,step_seq,line_name",
+                    "base,L1,P1,,L1",
+                ]),
+            )
+
+            with override_settings(L3_SPIDER_DATA_ROOT=str(root)):
+                explicit = line_name_rules.resolve_line_name_mapping("L1", "P1", "S1")
+                fallback = line_name_rules.resolve_line_name_mapping("L2", "P2", "S2")
+
+        self.assertEqual(explicit, ("L1", True))
+        self.assertEqual(fallback, ("L2", False))
+
+    def test_unmapped_line_name_rules_return_only_rule_misses(self) -> None:
+        """개발자 진단은 CSV 규칙에 미매핑된 조합만 반환해야 합니다."""
+
+        candidates = [
+            {
+                "line_id": "L1", "process_id": "P1", "step_seq": "S1",
+                "first_seen_date": "2025-01-01", "last_seen_date": "2025-01-10",
+                "date_count": 4,
+            },
+            {
+                "line_id": "L2", "process_id": "P2", "step_seq": "S2",
+                "first_seen_date": "2025-01-02", "last_seen_date": "2025-01-11",
+                "date_count": 5,
+            },
+        ]
+        with patch.object(
+            selectors,
+            "query_line_rule_candidates",
+            return_value=candidates,
+        ), patch.object(
+            line_name_rules,
+            "resolve_line_name_mapping",
+            side_effect=[("FAB_A", True), ("L2", False)],
+        ):
+            result = services.get_unmapped_line_name_rules()
+
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["items"], [{
+            "lineId": "L2",
+            "processId": "P2",
+            "stepSeq": "S2",
+            "firstSeenDate": "2025-01-02",
+            "lastSeenDate": "2025-01-11",
+            "dateCount": 5,
+        }])
+
     def test_line_name_groups_and_filters_use_rules_csv(self) -> None:
         """lineGroups와 데이터 조회가 line_name 규칙 CSV를 기준으로 동작해야 합니다."""
 
@@ -495,6 +554,16 @@ class L3SpiderServiceTests(SimpleTestCase):
 class L3SpiderPostgresSelectorTests(SimpleTestCase):
     """L3 Spider 외부 집계 테이블의 PostgreSQL 조회 계약을 검증합니다."""
 
+    def test_external_table_names_use_l3_spider_prefix(self) -> None:
+        """외부 PostgreSQL 테이블은 L3 Spider 전용 이름을 사용해야 합니다."""
+
+        self.assertEqual(selectors._FILE_INDEX_TABLE, '"public"."l3_spider_file_index"')
+        self.assertEqual(
+            selectors._DAILY_RUN_STATS_TABLE,
+            '"public"."l3_spider_daily_run_stats"',
+        )
+        self.assertEqual(selectors._RUN_STATUS_TABLE, '"public"."l3_spider_run_status"')
+
     def test_query_run_stats_returns_line_details_for_name_mapping(self) -> None:
         """daily_run_stats 조회가 line_name 재집계에 필요한 상세 행을 반환해야 합니다."""
 
@@ -516,7 +585,69 @@ class L3SpiderPostgresSelectorTests(SimpleTestCase):
         self.assertEqual([row["step_seq"] for row in result["_details"]], ["S1", "S2"])
         self.assertEqual(fetchall.call_count, 3)
         for executed in fetchall.call_args_list:
-            self.assertIn('"public"."daily_run_stats"', executed.args[0])
+            self.assertIn('"public"."l3_spider_daily_run_stats"', executed.args[0])
+
+    def test_query_line_rule_candidates_returns_observed_date_range(self) -> None:
+        """규칙 후보 조회는 조합별 발견 기간을 반환해야 합니다."""
+
+        with patch.object(
+            selectors,
+            "_fetchall",
+            return_value=[("L1", "P1", "S1", "2025-01-01", "2025-01-10", 4)],
+        ) as fetchall:
+            result = selectors.query_line_rule_candidates()
+
+        self.assertEqual(result, [{
+            "line_id": "L1",
+            "process_id": "P1",
+            "step_seq": "S1",
+            "first_seen_date": "2025-01-01",
+            "last_seen_date": "2025-01-10",
+            "date_count": 4,
+        }])
+        self.assertIn('"public"."l3_spider_daily_run_stats"', fetchall.call_args.args[0])
+
+    def test_high_risk_filter_uses_integer_index_condition(self) -> None:
+        """High Risk 파일 필터는 integer 컬럼을 직접 비교해야 합니다."""
+
+        with patch.object(selectors, "_fetchall", return_value=[]) as fetchall:
+            selectors.query_indexed_files(date="2025-01-15", high_risk_only=True)
+
+        sql = fetchall.call_args.args[0]
+        self.assertIn("has_high_risk = 1", sql)
+        self.assertNotIn("has_high_risk::text", sql)
+
+
+class L3SpiderDeveloperOptionsViewTests(TestCase):
+    """개발자 옵션 endpoint의 인증 계약을 검증합니다."""
+
+    def setUp(self) -> None:
+        """인증 테스트용 사용자를 생성합니다."""
+
+        self.user = get_user_model().objects.create_user(
+            sabun="DEV-OPTION-USER",
+            password="pw",
+        )
+
+    def test_authenticated_user_can_read_unmapped_line_rules(self) -> None:
+        """로그인 사용자는 미매핑 규칙을 조회할 수 있어야 합니다."""
+
+        payload = {"count": 0, "items": [], "rulesFile": "_meta/line_name_rules.csv"}
+        request = APIRequestFactory().get("/api/v1/l3_spider/developer/unmapped-line-rules")
+        force_authenticate(request, user=self.user)
+        with patch.object(services, "get_unmapped_line_name_rules", return_value=payload):
+            response = L3SpiderUnmappedLineRulesView.as_view()(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, payload)
+
+    def test_anonymous_user_cannot_read_unmapped_line_rules(self) -> None:
+        """비로그인 사용자는 개발자 옵션을 조회할 수 없어야 합니다."""
+
+        request = APIRequestFactory().get("/api/v1/l3_spider/developer/unmapped-line-rules")
+        response = L3SpiderUnmappedLineRulesView.as_view()(request)
+
+        self.assertIn(response.status_code, {401, 403})
 
 
 class L3SpiderExclusionFilterOwnershipTests(TestCase):

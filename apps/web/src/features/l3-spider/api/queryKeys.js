@@ -4,6 +4,7 @@
 export const l3SpiderQueryKeys = {
   all: ["l3-spider"],
   meta: () => ["l3-spider", "meta"],
+  unmappedLineRules: () => ["l3-spider", "developer", "unmapped-line-rules"],
   structure: (selectionKey) => ["l3-spider", "structure", selectionKey],
   stats: (selectionKey) => ["l3-spider", "stats", selectionKey],
   exclusionFilters: () => ["l3-spider", "exclusion-filters"],
