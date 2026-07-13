@@ -56,7 +56,22 @@ export function getRequestStatus(status) {
 
 export function getAccountRoleLabel(role) {
   const roleKey = (role || "").toLowerCase()
-  return ACCOUNT_ROLE_LABELS[roleKey] || role || "미지정"
+  return ACCESS_ROLE_LABELS[roleKey] || ACCOUNT_ROLE_LABELS[roleKey] || role || "미지정"
+}
+
+function normalizeLookupValue(value) {
+  return typeof value === "string" ? value.trim().toLowerCase() : ""
+}
+
+function getCurrentAffiliationRole(affiliation) {
+  const current = normalizeLookupValue(affiliation?.currentUserSdwtProd)
+  const items = Array.isArray(affiliation?.accessibleUserSdwtProds)
+    ? affiliation.accessibleUserSdwtProds
+    : []
+  const matched = items.find(
+    (item) => normalizeLookupValue(item?.userSdwtProd || item?.user_sdwt_prod) === current,
+  )
+  return matched?.role || ""
 }
 
 export function getPendingRequestCount(history = []) {
@@ -94,7 +109,7 @@ export function buildAccountSummaryModel({
   const resolvedLatestRequest = latestRequest || resolveLatestRequest(history)
   return {
     latestRequest: resolvedLatestRequest,
-    roleLabel: getAccountRoleLabel(profile?.role),
+    roleLabel: getAccountRoleLabel(getCurrentAffiliationRole(affiliation) || profile?.role),
     needsReconfirm: Boolean(reconfirm?.requiresReconfirm),
     pendingRequests: getPendingRequestCount(history),
     requestStatus: resolvedLatestRequest ? getRequestStatus(resolvedLatestRequest.status) : null,

@@ -18,8 +18,14 @@ function SummaryMetric({ label, value, description, badge }) {
         <p className="text-xs font-medium text-muted-foreground">{label}</p>
         {badge ? <Badge variant={badge.variant}>{badge.label}</Badge> : null}
       </div>
-      <p className="mt-2 truncate text-lg font-semibold text-foreground">{value || "미지정"}</p>
-      {description ? <p className="mt-1 text-xs text-muted-foreground">{description}</p> : null}
+      <p className="mt-2 truncate text-lg font-semibold text-foreground" title={value || "미지정"}>
+        {value || "미지정"}
+      </p>
+      {description ? (
+        <p className="mt-1 truncate text-xs text-muted-foreground" title={description}>
+          {description}
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -53,7 +59,7 @@ function AccountSummaryPanel({ pageTitle, profile, summary }) {
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <SummaryMetric label="사용자" value={profile?.username || "미지정"} description={profile?.knoxId || "Knox ID 미지정"} />
-          <SummaryMetric label="Role" value={summary?.roleLabel} description="계정 권한 레벨" />
+          <SummaryMetric label="멤버 권한" value={summary?.roleLabel} description="현재 소속 기준 권한" />
           <SummaryMetric label="현재 소속" value={summary?.affiliationLabel} description="Department / Line / user_sdwt_prod" />
           <SummaryMetric
             label="최근 요청"

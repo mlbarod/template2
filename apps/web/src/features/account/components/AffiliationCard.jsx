@@ -63,25 +63,32 @@ export function AffiliationCard({
           소속 변경은 승인 이후에 적용됩니다.
         </CardDescription>
       </CardHeader>
-      <CardContent className="min-h-0 flex-1 overflow-y-auto p-5">
-        <form onSubmit={handleSubmit} className="grid gap-4">
-          <div className="grid gap-8">
-            <div className="grid gap-1 rounded-lg border bg-muted/30 p-3">
+      <CardContent className="min-h-0 min-w-0 flex-1 overflow-y-auto p-5">
+        <form onSubmit={handleSubmit} className="grid min-w-0 gap-4">
+          <div className="grid min-w-0 gap-8">
+            <div className="grid min-w-0 gap-1 rounded-lg border bg-muted/30 p-3">
               <span className="text-xs font-medium text-muted-foreground">현재 소속</span>
-              <span className="text-sm font-semibold text-foreground">
-                {(data?.currentDepartment || "미지정") +
-                  " / " +
-                  (data?.currentLine || "미지정") +
-                  " / " +
-                  (data?.currentUserSdwtProd || "미지정")}
+              <span
+                className="min-w-0 truncate text-sm font-semibold text-foreground"
+                title={[
+                  data?.currentDepartment || "미지정",
+                  data?.currentLine || "미지정",
+                  data?.currentUserSdwtProd || "미지정",
+                ].join(" / ")}
+              >
+                {[
+                  data?.currentDepartment || "미지정",
+                  data?.currentLine || "미지정",
+                  data?.currentUserSdwtProd || "미지정",
+                ].join(" / ")}
               </span>
             </div>
 
-            <div className="grid gap-2">
+            <div className="grid min-w-0 gap-2">
               <Label htmlFor="affiliationSelect">변경할 소속 (Department / Line / user_sdwt_prod)</Label>
               <select
                 id="affiliationSelect"
-                className="bg-background border-input focus-visible:ring-ring/50 focus-visible:ring-[3px] h-10 rounded-md border px-3 text-sm outline-none"
+                className="h-10 w-full min-w-0 truncate rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 value={selectedKey}
                 onChange={(e) => setSelectedKey(e.target.value)}
                 required

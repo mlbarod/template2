@@ -37,18 +37,18 @@ export function AffiliationHistoryCard({ history }) {
           <Badge variant="outline">{history.length.toLocaleString("ko-KR")}건</Badge>
         </div>
       </CardHeader>
-      <CardContent className="min-h-0 flex-1 overflow-y-auto p-5">
-        <div className="rounded-lg border">
-          <Table stickyHeader>
+      <CardContent className="min-h-0 min-w-0 flex-1 overflow-y-auto p-5">
+        <div className="min-w-0 overflow-hidden rounded-lg border">
+          <Table stickyHeader className="table-fixed">
             <TableHeader>
               <TableRow>
-                <TableHead>상태</TableHead>
-                <TableHead>변경</TableHead>
-                <TableHead>조직</TableHead>
-                <TableHead>적용 시점</TableHead>
-                <TableHead>요청 시점</TableHead>
-                <TableHead>승인자</TableHead>
-                <TableHead>거절 사유</TableHead>
+                <TableHead className="w-20">상태</TableHead>
+                <TableHead className="w-36">변경</TableHead>
+                <TableHead className="w-44">조직</TableHead>
+                <TableHead className="w-32">적용 시점</TableHead>
+                <TableHead className="w-32">요청 시점</TableHead>
+                <TableHead className="w-24">승인자</TableHead>
+                <TableHead className="w-36">거절 사유</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -60,22 +60,40 @@ export function AffiliationHistoryCard({ history }) {
                       <Badge variant={status.variant}>{status.label}</Badge>
                     </TableCell>
                     <TableCell className="text-sm">
-                      {(item.fromUserSdwtProd || "-") + " → " + (item.toUserSdwtProd || "-")}
+                      <span
+                        className="block truncate"
+                        title={(item.fromUserSdwtProd || "-") + " → " + (item.toUserSdwtProd || "-")}
+                      >
+                        {(item.fromUserSdwtProd || "-") + " → " + (item.toUserSdwtProd || "-")}
+                      </span>
                     </TableCell>
                     <TableCell className="text-sm">
-                      {(item.department || "미지정") + " / " + (item.line || "미지정")}
+                      <span
+                        className="block truncate"
+                        title={(item.department || "미지정") + " / " + (item.line || "미지정")}
+                      >
+                        {(item.department || "미지정") + " / " + (item.line || "미지정")}
+                      </span>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {formatAccountDateValue(item.effectiveFrom)}
+                      <span className="block truncate" title={formatAccountDateValue(item.effectiveFrom)}>
+                        {formatAccountDateValue(item.effectiveFrom)}
+                      </span>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {formatAccountDateValue(item.requestedAt)}
+                      <span className="block truncate" title={formatAccountDateValue(item.requestedAt)}>
+                        {formatAccountDateValue(item.requestedAt)}
+                      </span>
                     </TableCell>
                     <TableCell className="text-sm">
-                      {item.approvedBy?.username || "-"}
+                      <span className="block truncate" title={item.approvedBy?.username || "-"}>
+                        {item.approvedBy?.username || "-"}
+                      </span>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {item.rejectionReason || "-"}
+                      <span className="block truncate" title={item.rejectionReason || "-"}>
+                        {item.rejectionReason || "-"}
+                      </span>
                     </TableCell>
                   </TableRow>
                 )

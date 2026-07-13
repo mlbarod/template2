@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { toast } from "sonner"
+import { CheckCircle2, Clock3, ShieldCheck, Users } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -26,6 +27,7 @@ export default function MembersPage() {
   const { user } = useAuth()
   const [activeTab, setActiveTab] = useState("all")
   const [roleFilter, setRoleFilter] = useState("all")
+  const [searchTerm, setSearchTerm] = useState("")
   const [rejectTarget, setRejectTarget] = useState(null)
   const [rejectReason, setRejectReason] = useState("")
   const userSdwtProd = (user?.user_sdwt_prod || "").trim()
@@ -149,6 +151,9 @@ export default function MembersPage() {
   const canApproveAny = requestRows.some(
     (row) => row.approvalRole === "member" || row.approvalRole === "manager",
   )
+  const actionableRequestCount = requestRows.filter(
+    (row) => row.approvalRole === "member" || row.approvalRole === "manager",
+  ).length
   const showApprovalNotice = requestTotal > 0 && !canApproveAny
   const activeRows =
     activeTab === "members"
@@ -194,9 +199,36 @@ export default function MembersPage() {
     fetchNextPage()
   }
 
+  const summaryItems = [
+    {
+      label: "현재 소속",
+      value: userSdwtProd || "미지정",
+      description: userSdwtProd ? "조회 기준 user_sdwt_prod" : "계정 소속 설정 필요",
+      icon: ShieldCheck,
+    },
+    {
+      label: "현재 멤버",
+      value: members.length.toLocaleString("ko-KR"),
+      description: "현재 소속 기준",
+      icon: Users,
+    },
+    {
+      label: "승인 대기",
+      value: requestTotal.toLocaleString("ko-KR"),
+      description: `${requests.length.toLocaleString("ko-KR")}건 로드됨`,
+      icon: Clock3,
+    },
+    {
+      label: "처리 가능",
+      value: actionableRequestCount.toLocaleString("ko-KR"),
+      description: "내 권한으로 승인/거절 가능",
+      icon: CheckCircle2,
+    },
+  ]
+
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col gap-4 overflow-hidden">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="shrink-0 space-y-4">
         <div className="flex flex-col gap-2">
           <h2 className="text-2xl font-semibold text-foreground">{pageTitle}</h2>
           <p className="text-sm text-muted-foreground">
@@ -204,6 +236,28 @@ export default function MembersPage() {
               ? `${userSdwtProd} 소속 멤버와 소속 변경 요청을 확인할 수 있습니다.`
               : "user_sdwt_prod가 설정되어 있지 않습니다."}
           </p>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-4">
+          {summaryItems.map((item) => {
+            const Icon = item.icon
+            return (
+              <div key={item.label} className="rounded-lg border bg-card p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-muted-foreground">{item.label}</p>
+                    <p className="mt-1 truncate text-xl font-semibold tabular-nums text-foreground">
+                      {item.value}
+                    </p>
+                  </div>
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                    <Icon className="size-4" aria-hidden="true" />
+                  </div>
+                </div>
+                <p className="mt-2 truncate text-xs text-muted-foreground">{item.description}</p>
+              </div>
+            )
+          })}
         </div>
       </div>
 
@@ -217,6 +271,8 @@ export default function MembersPage() {
           requestLoadedCount={requests.length}
           roleFilter={roleFilter}
           onRoleFilterChange={setRoleFilter}
+          searchTerm={searchTerm}
+          onSearchTermChange={setSearchTerm}
           isLoading={isActiveLoading}
           isFetching={requestsFetching}
           isLoadingMore={isFetchingNextPage}

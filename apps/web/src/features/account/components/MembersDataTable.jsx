@@ -3,7 +3,9 @@ import {
   Clock3,
   Crown,
   Eye,
-  MoreHorizontal,
+  Search,
+  ShieldQuestion,
+  X,
   UserRound,
   Users,
 } from "lucide-react"
@@ -11,12 +13,7 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -36,6 +33,18 @@ const MEMBER_ROLE_LABELS = {
   manager: "운영 권한",
 }
 
+const MEMBER_ROLE_DESCRIPTIONS = {
+  viewer: "멤버 목록을 확인할 수 있습니다.",
+  member: "멤버 확인과 소속 변경 요청 처리가 가능합니다.",
+  manager: "소속 멤버와 변경 요청을 운영 권한으로 관리합니다.",
+}
+
+const TAB_OPTIONS = [
+  { value: "all", label: "전체" },
+  { value: "members", label: "현재 멤버" },
+  { value: "requests", label: "승인 대기" },
+]
+
 function getInitials(row) {
   const label = row.name || row.knoxId || "?"
   const parts = label.trim().split(/\s+/).filter(Boolean)
@@ -54,10 +63,17 @@ function MemberRole({ role }) {
   const normalizedRole = MEMBER_ROLE_LABELS[role] ? role : "viewer"
   const Icon = normalizedRole === "manager" ? Crown : normalizedRole === "member" ? UserRound : Eye
   return (
-    <span className="inline-flex items-center gap-2">
-      <Icon className="size-4 text-muted-foreground" aria-hidden="true" />
-      <span className="text-sm">{MEMBER_ROLE_LABELS[normalizedRole]}</span>
-    </span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span tabIndex={0} className="inline-flex cursor-help items-center gap-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <Icon className="size-4 text-muted-foreground" aria-hidden="true" />
+          <span className="text-sm">{MEMBER_ROLE_LABELS[normalizedRole]}</span>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-64">
+        {MEMBER_ROLE_DESCRIPTIONS[normalizedRole]}
+      </TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -80,29 +96,27 @@ function RequestActions({ row, isMutating, onApprove, onReject }) {
         <Check className="size-4" />
         승인
       </Button>
-      <DropdownMenu>
+      <Button
+        type="button"
+        size="sm"
+        variant="destructive"
+        onClick={() => onReject(row)}
+        disabled={disabled}
+        aria-label={`${row.name} 소속 변경 거절`}
+      >
+        <X className="size-4" />
+        거절
+      </Button>
+      {!canApprove ? (
         <Tooltip>
           <TooltipTrigger asChild>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                size="icon-sm"
-                variant="ghost"
-                disabled={disabled}
-                aria-label={`${row.name} 추가 작업`}
-              >
-                <MoreHorizontal className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
+            <span tabIndex={0} className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <ShieldQuestion className="size-4" aria-hidden="true" />
+            </span>
           </TooltipTrigger>
-          <TooltipContent side="top">추가 작업</TooltipContent>
+          <TooltipContent side="top">일반 권한 또는 운영 권한이 필요합니다.</TooltipContent>
         </Tooltip>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem variant="destructive" onSelect={() => onReject(row)}>
-            거절
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      ) : null}
     </div>
   )
 }
@@ -116,6 +130,8 @@ export function MembersDataTable({
   requestLoadedCount,
   roleFilter,
   onRoleFilterChange,
+  searchTerm,
+  onSearchTermChange,
   isLoading,
   isFetching,
   isLoadingMore,
@@ -130,16 +146,28 @@ export function MembersDataTable({
   onReject,
 }) {
   const safeRows = Array.isArray(rows) ? rows : []
-  const filteredRows = roleFilter === "all"
+  const normalizedSearch = (searchTerm || "").trim().toLowerCase()
+  const roleFilteredRows = roleFilter === "all"
     ? safeRows
     : safeRows.filter((row) => row.type === "request" || row.memberRole === roleFilter)
+  const filteredRows = normalizedSearch
+    ? roleFilteredRows.filter((row) => [
+      row.name,
+      row.knoxId,
+      row.email,
+      row.affiliationLabel,
+      MEMBER_ROLE_LABELS[row.memberRole],
+      row.status,
+    ].some((value) => String(value || "").toLowerCase().includes(normalizedSearch)))
+    : roleFilteredRows
   const displayedMemberCount = filteredRows.filter((row) => row.type === "member").length
-  const displayedRequestCount = Number(requestLoadedCount) || 0
+  const displayedRequestCount = filteredRows.filter((row) => row.type === "request").length
+  const loadedRequestCount = Number(requestLoadedCount) || 0
   const requestPagination = activeTab !== "members"
   const paginationSummary = activeTab === "all"
-    ? `멤버 ${displayedMemberCount.toLocaleString("ko-KR")}명 · 요청 ${displayedRequestCount.toLocaleString("ko-KR")} / 총 ${requestTotal.toLocaleString("ko-KR")}건`
+    ? `멤버 ${displayedMemberCount.toLocaleString("ko-KR")}명 · 요청 ${displayedRequestCount.toLocaleString("ko-KR")} / 로드 ${loadedRequestCount.toLocaleString("ko-KR")}건`
     : activeTab === "requests"
-      ? `요청 ${displayedRequestCount.toLocaleString("ko-KR")} / 총 ${requestTotal.toLocaleString("ko-KR")}건`
+      ? `요청 ${displayedRequestCount.toLocaleString("ko-KR")} / 로드 ${loadedRequestCount.toLocaleString("ko-KR")} / 총 ${requestTotal.toLocaleString("ko-KR")}건`
       : `총 ${filteredRows.length.toLocaleString("ko-KR")}명`
   const paginationStatus = isLoadingMore
     ? `${paginationSummary} · 더 불러오는 중...`
@@ -147,8 +175,7 @@ export function MembersDataTable({
       ? `${paginationSummary} · 아래로 스크롤하면 더 불러옵니다.`
       : paginationSummary
 
-  const columns = [
-    {
+  const userColumn = {
       id: "user",
       header: "사용자",
       cell: ({ row }) => {
@@ -173,8 +200,8 @@ export function MembersDataTable({
         headerClassName: "min-w-56",
         cellClassName: "min-w-56",
       },
-    },
-    {
+    }
+  const listTypeColumn = {
       id: "listType",
       header: "목록 구분",
       cell: ({ row }) => row.original.type === "request" ? (
@@ -192,10 +219,10 @@ export function MembersDataTable({
         headerClassName: "min-w-32",
         cellClassName: "min-w-32",
       },
-    },
-    {
+    }
+  const affiliationColumn = {
       accessorKey: "affiliationLabel",
-      header: "소속",
+      header: activeTab === "requests" ? "변경 대상" : "소속",
       cell: ({ row }) => (
         <span className="block max-w-72 truncate text-sm text-muted-foreground" title={row.original.affiliationLabel}>
           {row.original.affiliationLabel || "-"}
@@ -205,8 +232,8 @@ export function MembersDataTable({
         headerClassName: "min-w-56",
         cellClassName: "min-w-56",
       },
-    },
-    {
+    }
+  const memberRoleColumn = {
       id: "memberRole",
       header: "멤버 권한",
       cell: ({ row }) => row.original.type === "member"
@@ -216,8 +243,8 @@ export function MembersDataTable({
         headerClassName: "min-w-36",
         cellClassName: "min-w-36",
       },
-    },
-    {
+    }
+  const requestedAtColumn = {
       accessorKey: "requestedAt",
       header: "요청 시각",
       cell: ({ row }) => (
@@ -227,8 +254,8 @@ export function MembersDataTable({
         headerClassName: "min-w-44",
         cellClassName: "min-w-44",
       },
-    },
-    {
+    }
+  const actionsColumn = {
       id: "actions",
       header: "작업",
       cell: ({ row }) => (
@@ -240,32 +267,63 @@ export function MembersDataTable({
         />
       ),
       meta: {
-        headerClassName: "sticky right-0 z-20 min-w-36 bg-muted/30 text-right",
-        cellClassName: "sticky right-0 z-10 min-w-36 bg-card text-right group-hover:bg-muted/40",
+        headerClassName: "sticky right-0 z-20 min-w-44 bg-muted/30 text-right",
+        cellClassName: "sticky right-0 z-10 min-w-44 bg-card text-right group-hover:bg-muted/40",
       },
-    },
-  ]
+    }
+  const columns = activeTab === "members"
+    ? [userColumn, affiliationColumn, memberRoleColumn]
+    : activeTab === "requests"
+      ? [userColumn, affiliationColumn, requestedAtColumn, actionsColumn]
+      : [userColumn, listTypeColumn, affiliationColumn, memberRoleColumn, requestedAtColumn, actionsColumn]
 
   const toolbar = (
     <div className="space-y-4 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-base font-semibold">필터</h3>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex rounded-md border bg-muted p-1" role="tablist" aria-label="멤버 목록 구분">
+          {TAB_OPTIONS.map((tab) => {
+            const isActive = activeTab === tab.value
+            const count =
+              tab.value === "members"
+                ? memberTotal
+                : tab.value === "requests"
+                  ? requestTotal
+                  : memberTotal + requestTotal
+            return (
+              <Button
+                key={tab.value}
+                type="button"
+                size="sm"
+                variant={isActive ? "secondary" : "ghost"}
+                className="h-8 px-3"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => onActiveTabChange(tab.value)}
+              >
+                {tab.label}
+                <span className="tabular-nums text-xs text-muted-foreground">
+                  {count.toLocaleString("ko-KR")}
+                </span>
+              </Button>
+            )
+          })}
+        </div>
         {isFetching && !isLoading ? <span className="text-xs text-muted-foreground">새로고침 중...</span> : null}
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
         <div className="grid gap-1.5">
-          <Label htmlFor="members-list-filter">목록 구분</Label>
-          <Select value={activeTab} onValueChange={onActiveTabChange}>
-            <SelectTrigger id="members-list-filter" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">전체 목록</SelectItem>
-              <SelectItem value="members">현재 멤버 ({memberTotal.toLocaleString("ko-KR")})</SelectItem>
-              <SelectItem value="requests">승인 대기 ({requestTotal.toLocaleString("ko-KR")})</SelectItem>
-            </SelectContent>
-          </Select>
+          <Label htmlFor="members-search">검색</Label>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+            <Input
+              id="members-search"
+              value={searchTerm}
+              onChange={(event) => onSearchTermChange(event.target.value)}
+              className="pl-9"
+              placeholder="이름, Knox ID, 소속 검색"
+            />
+          </div>
         </div>
 
         <div className="grid gap-1.5">
@@ -304,7 +362,7 @@ export function MembersDataTable({
       isLoading={isLoading}
       isFetching={isFetching}
       error={error}
-      emptyMessage={emptyMessage}
+      emptyMessage={normalizedSearch ? "검색 조건에 맞는 항목이 없습니다." : emptyMessage}
       onRetry={onRetry}
       pagination={{
         page: 1,
@@ -315,7 +373,7 @@ export function MembersDataTable({
         showControls: false,
       }}
       className="h-full"
-      tableClassName="min-w-[1080px]"
+      tableClassName={activeTab === "members" ? "min-w-[760px]" : activeTab === "requests" ? "min-w-[860px]" : "min-w-[1080px]"}
       onScrollEnd={requestPagination ? onLoadMore : undefined}
       ariaLabel="소속 사용자 목록"
     />
