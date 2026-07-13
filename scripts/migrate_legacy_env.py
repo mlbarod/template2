@@ -171,6 +171,8 @@ API_CATEGORY_KEYS: dict[str, frozenset[str]] = {
             "DRONE_JIRA_BULK_SIZE",
             "DRONE_JIRA_CONNECT_TIMEOUT",
             "DRONE_JIRA_READ_TIMEOUT",
+            "drone_jira_user",
+            "drone_jira_verfy_ssl",
             "DRONE_CTTTM_TABLE_NAME",
             "DRONE_CTTTM_BASE_URL",
             "DRONE_MESSENGER_TTL",
