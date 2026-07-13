@@ -8,6 +8,132 @@ from datetime import time as datetime_time
 from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
 from django.db import models
+from django.db.models.functions import Lower
+
+
+class L3SpiderFileIndex(models.Model):
+    """알고리즘 서버가 적재한 L3 Spider 파일별 인덱스입니다.
+
+    배열 성격의 값은 적재 계약을 유지하기 위해 JSON 문자열 형태의 TextField로 저장합니다.
+    """
+
+    filepath = models.TextField(primary_key=True)
+    date = models.TextField()
+    line_id = models.TextField()
+    process_id = models.TextField()
+    eds_step = models.TextField()
+    step_seq = models.TextField()
+    ppid = models.TextField()
+    eqp_ids = models.TextField()
+    chamber_ids = models.TextField()
+    bin_names = models.TextField()
+    total_bin_cnt = models.IntegerField(null=True, blank=True)
+    row_cnt = models.BigIntegerField(null=True, blank=True)
+    has_high_risk = models.IntegerField(null=True, blank=True, default=0, db_default=0)
+    high_risk_cnt = models.IntegerField(null=True, blank=True)
+    warning_cnt = models.IntegerField(null=True, blank=True)
+    normal_cnt = models.IntegerField(null=True, blank=True)
+    high_risk_eqcs = models.TextField(null=True, blank=True)
+    saved_at = models.TextField(null=True, blank=True)
+
+    class Meta:
+        db_table = "l3_spider_file_index"
+        indexes = [
+            models.Index(fields=["date", "has_high_risk"], name="idx_date_hr"),
+            models.Index(fields=["date", "line_id"], name="idx_date_line"),
+            models.Index(
+                fields=["date", "line_id", "process_id", "eds_step"],
+                name="idx_file_date_scope",
+            ),
+        ]
+
+
+class L3SpiderDailyRunStats(models.Model):
+    """날짜와 분석 조합별 L3 Spider 알고리즘 처리 통계입니다."""
+
+    date = models.TextField()
+    line_id = models.TextField()
+    process_id = models.TextField()
+    eds_step = models.TextField()
+    step_seq = models.TextField()
+    row_cnt = models.BigIntegerField(default=0, db_default=0)
+    last_checked = models.TextField(null=True, blank=True)
+    pk = models.CompositePrimaryKey(
+        "date",
+        "line_id",
+        "process_id",
+        "eds_step",
+        "step_seq",
+    )
+
+    class Meta:
+        db_table = "l3_spider_daily_run_stats"
+        indexes = [
+            models.Index(fields=["date"], name="idx_run_stats_date"),
+            models.Index(fields=["date", "line_id"], name="idx_run_stats_date_line"),
+        ]
+
+
+class L3SpiderRunStatus(models.Model):
+    """날짜별 L3 Spider 알고리즘 실행 완료 및 실패 상태입니다."""
+
+    date = models.TextField(primary_key=True)
+    status = models.TextField()
+    completed_at = models.TextField(null=True, blank=True)
+    failed_count = models.IntegerField(null=True, blank=True, default=0, db_default=0)
+
+    class Meta:
+        db_table = "l3_spider_run_status"
+
+
+class L3SpiderLineNameRule(models.Model):
+    """`line_id/process_id/step_seq` 조합을 표시용 line name으로 매핑하는 규칙입니다."""
+
+    class RuleTypes(models.TextChoices):
+        BASE = "base", "Base"
+        OVERRIDE = "override", "Override"
+
+    rule_type = models.CharField(max_length=16, choices=RuleTypes.choices)
+    line_id = models.CharField(max_length=200, default="*")
+    process_id = models.CharField(max_length=200, default="*")
+    step_seq = models.CharField(max_length=200, default="*")
+    line_name = models.CharField(max_length=200)
+    priority = models.PositiveIntegerField(default=100)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "l3_spider_line_name_rule"
+        ordering = ["priority", "id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(rule_type__in=["base", "override"]),
+                name="chk_l3_line_rule_type",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(rule_type="base", step_seq="*")
+                    | models.Q(rule_type="override", line_id="*")
+                ),
+                name="chk_l3_line_rule_scope",
+            ),
+            models.UniqueConstraint(
+                Lower("rule_type"),
+                Lower("line_id"),
+                Lower("process_id"),
+                Lower("step_seq"),
+                condition=models.Q(is_active=True),
+                name="uniq_l3_line_rule_key",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["is_active", "rule_type", "priority"],
+                name="idx_l3_line_rule_lookup",
+            ),
+            models.Index(fields=["line_name"], name="idx_l3_line_rule_name"),
+        ]
 
 
 class L3SpiderExclusionFilter(models.Model):

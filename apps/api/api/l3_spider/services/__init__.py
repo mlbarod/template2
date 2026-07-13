@@ -561,7 +561,7 @@ def get_unmapped_line_name_rules() -> dict[str, object]:
     return {
         "count": len(items),
         "items": items,
-        "rulesFile": "_meta/line_name_rules.csv",
+        "rulesFile": "public.l3_spider_line_name_rule",
     }
 
 

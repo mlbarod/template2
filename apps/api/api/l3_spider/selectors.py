@@ -539,6 +539,37 @@ def query_line_rule_candidates() -> list[dict[str, object]]:
     ]
 
 
+def list_active_line_name_rules() -> list[dict[str, object]]:
+    """활성 L3 Spider line name 규칙을 적용 우선순위대로 반환합니다."""
+
+    from .models import L3SpiderLineNameRule
+
+    return list(
+        L3SpiderLineNameRule.objects.filter(is_active=True)
+        .order_by("priority", "id")
+        .values(
+            "rule_type",
+            "line_id",
+            "process_id",
+            "step_seq",
+            "line_name",
+        )
+    )
+
+
+def list_configured_line_names() -> list[str]:
+    """활성 DB 규칙에 설정된 line name 고유 목록을 반환합니다."""
+
+    from .models import L3SpiderLineNameRule
+
+    return list(
+        L3SpiderLineNameRule.objects.filter(is_active=True)
+        .order_by("line_name")
+        .values_list("line_name", flat=True)
+        .distinct()
+    )
+
+
 def iter_all_data_files_legacy() -> list[Path]:
     """glob 직접 스캔 방식 (인덱스 미사용) — iter_all_data_files의 폴백."""
     ensure_data_root()

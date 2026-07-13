@@ -42,7 +42,7 @@ export function L3SpiderDeveloperSheet() {
               <SheetTitle className="text-base">미매핑 Line 규칙</SheetTitle>
               <SheetDescription className="mt-1 flex flex-wrap items-center gap-2 text-xs">
                 <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground">
-                  {query.data?.rulesFile ?? "_meta/line_name_rules.csv"}
+                  {query.data?.rulesFile ?? "public.l3_spider_line_name_rule"}
                 </code>
                 <span>미매핑 {items.length.toLocaleString()}개</span>
               </SheetDescription>

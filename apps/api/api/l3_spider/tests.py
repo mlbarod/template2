@@ -6,11 +6,16 @@
 from __future__ import annotations
 
 from datetime import time as datetime_time, timedelta
+from importlib import import_module
+from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock, patch
 
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
+from django.core.management.base import CommandError
+from django.db import connection
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from rest_framework.test import APIRequestFactory, force_authenticate
@@ -19,16 +24,21 @@ import pandas as pd
 
 from . import selectors, services
 from .models import (
+    L3SpiderDailyRunStats,
     L3SpiderExclusionFilter,
+    L3SpiderFileIndex,
+    L3SpiderLineNameRule,
     L3SpiderMailDelivery,
     L3SpiderMailRule,
     L3SpiderMailRulePermission,
+    L3SpiderRunStatus,
 )
 from .services import line_name_rules
 from .views import L3SpiderUnmappedLineRulesView
+from .management.commands.import_l3_spider_line_name_rules import _load_rules_csv
 
 
-class L3SpiderServiceTests(SimpleTestCase):
+class L3SpiderServiceTests(TestCase):
     """L3 Spider 파일 기반 서비스 동작을 검증합니다."""
 
     def setUp(self) -> None:
@@ -41,8 +51,7 @@ class L3SpiderServiceTests(SimpleTestCase):
         services._raw_file_rows_cache.clear()
         services._line_groups_cache.clear()
         services._line_rule_candidates_cache.clear()
-        line_name_rules._cache["mtime"] = None
-        line_name_rules._cache["rules"] = None
+        line_name_rules.clear_cache()
         selector_patchers = [
             patch.object(selectors, "query_completed_dates", return_value=None),
             patch.object(
@@ -202,13 +211,26 @@ class L3SpiderServiceTests(SimpleTestCase):
             frame.to_parquet(path, engine="pyarrow")
 
     def _write_line_name_rules(self, root: Path, body: str) -> None:
-        """line_name 규칙 CSV를 생성합니다."""
+        """CSV 예시 body를 파싱해 DB line name 규칙으로 생성합니다."""
 
         meta_dir = root / "_meta"
         meta_dir.mkdir(parents=True, exist_ok=True)
-        (meta_dir / "line_name_rules.csv").write_text(body, encoding="utf-8")
-        line_name_rules._cache["mtime"] = None
-        line_name_rules._cache["rules"] = None
+        path = meta_dir / "line_name_rules.csv"
+        path.write_text(body, encoding="utf-8")
+        parsed = _load_rules_csv(path)
+        L3SpiderLineNameRule.objects.all().delete()
+        L3SpiderLineNameRule.objects.bulk_create([
+            L3SpiderLineNameRule(
+                rule_type=rule.rule_type,
+                line_id=rule.line_id,
+                process_id=rule.process_id,
+                step_seq=rule.step_seq,
+                line_name=rule.line_name,
+                priority=rule.priority,
+            )
+            for rule in parsed.rules
+        ])
+        line_name_rules.clear_cache()
 
     def test_meta_summary_and_data_use_camel_case_contract(self) -> None:
         """메타/요약/데이터 응답이 camelCase 계약을 따르는지 확인합니다."""
@@ -394,13 +416,10 @@ class L3SpiderServiceTests(SimpleTestCase):
         self.assertEqual(rows[0]["stepSeq"], "S1")
         self.assertEqual(rows[0]["ppid"], "PPID_A")
 
-    def test_line_name_rules_fall_back_to_line_id_without_csv(self) -> None:
-        """line_name 규칙 CSV가 없으면 line_id로 폴백해야 합니다."""
+    def test_line_name_rules_fall_back_to_line_id_without_rules(self) -> None:
+        """활성 DB 규칙이 없으면 line_id로 폴백해야 합니다."""
 
-        with TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            with override_settings(L3_SPIDER_DATA_ROOT=str(root)):
-                result = line_name_rules.resolve_line_name("L1", "P1", "S1")
+        result = line_name_rules.resolve_line_name("L1", "P1", "S1")
 
         self.assertEqual(result, "L1")
 
@@ -454,7 +473,7 @@ class L3SpiderServiceTests(SimpleTestCase):
         self.assertEqual(fallback, ("L2", False))
 
     def test_unmapped_line_name_rules_return_only_rule_misses(self) -> None:
-        """개발자 진단은 CSV 규칙에 미매핑된 조합만 반환해야 합니다."""
+        """개발자 진단은 DB 규칙에 미매핑된 조합만 반환해야 합니다."""
 
         candidates = [
             {
@@ -489,8 +508,8 @@ class L3SpiderServiceTests(SimpleTestCase):
             "dateCount": 5,
         }])
 
-    def test_line_name_groups_and_filters_use_rules_csv(self) -> None:
-        """lineGroups와 데이터 조회가 line_name 규칙 CSV를 기준으로 동작해야 합니다."""
+    def test_line_name_groups_and_filters_use_database_rules(self) -> None:
+        """lineGroups와 데이터 조회가 DB line name 규칙을 기준으로 동작해야 합니다."""
 
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -618,6 +637,296 @@ class L3SpiderPostgresSelectorTests(SimpleTestCase):
         self.assertNotIn("has_high_risk::text", sql)
 
 
+class L3SpiderManagedIndexModelTests(SimpleTestCase):
+    """L3 Spider 인덱스 테이블의 Django 모델 계약을 검증합니다."""
+
+    def test_file_index_preserves_table_key_and_indexes(self) -> None:
+        """파일 인덱스 모델은 기존 PK와 조회 인덱스를 유지해야 합니다."""
+
+        model_meta = L3SpiderFileIndex._meta
+
+        self.assertTrue(model_meta.managed)
+        self.assertEqual(model_meta.db_table, "l3_spider_file_index")
+        self.assertEqual(model_meta.pk.name, "filepath")
+        self.assertEqual(
+            [index.name for index in model_meta.indexes],
+            ["idx_date_hr", "idx_date_line", "idx_file_date_scope"],
+        )
+
+    def test_daily_run_stats_preserves_composite_primary_key(self) -> None:
+        """실행 통계 모델은 다섯 컬럼 복합 PK를 사용해야 합니다."""
+
+        model_meta = L3SpiderDailyRunStats._meta
+
+        self.assertTrue(model_meta.managed)
+        self.assertEqual(model_meta.db_table, "l3_spider_daily_run_stats")
+        self.assertEqual(
+            tuple(model_meta.pk.field_names),
+            ("date", "line_id", "process_id", "eds_step", "step_seq"),
+        )
+        self.assertEqual(
+            [index.name for index in model_meta.indexes],
+            ["idx_run_stats_date", "idx_run_stats_date_line"],
+        )
+
+    def test_run_status_uses_date_primary_key(self) -> None:
+        """실행 상태 모델은 날짜를 단일 PK로 사용해야 합니다."""
+
+        model_meta = L3SpiderRunStatus._meta
+
+        self.assertTrue(model_meta.managed)
+        self.assertEqual(model_meta.db_table, "l3_spider_run_status")
+        self.assertEqual(model_meta.pk.name, "date")
+        self.assertTrue(model_meta.get_field("failed_count").null)
+
+    def test_line_name_rule_preserves_priority_and_lookup_contract(self) -> None:
+        """line name 규칙 모델은 우선순위와 활성 lookup 계약을 가져야 합니다."""
+
+        model_meta = L3SpiderLineNameRule._meta
+
+        self.assertEqual(model_meta.db_table, "l3_spider_line_name_rule")
+        self.assertEqual(model_meta.ordering, ["priority", "id"])
+        self.assertEqual(
+            [index.name for index in model_meta.indexes],
+            ["idx_l3_line_rule_lookup", "idx_l3_line_rule_name"],
+        )
+        self.assertEqual(
+            [constraint.name for constraint in model_meta.constraints],
+            [
+                "chk_l3_line_rule_type",
+                "chk_l3_line_rule_scope",
+                "uniq_l3_line_rule_key",
+            ],
+        )
+
+
+class L3SpiderManagedIndexDatabaseTests(TestCase):
+    """Django가 관리하는 L3 Spider 인덱스 테이블의 DB 계약을 검증합니다."""
+
+    def test_managed_index_models_support_create_and_read(self) -> None:
+        """세 모델은 제공된 PK와 기본값으로 저장하고 다시 조회할 수 있어야 합니다."""
+
+        file_index = L3SpiderFileIndex.objects.create(
+            filepath="2026-07-13/L1/P1/EDS_M/S1#PPID_A#0",
+            date="2026-07-13",
+            line_id="L1",
+            process_id="P1",
+            eds_step="EDS_M",
+            step_seq="S1",
+            ppid="PPID_A",
+            eqp_ids='["EQP_A"]',
+            chamber_ids='["CH_A"]',
+            bin_names='["BIN_A"]',
+        )
+        run_stats = L3SpiderDailyRunStats.objects.create(
+            date="2026-07-13",
+            line_id="L1",
+            process_id="P1",
+            eds_step="EDS_M",
+            step_seq="S1",
+        )
+        run_status = L3SpiderRunStatus.objects.create(
+            date="2026-07-13",
+            status="completed",
+        )
+
+        self.assertEqual(L3SpiderFileIndex.objects.get(pk=file_index.pk).has_high_risk, 0)
+        self.assertEqual(
+            L3SpiderDailyRunStats.objects.get(pk=run_stats.pk).row_cnt,
+            0,
+        )
+        self.assertEqual(L3SpiderRunStatus.objects.get(pk=run_status.pk).failed_count, 0)
+
+    def test_managed_index_tables_preserve_constraint_and_index_names(self) -> None:
+        """실제 DB에는 알고리즘 서버와 합의한 PK와 인덱스 이름이 있어야 합니다."""
+
+        expected_names = {
+            "l3_spider_daily_run_stats": {
+                "daily_run_stats_pkey",
+                "idx_run_stats_date",
+                "idx_run_stats_date_line",
+            },
+            "l3_spider_file_index": {
+                "file_index_pkey",
+                "idx_date_hr",
+                "idx_date_line",
+                "idx_file_date_scope",
+            },
+            "l3_spider_run_status": {"run_status_pkey"},
+        }
+
+        with connection.cursor() as cursor:
+            for table_name, names in expected_names.items():
+                constraints = connection.introspection.get_constraints(cursor, table_name)
+                self.assertTrue(names.issubset(constraints))
+
+    def test_adoption_sql_preserves_existing_rows(self) -> None:
+        """인수용 SQL을 기존 테이블에 실행해도 저장된 행을 유지해야 합니다."""
+
+        L3SpiderRunStatus.objects.create(
+            date="2026-07-12",
+            status="completed",
+            failed_count=2,
+        )
+        migration = import_module("api.l3_spider.migrations.0005_manage_index_tables")
+
+        with connection.cursor() as cursor:
+            cursor.execute(migration._CREATE_INDEX_TABLES_SQL)
+
+        saved = L3SpiderRunStatus.objects.get(pk="2026-07-12")
+        self.assertEqual(saved.status, "completed")
+        self.assertEqual(saved.failed_count, 2)
+
+
+class L3SpiderLineNameRuleImportCommandTests(SimpleTestCase):
+    """L3 Spider line name rule CSV import command 계약을 검증합니다."""
+
+    def _write_csv(self, root: Path, body: str) -> Path:
+        """테스트용 line name rule CSV를 생성합니다."""
+
+        path = root / "line_name_rules.csv"
+        path.write_text(body, encoding="utf-8")
+        return path
+
+    def test_parser_normalizes_scope_and_preserves_priority(self) -> None:
+        """parser는 base/override 미사용 필드와 wildcard를 정규화해야 합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            path = self._write_csv(
+                Path(temp_dir),
+                "\n".join([
+                    "# L3 Spider line name 규칙",
+                    "type,line_id,process_id,step_seq,line_name",
+                    "override,IGNORED,PROC_A,STEP_1,EndFab",
+                    "base,LINE_A,%,IGNORED,FAB_A",
+                ]),
+            )
+            parsed = _load_rules_csv(path)
+
+        self.assertEqual(len(parsed.rules), 2)
+        self.assertEqual(parsed.rules[0].priority, 1)
+        self.assertEqual(parsed.rules[0].line_id, "*")
+        self.assertEqual(parsed.rules[1].process_id, "*")
+        self.assertEqual(parsed.rules[1].step_seq, "*")
+
+    def test_parser_keeps_first_semantic_duplicate(self) -> None:
+        """동일 key 규칙은 기존 CSV resolver처럼 첫 행만 유지해야 합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            path = self._write_csv(
+                Path(temp_dir),
+                "\n".join([
+                    "type,line_id,process_id,step_seq,line_name",
+                    "override,,PROC_A,STEP_1,First",
+                    "override,*,proc_a,step_1,Second",
+                ]),
+            )
+            parsed = _load_rules_csv(path)
+
+        self.assertEqual([rule.line_name for rule in parsed.rules], ["First"])
+        self.assertEqual(parsed.duplicate_count, 1)
+
+    def test_parser_rejects_invalid_contract(self) -> None:
+        """필수 컬럼 누락이나 지원하지 않는 rule type은 명확히 실패해야 합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            missing_column_path = self._write_csv(
+                root,
+                "type,line_id,process_id,step_seq\nbase,LINE_A,*,*\n",
+            )
+            with self.assertRaisesMessage(CommandError, "line_name"):
+                _load_rules_csv(missing_column_path)
+
+            invalid_type_path = self._write_csv(
+                root,
+                "type,line_id,process_id,step_seq,line_name\nunknown,LINE_A,*,*,FAB_A\n",
+            )
+            with self.assertRaisesMessage(CommandError, "type"):
+                _load_rules_csv(invalid_type_path)
+
+    def test_command_dry_run_does_not_access_model_manager(self) -> None:
+        """dry-run은 모델 계약을 확인하되 DB manager를 호출하지 않아야 합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            path = self._write_csv(
+                Path(temp_dir),
+                "type,line_id,process_id,step_seq,line_name\nbase,LINE_A,*,*,FAB_A\n",
+            )
+            stdout = StringIO()
+            call_command(
+                "import_l3_spider_line_name_rules",
+                path=str(path),
+                dry_run=True,
+                stdout=stdout,
+            )
+
+        self.assertIn("dry-run 완료", stdout.getvalue())
+        self.assertIn("rules=1", stdout.getvalue())
+
+
+class L3SpiderLineNameRuleImportDatabaseTests(TestCase):
+    """L3 Spider line name rule import command의 DB 쓰기 동작을 검증합니다."""
+
+    def _write_csv(self, root: Path, body: str) -> Path:
+        """DB 적재 테스트용 CSV를 생성합니다."""
+
+        path = root / "line_name_rules.csv"
+        path.write_text(body, encoding="utf-8")
+        return path
+
+    def test_command_upserts_same_rule_key(self) -> None:
+        """기본 적재는 동일 활성 key를 갱신하고 기존 행을 중복 생성하지 않아야 합니다."""
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            path = self._write_csv(
+                root,
+                "type,line_id,process_id,step_seq,line_name\nbase,LINE_A,%,,FAB_A\n",
+            )
+            call_command("import_l3_spider_line_name_rules", path=str(path), stdout=StringIO())
+            self._write_csv(
+                root,
+                "type,line_id,process_id,step_seq,line_name\nbase,line_a,*,*,FAB_A_NEW\n",
+            )
+            call_command("import_l3_spider_line_name_rules", path=str(path), stdout=StringIO())
+
+        self.assertEqual(L3SpiderLineNameRule.objects.count(), 1)
+        rule = L3SpiderLineNameRule.objects.get()
+        self.assertEqual(rule.line_name, "FAB_A_NEW")
+        self.assertEqual(rule.process_id, "*")
+        self.assertEqual(rule.priority, 1)
+
+    def test_command_replace_removes_rules_missing_from_csv(self) -> None:
+        """replace 적재는 CSV에 없는 기존 규칙을 제거해야 합니다."""
+
+        L3SpiderLineNameRule.objects.create(
+            rule_type="base",
+            line_id="OLD_LINE",
+            process_id="*",
+            step_seq="*",
+            line_name="OLD_NAME",
+        )
+        with TemporaryDirectory() as temp_dir:
+            path = self._write_csv(
+                Path(temp_dir),
+                "type,line_id,process_id,step_seq,line_name\n"
+                "override,,PROC_A,STEP_1,EndFab\n",
+            )
+            call_command(
+                "import_l3_spider_line_name_rules",
+                path=str(path),
+                replace=True,
+                stdout=StringIO(),
+            )
+
+        self.assertEqual(L3SpiderLineNameRule.objects.count(), 1)
+        rule = L3SpiderLineNameRule.objects.get()
+        self.assertEqual(rule.rule_type, "override")
+        self.assertEqual(rule.line_id, "*")
+        self.assertEqual(rule.line_name, "EndFab")
+
+
 class L3SpiderDeveloperOptionsViewTests(TestCase):
     """개발자 옵션 endpoint의 인증 계약을 검증합니다."""
 
@@ -632,7 +941,7 @@ class L3SpiderDeveloperOptionsViewTests(TestCase):
     def test_authenticated_user_can_read_unmapped_line_rules(self) -> None:
         """로그인 사용자는 미매핑 규칙을 조회할 수 있어야 합니다."""
 
-        payload = {"count": 0, "items": [], "rulesFile": "_meta/line_name_rules.csv"}
+        payload = {"count": 0, "items": [], "rulesFile": "public.l3_spider_line_name_rule"}
         request = APIRequestFactory().get("/api/v1/l3_spider/developer/unmapped-line-rules")
         force_authenticate(request, user=self.user)
         with patch.object(services, "get_unmapped_line_name_rules", return_value=payload):

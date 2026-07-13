@@ -127,30 +127,30 @@ L3 Spider API는 read-only mount된 `daily_anomaly` Parquet 파일을 조회해 
 
 `read` 권한자는 rule 전체 설정을 볼 수 있고, `write` 권한자는 rule 조건/수신자/발송 시각/활성 여부를 수정할 수 있습니다. 권한 관리와 삭제는 owner만 가능합니다. 테스트 발송은 write 권한자만 실행할 수 있으며 스케줄 due 여부, `L3SpiderMailDelivery`, `lastSentAt`, `lastCheckedAt`을 갱신하지 않습니다. 메일 본문에는 `L3_SPIDER_MAIL_TARGET_URL` 또는 `FRONTEND_BASE_URL + /l3_spider` 기준의 L3 Spider 이동 링크가 포함됩니다. 이벤트별 링크에는 `date`, `lineId`, `processId`, `edsStep`, `stepSeq`, `ppid`, `eqpch`, `binName` query param이 붙으며, Web 화면은 해당 값을 읽어 조건을 자동 선택합니다.
 
-## line_name 규칙표 (`_meta/line_name_rules.csv`)
+## line_name 규칙표 (`public.l3_spider_line_name_rule`)
 
-`lineNames` 필터와 Summary 매트릭스는 `(line_id, process_id, step_seq) → line_name` 매핑을 규칙표로 해석합니다. 이 매핑값은 민감정보라 **코드/깃에 하드코딩하지 않고**, 데이터 루트의 `_meta/line_name_rules.csv`(마운트 파일)에서 읽습니다.
+`lineNames` 필터와 Summary 매트릭스는 `(line_id, process_id, step_seq) → line_name` 매핑을 PostgreSQL 규칙표로 해석합니다. 이 매핑값은 코드에 하드코딩하지 않고 Django가 관리하는 `public.l3_spider_line_name_rule`에서 읽습니다.
 
 | 항목 | 값 |
 | --- | --- |
-| 위치 | `{L3_SPIDER_DATA_ROOT}/_meta/line_name_rules.csv` |
-| 재로딩 | 파일 mtime 변경 시 자동 재로딩(재시작 불필요) |
-| 파일 없음/파싱 실패 | 빈 규칙 → 모든 값이 `line_id`로 폴백 |
-| 인코딩 | UTF-8(BOM 허용). `#`로 시작하는 줄과 빈 줄은 무시 |
+| 위치 | `public.l3_spider_line_name_rule` |
+| 재로딩 | 프로세스별 최대 5초 TTL 후 활성 규칙 재조회 |
+| 활성 규칙 없음 | 모든 값이 `line_id`로 폴백 |
+| 정렬 | `priority`, `id` 오름차순 |
 
-컬럼은 `type,line_id,process_id,step_seq,line_name`입니다.
+주요 컬럼은 `rule_type,line_id,process_id,step_seq,line_name,priority,is_active`입니다.
 
-- `type=override`: `(process_id, step_seq)`로 매칭(line_id 무관), `base`보다 우선
-- `type=base`: `(line_id, process_id)`로 매칭(step_seq 무관)
+- `rule_type=override`: `(process_id, step_seq)`로 매칭(line_id 무관), `base`보다 우선
+- `rule_type=base`: `(line_id, process_id)`로 매칭(step_seq 무관)
 - 빈 칸 또는 `%`/`*` = 와일드카드(대소문자 무시)
-- 우선순위: `override` → `base`, 같은 type 안에서는 정확 매칭이 와일드카드보다 우선, 와일드카드끼리는 파일 순서
+- 우선순위: `override` → `base`, 같은 type 안에서는 정확 매칭이 와일드카드보다 우선, 와일드카드끼리는 `priority`, `id` 순서
 - 미매칭 시 `line_name = line_id`로 폴백
 
-```csv
-type,line_id,process_id,step_seq,line_name
-override,,ABCD,step_003,EndFab
-base,line_a,%,,FAB_A
-base,line_b,%,,FAB_B
+기존 CSV는 다음 command로 테이블에 적재할 수 있습니다.
+
+```bash
+python manage.py import_l3_spider_line_name_rules --dry-run
+python manage.py import_l3_spider_line_name_rules --replace
 ```
 
 ## 오류
