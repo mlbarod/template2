@@ -221,6 +221,34 @@ class AccountConfigDefaultUserTests(TestCase):
         self.assertEqual(user.email, "dummy.new@example.com")
         self.assertTrue(user.check_password("test-password"))
 
+    def test_ensure_default_superuser_does_not_promote_dummy_outside_development(self) -> None:
+        """development 환경이 아니면 dummy 사용자를 보정하지 않아야 합니다."""
+
+        User = get_user_model()
+        user = User.objects.create_user(
+            sabun="S-DUMMY-OIDC",
+            password="test-password",
+            knox_id="dummy.oidc",
+            email="old@example.com",
+        )
+
+        with patch.dict(
+            "os.environ",
+            {
+                "ENVIRONMENT": "production",
+                "DUMMY_ADFS_SABUN": "S-DUMMY-OIDC",
+                "DUMMY_ADFS_LOGINID": "dummy.oidc",
+                "DUMMY_ADFS_EMAIL": "dummy.oidc@example.com",
+            },
+            clear=True,
+        ):
+            django_apps.get_app_config("account")._ensure_default_superuser()
+
+        user.refresh_from_db()
+        self.assertFalse(user.is_staff)
+        self.assertFalse(user.is_superuser)
+        self.assertEqual(user.email, "old@example.com")
+
 
 class AccountEndpointTests(TestCase):
     """계정 관련 엔드포인트의 기본 흐름을 검증합니다."""

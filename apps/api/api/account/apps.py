@@ -139,46 +139,6 @@ class AccountConfig(AppConfig):
                 email=env_or_default("DJANGO_SUPERUSER_EMAIL", "etch_mail_collector@samsung.com"),
             )
 
-        def ensure_dev_dummy_superuser() -> None:
-            """development 환경의 dummy ADFS 사용자를 슈퍼유저로 생성/보정합니다."""
-
-            if env_or_default("ENVIRONMENT").lower() != "development":
-                return
-
-            sabun = env_or_default("DUMMY_ADFS_SABUN")
-            loginid = env_or_default("DUMMY_ADFS_LOGINID")
-            if not sabun or not loginid:
-                return
-
-            defaults = {
-                "username": env_or_default("DUMMY_ADFS_NAME", "Dummy User"),
-                "knox_id": loginid,
-                "email": env_or_default("DUMMY_ADFS_EMAIL", "dummy.user@example.com"),
-                "department": env_or_default("DUMMY_ADFS_DEPT", "Development"),
-            }
-            user = UserModel.objects.filter(sabun=sabun).first()
-            if user is None:
-                UserModel.objects.create_superuser(
-                    sabun=sabun,
-                    password=env_or_default("DJANGO_SUPERUSER_PASSWORD", "dkssud123!"),
-                    **defaults,
-                )
-                return
-
-            update_fields: list[str] = []
-            for field_name, value in defaults.items():
-                if value and getattr(user, field_name) != value:
-                    setattr(user, field_name, value)
-                    update_fields.append(field_name)
-
-            for field_name in ("is_staff", "is_superuser"):
-                if getattr(user, field_name) is not True:
-                    setattr(user, field_name, True)
-                    update_fields.append(field_name)
-
-            if update_fields:
-                user.save(update_fields=update_fields)
-
         # -----------------------------------------------------------------------------
         # 1) 테이블 존재 여부 확인
         # -----------------------------------------------------------------------------
@@ -195,6 +155,8 @@ class AccountConfig(AppConfig):
         # 2) 기본 슈퍼유저와 dev dummy 슈퍼유저 보장
         # -----------------------------------------------------------------------------
         try:
+            from api.account.services import ensure_dev_dummy_superuser
+
             create_default_superuser()
             ensure_dev_dummy_superuser()
         except IntegrityError:

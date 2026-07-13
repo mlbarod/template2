@@ -1,6 +1,6 @@
 # =============================================================================
 # 모듈 설명: management 공통 command 테스트를 제공합니다.
-# - 주요 대상: ensure_dev_database, seed_dummy_emails
+# - 주요 대상: ensure_dev_database, seed_dev_data, seed_dummy_emails
 # - 불변 조건: dev DB bootstrap과 명시적 더미 command guard를 검증합니다.
 # =============================================================================
 
@@ -99,23 +99,77 @@ class EnsureDevDatabaseCommandTests(SimpleTestCase):
 class SeedDummyEmailsCommandTests(SimpleTestCase):
     """이메일 더미 seed command의 dev 전용 가드를 검증합니다."""
 
-    def test_command_rejects_oidc_like_development_without_seed_flag(self) -> None:
-        """OIDC처럼 development만 있고 seed flag가 없으면 실행을 거부합니다."""
+    def test_command_rejects_non_development_environment(self) -> None:
+        """development 환경이 아니면 실행을 거부합니다."""
 
-        with patch.dict("os.environ", {"ENVIRONMENT": "development"}, clear=True):
+        with patch.dict("os.environ", {"ENVIRONMENT": "production"}, clear=True):
             with self.assertRaises(CommandError):
                 call_command("seed_dummy_emails", skip_rag=True, stdout=StringIO())
 
     @patch("api.emails.management.commands.seed_dummy_emails.Email.objects")
     def test_command_allows_explicit_dev_seed_flag(self, email_objects: Mock) -> None:
-        """명시적인 dev seed flag가 있으면 이메일 seed를 실행합니다."""
+        """development 환경이면 이메일 seed를 실행합니다."""
 
         email_objects.update_or_create.side_effect = [
             (Mock(), True),
             (Mock(), True),
         ]
 
-        with patch.dict("os.environ", {"ENVIRONMENT": "development", "DEV_SEED_ALLOWED": "1"}, clear=True):
+        with patch.dict("os.environ", {"ENVIRONMENT": "development"}, clear=True):
             call_command("seed_dummy_emails", skip_rag=True, stdout=StringIO())
 
         self.assertEqual(email_objects.update_or_create.call_count, 2)
+
+
+class SeedDevDataCommandTests(SimpleTestCase):
+    """통합 dev seed command의 dev 전용 가드와 호출 흐름을 검증합니다."""
+
+    def test_command_rejects_non_development_environment(self) -> None:
+        """development 환경이 아니면 실행을 거부합니다."""
+
+        with patch.dict("os.environ", {"ENVIRONMENT": "production"}, clear=True):
+            with self.assertRaises(CommandError):
+                call_command("seed_dev_data", stdout=StringIO())
+
+    @patch("api.management.commands.seed_dev_data.call_command")
+    @patch("api.management.commands.seed_dev_data.ensure_dev_dummy_superuser")
+    def test_command_refreshes_dummy_data_when_dev_seed_is_enabled(
+        self,
+        ensure_dummy: Mock,
+        nested_call_command: Mock,
+    ) -> None:
+        """development 환경이면 dummy 사용자 보정 후 하위 seed를 실행합니다."""
+
+        ensure_dummy.return_value = Mock(sabun="S000001")
+
+        with patch.dict(
+            "os.environ",
+            {
+                "ENVIRONMENT": "development",
+                "DRONE_SEED_ALLOWED": "1",
+            },
+            clear=True,
+        ):
+            call_command("seed_dev_data", reset=True, skip_rag=True, prefix="dev", stdout=StringIO())
+
+        ensure_dummy.assert_called_once_with()
+        self.assertEqual(nested_call_command.call_count, 2)
+        email_call = nested_call_command.call_args_list[0]
+        drone_call = nested_call_command.call_args_list[1]
+        self.assertEqual(email_call.args[0], "seed_dummy_emails")
+        self.assertEqual(email_call.kwargs["prefix"], "DEV")
+        self.assertTrue(email_call.kwargs["reset"])
+        self.assertTrue(email_call.kwargs["skip_rag"])
+        self.assertEqual(drone_call.args[0], "seed_drone_dummy_data")
+        self.assertEqual(drone_call.kwargs["prefix"], "DEV")
+        self.assertTrue(drone_call.kwargs["reset"])
+
+    @patch("api.management.commands.seed_dev_data.ensure_dev_dummy_superuser", return_value=None)
+    def test_command_requires_dummy_user_to_be_ensured(self, ensure_dummy: Mock) -> None:
+        """dummy 사용자 보장이 실패하면 더미 데이터 refresh를 중단합니다."""
+
+        with patch.dict("os.environ", {"ENVIRONMENT": "development"}, clear=True):
+            with self.assertRaises(CommandError):
+                call_command("seed_dev_data", stdout=StringIO())
+
+        ensure_dummy.assert_called_once_with()

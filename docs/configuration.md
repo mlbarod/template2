@@ -73,6 +73,7 @@
 | 보안/proxy | `DJANGO_SECURE`, `SECURE_SSL_REDIRECT`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`, `USE_X_FORWARDED_HOST` | HTTPS, cookie, reverse proxy 설정 |
 | `DJANGO_DB_*` / 기본 DB | `DJANGO_DB_ENGINE`, `DJANGO_DB_NAME`, `DJANGO_DB_USER`, `DJANGO_DB_PASSWORD`, `DJANGO_DB_HOST`, `DJANGO_DB_PORT` | Django 기본 PostgreSQL |
 | Dev auto affiliation | `DEV_AUTO_AFFILIATION_ALLOWED`, `DEV_AUTO_AFFILIATION_PREFIX` | 소속 없는 로컬 dev 로그인 사용자의 기본 개발 소속 보장 |
+| Dev auto seed | `DEV_AUTO_SEED`, `DEV_SEED_PREFIX` | 로컬 dev API 기동 시 dummy 사용자 보정과 prefix 기준 더미 데이터 refresh |
 | Observer 설정 | `OBSERVER_QUERY_DAYS` | Observer 로그 기본 조회 기간 |
 | RACB report URL | `RACB_REPORT_BASE_URL` | RACB 로그 상세 팝업 URL 생성 기준 |
 | `L3_SPIDER_*` / L3 Spider 파일 데이터/메일 | `L3_SPIDER_DATA_ROOT`, `L3_SPIDER_MAX_CHART_POINTS_PER_PANEL`, `L3_SPIDER_MAIL_SENDER`, `L3_SPIDER_MAIL_TARGET_URL` | read-only mount된 `daily_anomaly` Parquet 데이터 경로, 차트 sampling 제한, L3 Spider 알림 메일 발신자와 메일 본문 이동 링크 |
@@ -160,7 +161,9 @@ PM SPIDER는 단일 `/data/pm_spider` mount 아래에서 `/data/pm_spider/data`�
 3. Web은 `env/web.dev.env`를 사용합니다.
 4. ADFS/RAG/LLM/Mail/Jira 호출은 `apps/adfs_dummy`의 `http://adfs:9000` 또는 host 기준 `http://localhost:9102`로 연결됩니다.
 5. `DEV_AUTO_AFFILIATION_ALLOWED=1`이면 소속 없는 로그인 사용자에게 `DEV_AUTO_AFFILIATION_PREFIX` 기반 기본 소속을 부여해 소속 선택 없이 다른 앱을 테스트할 수 있습니다.
-6. 계정/권한 화면의 예시 데이터가 필요할 때만 Web에 `VITE_ACCOUNT_DEV_FIXTURES=1`을 주입합니다. 기본값은 실제 API의 빈 상태를 그대로 표시합니다.
+6. `DUMMY_ADFS_*` 기준 dummy 사용자는 migrate와 dev seed refresh에서 staff 슈퍼유저로 보정됩니다.
+7. `DEV_AUTO_SEED=1`이면 API migrate 이후 `seed_dev_data --reset`을 실행해 `DEV_SEED_PREFIX` 기준 더미 데이터를 refresh합니다. 내부 command는 `ENVIRONMENT=development`에서만 실행됩니다.
+8. 계정/권한 화면의 예시 데이터가 필요할 때만 Web에 `VITE_ACCOUNT_DEV_FIXTURES=1`을 주입합니다. 기본값은 실제 API의 빈 상태를 그대로 표시합니다.
 
 ## 운영/실제 연동 흐름
 

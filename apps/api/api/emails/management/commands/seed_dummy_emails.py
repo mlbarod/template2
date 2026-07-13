@@ -1,14 +1,14 @@
 # =============================================================================
 # 모듈 설명: 로컬 개발용 더미 이메일 생성/등록 커맨드를 제공합니다.
 # - 주요 대상: seed_dummy_emails 관리 명령
-# - 불변 조건: ENVIRONMENT=development 및 DEV_SEED_ALLOWED=1 에서만 실행합니다.
+# - 불변 조건: ENVIRONMENT=development 에서만 실행합니다.
 # =============================================================================
 
 """로컬 개발용 더미 이메일을 생성하고 RAG에 등록하는 커맨드.
 
 - 주요 대상: seed_dummy_emails 관리 명령
 - 주요 엔드포인트/클래스: Command
-- 가정/불변 조건: 외부망 dev seed 허용 환경에서만 실행함
+- 가정/불변 조건: 외부망 dev 환경에서만 실행함
 """
 from __future__ import annotations
 
@@ -29,20 +29,14 @@ def _normalize_prefix(raw: Any) -> str:
     return str(raw or "").strip().upper()
 
 
-def _env_enabled(name: str) -> bool:
-    """환경변수 boolean 값을 해석합니다."""
-
-    return (os.getenv(name) or "").strip().lower() in {"1", "true", "yes", "on"}
-
-
 def _ensure_dev_seed_allowed() -> None:
     """외부망 dev seed 허용 환경에서만 이메일 seed를 실행합니다."""
 
     environment = (os.getenv("ENVIRONMENT") or "").strip().lower()
-    if environment != "development" or not _env_enabled("DEV_SEED_ALLOWED"):
+    if environment != "development":
         raise CommandError(
             "이 커맨드는 외부망 dev seed 환경에서만 실행할 수 있습니다. "
-            "ENVIRONMENT=development 및 DEV_SEED_ALLOWED=1 설정을 확인하세요."
+            "ENVIRONMENT=development 설정을 확인하세요."
         )
 
 

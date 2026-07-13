@@ -55,6 +55,7 @@ from .access_control import (
     update_access_policy_rule,
 )
 from .dev_affiliation import ensure_dev_user_affiliation
+from .dev_users import ensure_dev_dummy_superuser
 from .users import ensure_user_profile, get_user_by_knox_id, resolve_target_user
 
 __all__ = [
@@ -68,6 +69,7 @@ __all__ = [
     "delete_access_policy_rule",
     "ensure_self_access",
     "ensure_affiliation_option",
+    "ensure_dev_dummy_superuser",
     "ensure_dev_user_affiliation",
     "ensure_user_profile",
     "get_current_user_sdwt_prod_change",

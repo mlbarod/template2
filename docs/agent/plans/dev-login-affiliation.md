@@ -1,5 +1,7 @@
 # ExecPlan: Dev Login Affiliation
 
+> 2026-07-13 업데이트: 더미 데이터 refresh 요구사항이 다시 생겨 `dev-auto-seed-refresh.md` 계획으로 dev-only seed 흐름을 복구했다. 이 문서는 dev 자동 소속 분리 작업의 과거 결정 기록으로 유지한다.
+
 ## 목표
 - 로컬 dev에서 로그인 후 소속 선택 없이 앱을 테스트할 수 있게 한다.
 - dev 시작 시 더미데이터 seed/reset 흐름은 제거한다.

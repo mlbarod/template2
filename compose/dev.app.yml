@@ -95,6 +95,9 @@ services:
           set -e
           python manage.py ensure_dev_database
           python manage.py migrate --noinput
+          if [ "$${DEV_AUTO_SEED:-0}" = "1" ]; then
+            python manage.py seed_dev_data --reset --prefix "$${DEV_SEED_PREFIX:-DEV}"
+          fi
           python manage.py runserver 0.0.0.0:8000
     networks:
       shared-net:
